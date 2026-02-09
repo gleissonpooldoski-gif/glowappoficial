@@ -7,6 +7,8 @@ export interface User {
   name: string;
   skinType?: SkinType;
   goal?: SkinGoal;
+  age?: string;
+  city?: string;
   onboardingComplete: boolean;
 }
 
@@ -67,7 +69,6 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     if (!user) return;
     const updated = { ...user, ...data };
     saveUser(updated);
-    // Also update in users store
     const stored = localStorage.getItem("glowapp_users");
     if (stored) {
       const users = JSON.parse(stored);
