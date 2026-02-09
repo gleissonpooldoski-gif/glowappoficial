@@ -10,7 +10,8 @@ import Register from "./pages/Register";
 import ForgotPassword from "./pages/ForgotPassword";
 import Onboarding from "./pages/Onboarding";
 import Dashboard from "./pages/Dashboard";
-import MeuPlano from "./pages/MeuPlano";
+import Rotina from "./pages/Rotina";
+import RotinaDetalhe from "./pages/RotinaDetalhe";
 import Tutoriais from "./pages/Tutoriais";
 import TutorialCategoria from "./pages/TutorialCategoria";
 import Chat from "./pages/Chat";
@@ -33,7 +34,9 @@ const App = () => (
             <Route path="/forgot-password" element={<ForgotPassword />} />
             <Route path="/onboarding" element={<Onboarding />} />
             <Route path="/dashboard" element={<Dashboard />} />
-            <Route path="/meu-plano" element={<MeuPlano />} />
+            <Route path="/rotina" element={<Rotina />} />
+            <Route path="/rotina/manha" element={<RotinaDetalhe />} />
+            <Route path="/rotina/noite" element={<RotinaDetalhe />} />
             <Route path="/tutoriais" element={<Tutoriais />} />
             <Route path="/tutoriais/:categoria" element={<TutorialCategoria />} />
             <Route path="/chat" element={<Chat />} />

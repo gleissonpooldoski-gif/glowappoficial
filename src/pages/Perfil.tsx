@@ -1,9 +1,9 @@
 import { useAuth } from "@/contexts/AuthContext";
-import { skinTypeLabels, goalLabels, SkinType, SkinGoal } from "@/data/routines";
+import { skinTypeLabels, goalLabels, SkinType, SkinGoal, getStreak, getWeekCompletionPercent } from "@/data/routines";
 import Layout from "@/components/Layout";
 import { Button } from "@/components/ui/button";
 import { useNavigate } from "react-router-dom";
-import { LogOut, ChevronRight } from "lucide-react";
+import { LogOut, ChevronRight, Flame, Sparkles } from "lucide-react";
 import { useState } from "react";
 
 const skinTypes: SkinType[] = ["oleosa", "seca", "mista", "normal"];
@@ -15,6 +15,9 @@ export default function Perfil() {
   const [editing, setEditing] = useState(false);
   const [skinType, setSkinType] = useState<SkinType | undefined>(user?.skinType);
   const [goal, setGoal] = useState<SkinGoal | undefined>(user?.goal);
+
+  const streak = getStreak();
+  const weekPercent = getWeekCompletionPercent();
 
   const handleSave = () => {
     updateProfile({ skinType, goal });
@@ -43,6 +46,20 @@ export default function Perfil() {
               <p className="font-semibold text-lg">{user?.name}</p>
               <p className="text-sm text-muted-foreground">{user?.email}</p>
             </div>
+          </div>
+        </div>
+
+        {/* Progress */}
+        <div className="grid grid-cols-2 gap-3">
+          <div className="rounded-2xl bg-card p-4 flex flex-col items-center gap-1">
+            <Flame size={20} className="text-primary" />
+            <span className="text-xl font-bold">{streak}</span>
+            <span className="text-[10px] text-muted-foreground">dias seguidos</span>
+          </div>
+          <div className="rounded-2xl bg-card p-4 flex flex-col items-center gap-1">
+            <Sparkles size={20} className="text-primary" />
+            <span className="text-xl font-bold">{weekPercent}%</span>
+            <span className="text-[10px] text-muted-foreground">semana completa</span>
           </div>
         </div>
 
@@ -101,6 +118,18 @@ export default function Perfil() {
                 <span className="text-sm text-muted-foreground">Objetivo</span>
                 <span className="text-sm font-medium">{user?.goal ? goalLabels[user.goal] : "—"}</span>
               </div>
+              {user?.age && (
+                <div className="flex items-center justify-between rounded-xl bg-muted/50 p-3">
+                  <span className="text-sm text-muted-foreground">Faixa etária</span>
+                  <span className="text-sm font-medium">{user.age} anos</span>
+                </div>
+              )}
+              {user?.city && (
+                <div className="flex items-center justify-between rounded-xl bg-muted/50 p-3">
+                  <span className="text-sm text-muted-foreground">Cidade/Clima</span>
+                  <span className="text-sm font-medium">{user.city}</span>
+                </div>
+              )}
             </div>
           )}
         </div>

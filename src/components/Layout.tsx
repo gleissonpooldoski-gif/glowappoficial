@@ -1,10 +1,10 @@
 import { ReactNode } from "react";
 import { Link, useLocation } from "react-router-dom";
-import { Home, Droplets, BookOpen, MessageCircle, User } from "lucide-react";
+import { Home, CalendarDays, BookOpen, MessageCircle, User } from "lucide-react";
 
 const navItems = [
   { path: "/dashboard", label: "Início", icon: Home },
-  { path: "/meu-plano", label: "Rotina", icon: Droplets },
+  { path: "/rotina", label: "Rotina", icon: CalendarDays },
   { path: "/tutoriais", label: "Aprenda", icon: BookOpen },
   { path: "/chat", label: "Chat", icon: MessageCircle },
   { path: "/perfil", label: "Perfil", icon: User },
@@ -19,7 +19,7 @@ export default function Layout({ children }: { children: ReactNode }) {
       <nav className="fixed bottom-0 left-0 right-0 z-50 border-t border-border bg-card/80 backdrop-blur-lg">
         <div className="mx-auto flex max-w-lg items-center justify-around py-2">
           {navItems.map(({ path, label, icon: Icon }) => {
-            const active = location.pathname === path;
+            const active = location.pathname.startsWith(path);
             return (
               <Link
                 key={path}
