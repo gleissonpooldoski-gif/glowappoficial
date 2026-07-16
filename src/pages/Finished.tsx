@@ -79,6 +79,8 @@ export default function Finished() {
 
   useEffect(() => {
     load();
+    const t = window.setInterval(load, 5000);
+    return () => window.clearInterval(t);
   }, []);
 
   const download = async (v: FinishedVideo) => {
