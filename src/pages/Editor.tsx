@@ -538,12 +538,24 @@ export default function Editor() {
     return true;
   };
 
-  const [exportProgress, setExportProgress] = useState<string | null>(null);
+  type ExportPhase = "idle" | "prep" | "template" | "render" | "encode" | "upload";
+  const PHASE_LABEL: Record<ExportPhase, string> = {
+    idle: "",
+    prep: "Preparando vídeo",
+    template: "Aplicando template",
+    render: "Renderizando",
+    encode: "Codificando MP4",
+    upload: "Finalizando arquivo",
+  };
+  const [exportPhase, setExportPhase] = useState<ExportPhase>("idle");
+  const [exportPercent, setExportPercent] = useState(0);
+  const exportProgress = exportPhase === "idle" ? null : PHASE_LABEL[exportPhase];
 
   const exportVideo = async () => {
     if (!id || !edit || !videoRef.current) return;
     setExporting(true);
-    setExportProgress("Preparando renderização…");
+    setExportPhase("prep");
+    setExportPercent(2);
     try {
       const okSave = await save(true);
       if (!okSave) return;
@@ -562,31 +574,86 @@ export default function Editor() {
           videoEl.addEventListener("error", err);
         });
       }
+      setExportPercent(8);
 
       const rInfo = RATIOS[ratio] ?? RATIOS["9:16"];
       const H = 1280;
       const W = Math.round((H * rInfo.w) / rInfo.h);
-      const canvas = document.createElement("canvas");
-      canvas.width = W; canvas.height = H;
-      const ctx = canvas.getContext("2d");
+      // OffscreenCanvas (thread-friendly) quando disponível, senão canvas tradicional.
+      const canvas =
+        typeof OffscreenCanvas !== "undefined"
+          ? new OffscreenCanvas(W, H)
+          : Object.assign(document.createElement("canvas"), { width: W, height: H });
+      (canvas as any).width = W; (canvas as any).height = H;
+      const ctx = (canvas as any).getContext("2d", { alpha: false, desynchronized: true }) as
+        | CanvasRenderingContext2D
+        | OffscreenCanvasRenderingContext2D
+        | null;
       if (!ctx) throw new Error("Canvas 2D indisponível");
 
-      // Template como imagem
+      // Template como imagem — carregado uma única vez (não re-decodificar por frame)
+      setExportPhase("template");
+      setExportPercent(14);
       let templateImg: HTMLImageElement | null = null;
+      let templateLayout: { dx: number; dy: number; dw: number; dh: number } | null = null;
       if (templateUrl) {
         templateImg = new Image();
         templateImg.crossOrigin = "anonymous";
         templateImg.src = templateUrl;
         await new Promise<void>((res) => {
           templateImg!.onload = () => res();
-          templateImg!.onerror = () => res(); // segue sem template se falhar
+          templateImg!.onerror = () => res();
+        });
+        if (templateImg.naturalWidth) {
+          const tw = templateImg.naturalWidth, th = templateImg.naturalHeight;
+          const fit = doc.template.fit ?? "contain";
+          const s = fit === "cover" ? Math.max(W / tw, H / th) : Math.min(W / tw, H / th);
+          const dw = tw * s, dh = th * s;
+          templateLayout = { dx: (W - dw) / 2, dy: (H - dh) / 2, dw, dh };
+        }
+      }
+
+      // Pré-computa layout de textos uma única vez (nada muda quadro a quadro)
+      type PreparedText = {
+        text: string; x: number; y: number; size: number; font: string; weight: number;
+        color: string; align: CanvasTextAlign; shadow: boolean;
+        strokeWidth: number; strokeColor: string;
+        bg?: { x: number; y: number; w: number; h: number; color: string };
+      };
+      const prepared: PreparedText[] = [];
+      const measurer = (canvas as any).getContext("2d") as any;
+      for (const t of doc.texts) {
+        const size = Math.max(8, (t.size / 720) * H);
+        let text = t.text || "";
+        if (t.transform === "uppercase") text = text.toUpperCase();
+        else if (t.transform === "lowercase") text = text.toLowerCase();
+        else if (t.transform === "capitalize") text = text.replace(/\b\w/g, (c) => c.toUpperCase());
+        const align = (t.align ?? "center") as CanvasTextAlign;
+        const x = (t.x / 100) * W;
+        const y = (t.y / 100) * H;
+        let bg: PreparedText["bg"];
+        if (t.bgColor) {
+          measurer.font = `${t.weight || 700} ${size}px "${t.font}", sans-serif`;
+          const m = measurer.measureText(text);
+          const padX = 20, padY = 14;
+          const bw = m.width + padX * 2;
+          const bh = size + padY * 2;
+          const bx = align === "left" ? x - padX : align === "right" ? x - bw + padX : x - bw / 2;
+          bg = { x: bx, y: y - bh / 2, w: bw, h: bh, color: t.bgColor };
+        }
+        prepared.push({
+          text, x, y, size, font: t.font, weight: t.weight || 700,
+          color: t.color, align, shadow: t.shadow !== false,
+          strokeWidth: t.strokeWidth ?? 0, strokeColor: t.strokeColor || "#000000",
+          bg,
         });
       }
 
-      setExportProgress("Renderizando frames…");
+      setExportPhase("render");
+      setExportPercent(18);
 
-      // Streams
-      const canvasStream = canvas.captureStream(30);
+      // Streams — 30fps é suficiente para plataformas sociais; menos overhead que 60.
+      const canvasStream = (canvas as any).captureStream(30) as MediaStream;
       try {
         const vs = (videoEl as any).captureStream?.() as MediaStream | undefined;
         vs?.getAudioTracks().forEach((t) => canvasStream.addTrack(t));
@@ -594,22 +661,28 @@ export default function Editor() {
         console.warn("[Editor] captureStream de áudio falhou", err);
       }
 
+      // MP4/H.264 quando o navegador suportar (Safari + Chrome recente), senão WebM.
       const mimeCandidates = [
+        "video/mp4;codecs=h264,aac",
+        "video/mp4;codecs=avc1.42E01E,mp4a.40.2",
         "video/webm;codecs=vp9,opus",
         "video/webm;codecs=vp8,opus",
         "video/webm",
       ];
       const mime =
-        mimeCandidates.find((m) => typeof MediaRecorder !== "undefined" && MediaRecorder.isTypeSupported(m)) ||
-        "video/webm";
+        mimeCandidates.find(
+          (m) => typeof MediaRecorder !== "undefined" && MediaRecorder.isTypeSupported(m),
+        ) || "video/webm";
+      const isMp4 = mime.startsWith("video/mp4");
+      const ext = isMp4 ? "mp4" : "webm";
+      const outMime = isMp4 ? "video/mp4" : "video/webm";
 
       const chunks: Blob[] = [];
       const recorder = new MediaRecorder(canvasStream, {
-        mimeType: mime, videoBitsPerSecond: 6_000_000,
+        mimeType: mime, videoBitsPerSecond: 5_000_000, audioBitsPerSecond: 128_000,
       });
       recorder.ondataavailable = (e) => { if (e.data.size > 0) chunks.push(e.data); };
 
-      // Preparar playback
       videoEl.pause();
       videoEl.loop = false;
       videoEl.currentTime = 0;
@@ -621,84 +694,88 @@ export default function Editor() {
         videoEl.addEventListener("seeked", on);
       });
 
-      await videoEl.play();
-      recorder.start(500);
-
-      let stopped = false;
-      const drawFrame = () => {
-        if (stopped) return;
-        ctx.fillStyle = "#000";
-        ctx.fillRect(0, 0, W, H);
-
-        const vw = videoEl.videoWidth, vh = videoEl.videoHeight;
-        if (vw && vh) {
-          const baseScale = Math.max(W / vw, H / vh);
-          const scale = baseScale * (doc.video.zoom || 1);
-          const dw = vw * scale, dh = vh * scale;
-          const dx = (W - dw) / 2 + ((doc.video.x || 0) / 100) * W;
-          const dy = (H - dh) / 2 + ((doc.video.y || 0) / 100) * H;
-          ctx.drawImage(videoEl, dx, dy, dw, dh);
-        }
-
-        if (templateImg && templateImg.naturalWidth) {
-          const prev = ctx.globalAlpha;
-          ctx.globalAlpha = doc.template.opacity ?? 1;
-          const tw = templateImg.naturalWidth, th = templateImg.naturalHeight;
-          const fit = doc.template.fit ?? "contain";
-          const s = fit === "cover" ? Math.max(W / tw, H / th) : Math.min(W / tw, H / th);
-          const dw = tw * s, dh = th * s;
-          ctx.drawImage(templateImg, (W - dw) / 2, (H - dh) / 2, dw, dh);
-          ctx.globalAlpha = prev;
-        }
-
-        for (const t of doc.texts) {
-          const size = Math.max(8, (t.size / 720) * H);
-          ctx.font = `${t.weight || 700} ${size}px "${t.font}", sans-serif`;
-          ctx.textAlign = (t.align ?? "center") as CanvasTextAlign;
-          ctx.textBaseline = "middle";
-          let text = t.text || "";
-          if (t.transform === "uppercase") text = text.toUpperCase();
-          else if (t.transform === "lowercase") text = text.toLowerCase();
-          else if (t.transform === "capitalize") text = text.replace(/\b\w/g, (c) => c.toUpperCase());
-
-          const x = (t.x / 100) * W;
-          const y = (t.y / 100) * H;
-
-          if (t.bgColor) {
-            const m = ctx.measureText(text);
-            const padX = 20, padY = 14;
-            const bw = m.width + padX * 2;
-            const bh = size + padY * 2;
-            const bx = t.align === "left" ? x - padX : t.align === "right" ? x - bw + padX : x - bw / 2;
-            ctx.fillStyle = t.bgColor;
-            ctx.fillRect(bx, y - bh / 2, bw, bh);
+      // Cache de estilo — evita re-configurar shadow/fill quando não muda
+      const drawTexts = () => {
+        for (const p of prepared) {
+          if (p.bg) {
+            ctx.fillStyle = p.bg.color;
+            ctx.fillRect(p.bg.x, p.bg.y, p.bg.w, p.bg.h);
           }
-
-          if (t.shadow !== false) {
+          ctx.font = `${p.weight} ${p.size}px "${p.font}", sans-serif`;
+          ctx.textAlign = p.align;
+          ctx.textBaseline = "middle";
+          if (p.shadow) {
             ctx.shadowColor = "rgba(0,0,0,0.6)";
             ctx.shadowBlur = 8;
             ctx.shadowOffsetY = 2;
-          } else {
-            ctx.shadowBlur = 0; ctx.shadowOffsetY = 0;
           }
-
-          if (t.strokeWidth && t.strokeWidth > 0) {
-            ctx.lineWidth = t.strokeWidth;
-            ctx.strokeStyle = t.strokeColor || "#000";
-            ctx.lineJoin = "round";
-            ctx.strokeText(text, x, y);
+          if (p.strokeWidth > 0) {
+            ctx.lineWidth = p.strokeWidth;
+            ctx.strokeStyle = p.strokeColor;
+            (ctx as any).lineJoin = "round";
+            ctx.strokeText(p.text, p.x, p.y);
           }
-
-          ctx.fillStyle = t.color;
-          ctx.fillText(text, x, y);
-          ctx.shadowBlur = 0; ctx.shadowOffsetY = 0;
+          ctx.fillStyle = p.color;
+          ctx.fillText(p.text, p.x, p.y);
+          ctx.shadowBlur = 0;
+          ctx.shadowOffsetY = 0;
         }
-
-        requestAnimationFrame(drawFrame);
       };
-      requestAnimationFrame(drawFrame);
 
-      const totalMs = Math.max(1000, Math.round((videoEl.duration || 5) * 1000) + 300);
+      const zoom = doc.video.zoom || 1;
+      const vx = ((doc.video.x || 0) / 100) * W;
+      const vy = ((doc.video.y || 0) / 100) * H;
+      const tplOpacity = doc.template.opacity ?? 1;
+
+      let stopped = false;
+      const paint = () => {
+        ctx.fillStyle = "#000";
+        ctx.fillRect(0, 0, W, H);
+        const vw = videoEl.videoWidth, vh = videoEl.videoHeight;
+        if (vw && vh) {
+          const baseScale = Math.max(W / vw, H / vh);
+          const scale = baseScale * zoom;
+          const dw = vw * scale, dh = vh * scale;
+          const dx = (W - dw) / 2 + vx;
+          const dy = (H - dh) / 2 + vy;
+          ctx.drawImage(videoEl, dx, dy, dw, dh);
+        }
+        if (templateImg && templateLayout) {
+          const prev = ctx.globalAlpha;
+          ctx.globalAlpha = tplOpacity;
+          ctx.drawImage(templateImg, templateLayout.dx, templateLayout.dy, templateLayout.dw, templateLayout.dh);
+          ctx.globalAlpha = prev;
+        }
+        if (prepared.length) drawTexts();
+      };
+
+      // Usa requestVideoFrameCallback quando disponível — desenha apenas quando
+      // um novo frame do vídeo está pronto (evita repintar em 60/120Hz sem motivo).
+      const vAny = videoEl as any;
+      const useVfc = typeof vAny.requestVideoFrameCallback === "function";
+      const scheduleDraw = () => {
+        if (stopped) return;
+        if (useVfc) {
+          vAny.requestVideoFrameCallback(() => { paint(); scheduleDraw(); });
+        } else {
+          paint();
+          requestAnimationFrame(scheduleDraw);
+        }
+      };
+
+      await videoEl.play();
+      recorder.start(500);
+      paint();
+      scheduleDraw();
+
+      // Progresso real da renderização (18% -> 82%)
+      const duration = videoEl.duration || 5;
+      const progressTimer = window.setInterval(() => {
+        const pct = Math.min(1, (videoEl.currentTime || 0) / duration);
+        setExportPercent(18 + Math.round(pct * 64));
+      }, 200);
+
+      const totalMs = Math.max(1000, Math.round(duration * 1000) + 300);
       await new Promise<void>((res) => {
         const onEnd = () => { cleanup(); res(); };
         const to = window.setTimeout(() => { cleanup(); res(); }, totalMs + 5000);
@@ -708,23 +785,27 @@ export default function Editor() {
         };
         videoEl.addEventListener("ended", onEnd);
       });
+      window.clearInterval(progressTimer);
 
+      setExportPhase("encode");
+      setExportPercent(86);
       stopped = true;
       recorder.stop();
       await new Promise<void>((res) => { recorder.onstop = () => res(); });
       canvasStream.getTracks().forEach((t) => t.stop());
 
-      setExportProgress("Enviando para Vídeos Prontos…");
-      const blob = new Blob(chunks, { type: "video/webm" });
+      setExportPhase("upload");
+      setExportPercent(92);
+      const blob = new Blob(chunks, { type: outMime });
       const userRes = await supabase.auth.getUser();
       const uid = userRes.data.user?.id ?? edit.user_id ?? "anon";
       const safeName = (edit.name || "video").toString().replace(/[^\w\-]+/g, "_").slice(0, 60);
-      const filename = `${safeName || "video"}_${Date.now()}.webm`;
+      const filename = `${safeName || "video"}_${Date.now()}.${ext}`;
       const path = `${uid}/${id}/${filename}`;
 
       const { error: upErr } = await supabase.storage
         .from("videos-processed")
-        .upload(path, blob, { contentType: "video/webm", upsert: true });
+        .upload(path, blob, { contentType: outMime, upsert: true });
       if (upErr) throw upErr;
 
       const { error: insErr } = await supabase.from("videos").insert({
@@ -732,7 +813,7 @@ export default function Editor() {
         processed_path: path,
         duration_seconds: videoEl.duration || null,
         size_bytes: blob.size,
-        mime_type: "video/webm",
+        mime_type: outMime,
         status: "finished" as const,
         template_id: edit.template_id || null,
         project_id: edit.project_id || null,
@@ -741,6 +822,7 @@ export default function Editor() {
       if (insErr) throw insErr;
 
       await (supabase as any).from("edits").update({ status: "completed" }).eq("id", id);
+      setExportPercent(100);
 
       toast.success("Vídeo pronto! Enviado para Vídeos Prontos.");
       navigate("/finished");
@@ -749,7 +831,8 @@ export default function Editor() {
       toast.error(e?.message ?? "Falha ao exportar");
     } finally {
       setExporting(false);
-      setExportProgress(null);
+      setExportPhase("idle");
+      setExportPercent(0);
     }
   };
 
