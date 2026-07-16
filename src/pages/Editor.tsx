@@ -23,6 +23,7 @@ import {
 import { ScrollArea } from "@/components/ui/scroll-area";
 import { Sparkles, MessageSquareText } from "lucide-react";
 import { TEXT_CATEGORIES, TEXT_PRESETS, type TextPreset, type TextPresetCategory } from "@/lib/text-library";
+import TextLibraryDialog from "@/components/TextLibraryDialog";
 import { cn } from "@/lib/utils";
 import { useRenderQueue } from "@/context/RenderQueueContext";
 
