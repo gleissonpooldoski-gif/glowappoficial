@@ -1,11 +1,12 @@
 import { useEffect, useState } from "react";
-import { Download, Trash2, Film, Package, Play, Calendar, Clock, LayoutTemplate, CheckCircle2 } from "lucide-react";
+import { Download, Trash2, Film, Package, Play, Calendar, Clock, LayoutTemplate, CheckCircle2, Loader2, AlertCircle } from "lucide-react";
 import { supabase } from "@/integrations/supabase/client";
 import { toast } from "sonner";
 import { Card, CardContent } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
 import { Skeleton } from "@/components/ui/skeleton";
+import { Progress } from "@/components/ui/progress";
 import { formatBytes } from "@/lib/format";
 import { format } from "date-fns";
 import { ptBR } from "date-fns/locale";
@@ -24,6 +25,15 @@ type FinishedVideo = {
   templates?: { name: string | null } | null;
 };
 
+type RenderJob = {
+  id: string;
+  status: "QUEUED" | "PROCESSING" | "COMPLETED" | "FAILED";
+  progress: number;
+  error: string | null;
+  created_at: string;
+  edit_id: string | null;
+};
+
 const formatDuration = (s: number | null) => {
   if (!s || !isFinite(s)) return "—";
   const m = Math.floor(s / 60);
@@ -33,16 +43,27 @@ const formatDuration = (s: number | null) => {
 
 export default function Finished() {
   const [videos, setVideos] = useState<FinishedVideo[] | null>(null);
+  const [jobs, setJobs] = useState<RenderJob[]>([]);
   const [urls, setUrls] = useState<Record<string, string>>({});
 
   const load = async () => {
-    const { data } = await supabase
-      .from("videos")
-      .select("*, templates(name)")
-      .eq("status", "finished")
-      .order("updated_at", { ascending: false });
-    const list = ((data ?? []) as any[]) as FinishedVideo[];
+    const [{ data: vids }, { data: jbs }] = await Promise.all([
+      supabase
+        .from("videos")
+        .select("*, templates(name)")
+        .eq("status", "finished")
+        .order("updated_at", { ascending: false }),
+      (supabase as any)
+        .from("render_jobs")
+        .select("id, status, progress, error, created_at, edit_id")
+        .in("status", ["QUEUED", "PROCESSING", "FAILED"])
+        .order("created_at", { ascending: false })
+        .limit(20),
+    ]);
+    const list = ((vids ?? []) as any[]) as FinishedVideo[];
     setVideos(list);
+    setJobs(((jbs ?? []) as any[]) as RenderJob[]);
+
 
     // Signed URLs for inline preview
     const next: Record<string, string> = {};
