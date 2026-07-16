@@ -305,6 +305,13 @@ export default function Editor() {
       console.log("[Editor] video URL loaded", nextVideoUrl);
       console.log("[Editor] template URL loaded", nextTemplateUrl);
 
+      const { error: urlUpdateErr } = await (supabase as any).from("edits").update({
+        video_url: nextVideoUrl,
+        template_url: nextTemplateUrl,
+        user_id: data.user_id ?? "single-user",
+      }).eq("id", id);
+      if (urlUpdateErr) console.error("[Editor] edit url update error", urlUpdateErr);
+
       try {
         await preloadVideo(nextVideoUrl);
         if ((t.file_type ?? "").startsWith("video/")) {
@@ -334,9 +341,6 @@ export default function Editor() {
 
       const { error: editUpdateErr } = await (supabase as any).from("edits").update({
         status: "editing",
-        video_url: nextVideoUrl,
-        template_url: nextTemplateUrl,
-        user_id: data.user_id ?? "single-user",
       }).eq("id", id);
       if (editUpdateErr) console.error("[Editor] edit status/url update error", editUpdateErr);
       setLoading(false);
