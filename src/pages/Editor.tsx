@@ -1635,6 +1635,52 @@ export default function Editor() {
           </div>
         </DialogContent>
       </Dialog>
+
+      {/* Progresso de exportação — não bloqueia interação */}
+      {exporting && (
+        <div className="pointer-events-none fixed bottom-4 right-4 z-[60] w-[320px] max-w-[calc(100vw-2rem)]">
+          <div className="pointer-events-auto rounded-xl border border-gold/40 bg-black/85 p-4 shadow-2xl backdrop-blur-md">
+            <div className="mb-2 flex items-center gap-2">
+              <Loader2 size={14} className="animate-spin text-gold" />
+              <div className="text-xs font-semibold text-gold">
+                {exportProgress ?? "Exportando…"}
+              </div>
+              <div className="ml-auto text-[11px] font-mono text-white/70">{exportPercent}%</div>
+            </div>
+            <div className="h-1.5 w-full overflow-hidden rounded-full bg-white/10">
+              <div
+                className="h-full rounded-full bg-gold-gradient transition-all duration-200"
+                style={{ width: `${exportPercent}%` }}
+              />
+            </div>
+            <div className="mt-2 grid grid-cols-4 gap-1 text-[9px] uppercase tracking-wider">
+              {(["prep", "template", "render", "upload"] as ExportPhase[]).map((ph, i) => {
+                const phaseOrder: ExportPhase[] = ["prep", "template", "render", "encode", "upload"];
+                const currentIdx = phaseOrder.indexOf(exportPhase);
+                const thisIdx = phaseOrder.indexOf(ph);
+                const done = currentIdx > thisIdx || exportPercent === 100;
+                const active = currentIdx === thisIdx;
+                return (
+                  <div
+                    key={ph}
+                    className={cn(
+                      "rounded px-1 py-0.5 text-center",
+                      done && "bg-gold/20 text-gold",
+                      active && "bg-gold/30 text-gold animate-pulse",
+                      !done && !active && "bg-white/5 text-white/40",
+                    )}
+                  >
+                    {["Vídeo", "Template", "Render", "Salvar"][i]}
+                  </div>
+                );
+              })}
+            </div>
+            <p className="mt-2 text-[10px] text-white/50">
+              Você pode continuar navegando. Não feche esta aba.
+            </p>
+          </div>
+        </div>
+      )}
     </div>
   );
 }
