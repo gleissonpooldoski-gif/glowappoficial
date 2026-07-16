@@ -1,119 +1,161 @@
 import { useEffect, useState } from "react";
-import { Instagram, Music2, KeyRound, Link2, Shield } from "lucide-react";
+import { Save, HardDrive } from "lucide-react";
 import { supabase } from "@/integrations/supabase/client";
-import { useAuth } from "@/contexts/AuthContext";
-import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
-import { Badge } from "@/components/ui/badge";
-import { Button } from "@/components/ui/button";
-import { Input } from "@/components/ui/input";
+import { toast } from "sonner";
+import { Card, CardContent } from "@/components/ui/card";
 import { Label } from "@/components/ui/label";
+import { Button } from "@/components/ui/button";
+import { Switch } from "@/components/ui/switch";
+import {
+  Select,
+  SelectContent,
+  SelectItem,
+  SelectTrigger,
+  SelectValue,
+} from "@/components/ui/select";
 
-type Account = {
-  network: "instagram" | "tiktok";
-  status: "connected" | "disconnected" | "expired" | string;
-  account_name: string | null;
+type App = {
+  id?: string;
+  storage_location: string;
+  default_quality: string;
+  default_format: string;
+  auto_cleanup: boolean;
 };
 
-const NETWORKS: { key: "instagram" | "tiktok"; label: string; Icon: any }[] = [
-  { key: "instagram", label: "Instagram", Icon: Instagram },
-  { key: "tiktok", label: "TikTok", Icon: Music2 },
-];
+const DEFAULT: App = {
+  storage_location: "supabase",
+  default_quality: "1080p",
+  default_format: "9:16",
+  auto_cleanup: false,
+};
 
 export default function Settings() {
-  const { user } = useAuth();
-  const [accounts, setAccounts] = useState<Record<string, Account | undefined>>({});
+  const [app, setApp] = useState<App>(DEFAULT);
+  const [loading, setLoading] = useState(true);
+  const [saving, setSaving] = useState(false);
 
   useEffect(() => {
-    if (!user) return;
     (async () => {
       const { data } = await supabase
-        .from("social_accounts")
-        .select("network, status, account_name");
-      const map: Record<string, Account> = {};
-      ((data ?? []) as Account[]).forEach((a) => (map[a.network] = a));
-      setAccounts(map);
+        .from("app_settings")
+        .select("*")
+        .order("created_at", { ascending: true })
+        .limit(1)
+        .maybeSingle();
+      if (data) setApp(data as App);
+      setLoading(false);
     })();
-  }, [user?.id]);
+  }, []);
+
+  const save = async () => {
+    setSaving(true);
+    const payload = {
+      storage_location: app.storage_location,
+      default_quality: app.default_quality,
+      default_format: app.default_format,
+      auto_cleanup: app.auto_cleanup,
+    };
+    const { data, error } = app.id
+      ? await supabase.from("app_settings").update(payload).eq("id", app.id).select().maybeSingle()
+      : await supabase.from("app_settings").insert(payload).select().maybeSingle();
+    setSaving(false);
+    if (error) return toast.error(error.message);
+    if (data) setApp(data as App);
+    toast.success("Configurações salvas");
+  };
+
+  if (loading) return null;
 
   return (
     <div className="space-y-6">
       <header className="space-y-1.5">
         <h1 className="text-2xl font-semibold tracking-tight">Configurações</h1>
-        <p className="text-sm text-muted-foreground">
-          Contas conectadas, tokens e integrações do workspace.
-        </p>
+        <p className="text-sm text-muted-foreground">Preferências gerais do estúdio.</p>
       </header>
 
-      <section className="space-y-3">
-        <h2 className="text-sm font-medium text-muted-foreground">Redes sociais</h2>
-        <div className="grid gap-3 md:grid-cols-2">
-          {NETWORKS.map(({ key, label, Icon }) => {
-            const acc = accounts[key];
-            const connected = acc?.status === "connected";
-            return (
-              <Card key={key}>
-                <CardHeader className="flex flex-row items-center justify-between pb-2">
-                  <div className="flex items-center gap-2">
-                    <div className="flex h-8 w-8 items-center justify-center rounded-md border bg-muted/40">
-                      <Icon size={15} />
-                    </div>
-                    <CardTitle className="text-sm font-medium">{label}</CardTitle>
-                  </div>
-                  <Badge variant={connected ? "default" : "outline"} className="capitalize">
-                    {acc?.status ?? "desconectado"}
-                  </Badge>
-                </CardHeader>
-                <CardContent className="space-y-3">
-                  <p className="text-xs text-muted-foreground">
-                    {acc?.account_name
-                      ? `Conectado como @${acc.account_name}`
-                      : "Conecte a API oficial para agendar e publicar automaticamente."}
-                  </p>
-                  <Button variant="outline" size="sm" disabled className="w-full gap-1.5">
-                    <Link2 size={13} /> Conectar (em breve)
-                  </Button>
-                </CardContent>
-              </Card>
-            );
-          })}
-        </div>
-      </section>
+      <Card className="glass border-border/50">
+        <CardContent className="space-y-5 p-6">
+          <div className="grid gap-4 md:grid-cols-2">
+            <div className="space-y-1.5">
+              <Label>Local de armazenamento</Label>
+              <Select
+                value={app.storage_location}
+                onValueChange={(v) => setApp({ ...app, storage_location: v })}
+              >
+                <SelectTrigger>
+                  <SelectValue />
+                </SelectTrigger>
+                <SelectContent>
+                  <SelectItem value="supabase">Supabase Storage</SelectItem>
+                  <SelectItem value="local">Local (em breve)</SelectItem>
+                </SelectContent>
+              </Select>
+            </div>
+            <div className="space-y-1.5">
+              <Label>Qualidade padrão</Label>
+              <Select
+                value={app.default_quality}
+                onValueChange={(v) => setApp({ ...app, default_quality: v })}
+              >
+                <SelectTrigger>
+                  <SelectValue />
+                </SelectTrigger>
+                <SelectContent>
+                  <SelectItem value="720p">720p</SelectItem>
+                  <SelectItem value="1080p">1080p</SelectItem>
+                  <SelectItem value="4k">4K</SelectItem>
+                </SelectContent>
+              </Select>
+            </div>
+            <div className="space-y-1.5">
+              <Label>Formato padrão</Label>
+              <Select
+                value={app.default_format}
+                onValueChange={(v) => setApp({ ...app, default_format: v })}
+              >
+                <SelectTrigger>
+                  <SelectValue />
+                </SelectTrigger>
+                <SelectContent>
+                  <SelectItem value="9:16">Vertical 9:16</SelectItem>
+                  <SelectItem value="1:1">Quadrado 1:1</SelectItem>
+                  <SelectItem value="16:9">Horizontal 16:9</SelectItem>
+                </SelectContent>
+              </Select>
+            </div>
+            <div className="flex items-center justify-between rounded-lg border border-border/50 p-3">
+              <div>
+                <Label>Limpeza automática</Label>
+                <p className="text-xs text-muted-foreground">Remover originais após render.</p>
+              </div>
+              <Switch
+                checked={app.auto_cleanup}
+                onCheckedChange={(v) => setApp({ ...app, auto_cleanup: v })}
+              />
+            </div>
+          </div>
 
-      <section className="space-y-3">
-        <h2 className="text-sm font-medium text-muted-foreground">Tokens e APIs</h2>
-        <Card>
-          <CardHeader className="pb-2">
-            <CardTitle className="flex items-center gap-2 text-sm font-medium">
-              <KeyRound size={14} /> Access tokens
-            </CardTitle>
-          </CardHeader>
-          <CardContent className="space-y-4">
-            <div className="grid gap-1.5">
-              <Label htmlFor="ig-token">Instagram Access Token</Label>
-              <Input id="ig-token" placeholder="Configurado via OAuth (em breve)" disabled />
-            </div>
-            <div className="grid gap-1.5">
-              <Label htmlFor="tt-token">TikTok Access Token</Label>
-              <Input id="tt-token" placeholder="Configurado via OAuth (em breve)" disabled />
-            </div>
-            <p className="flex items-start gap-1.5 text-xs text-muted-foreground">
-              <Shield size={12} className="mt-0.5" />
-              Tokens serão gerenciados via OAuth oficial e armazenados de forma segura. A
-              publicação automática estará disponível quando as APIs forem conectadas.
+          <div className="flex justify-end">
+            <Button onClick={save} disabled={saving} className="bg-gold-gradient text-black">
+              <Save size={14} className="mr-1" /> {saving ? "Salvando..." : "Salvar"}
+            </Button>
+          </div>
+        </CardContent>
+      </Card>
+
+      <Card className="glass border-border/50">
+        <CardContent className="flex items-start gap-3 p-5 text-xs text-muted-foreground">
+          <HardDrive size={16} className="mt-0.5 text-gold" />
+          <div>
+            <p className="font-medium text-foreground">Sobre o ViralFactory Studio</p>
+            <p className="mt-1">
+              Ferramenta pessoal de produção em massa de vídeos verticais. Sem publicação
+              automática, sem usuários, sem cobrança. Arquitetura pronta para FFmpeg,
+              Whisper AI e APIs de processamento.
             </p>
-          </CardContent>
-        </Card>
-      </section>
-
-      <section className="space-y-3">
-        <h2 className="text-sm font-medium text-muted-foreground">Conta</h2>
-        <Card>
-          <CardContent className="p-4 text-sm">
-            <div className="text-muted-foreground text-xs">Email</div>
-            <div>{user?.email}</div>
-          </CardContent>
-        </Card>
-      </section>
+          </div>
+        </CardContent>
+      </Card>
     </div>
   );
 }

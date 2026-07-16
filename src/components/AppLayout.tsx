@@ -2,47 +2,43 @@ import { useState } from "react";
 import { NavLink, Outlet, useLocation } from "react-router-dom";
 import {
   LayoutDashboard,
-  Image as ImageIcon,
-  PlusSquare,
-  Calendar,
-  History,
-  Settings,
+  FolderKanban,
+  Film,
+  LayoutTemplate,
+  Palette,
+  Cog,
+  Rocket,
+  Sparkles,
+  CheckCircle2,
   Menu,
   X,
-  Moon,
-  Sun,
-  Search,
-  Sparkles,
-  BarChart3,
-  Wand2,
-  LogOut,
 } from "lucide-react";
-import { useTheme } from "next-themes";
-import { Button } from "@/components/ui/button";
-import { Input } from "@/components/ui/input";
-import { useAuth } from "@/contexts/AuthContext";
 import { cn } from "@/lib/utils";
 
 const nav = [
   { to: "/", label: "Dashboard", icon: LayoutDashboard, end: true },
-  { to: "/new", label: "Novo Post", icon: PlusSquare },
-  { to: "/calendar", label: "Calendário", icon: Calendar },
-  { to: "/library", label: "Biblioteca", icon: ImageIcon },
-  { to: "/history", label: "Histórico", icon: History },
-  { to: "/analytics", label: "Analytics", icon: BarChart3 },
-  { to: "/ai", label: "IA", icon: Wand2 },
-  { to: "/settings", label: "Configurações", icon: Settings },
+  { to: "/projects", label: "Projetos", icon: FolderKanban },
+  { to: "/videos", label: "Biblioteca de Vídeos", icon: Film },
+  { to: "/templates", label: "Templates", icon: LayoutTemplate },
+  { to: "/brand", label: "Minha Marca", icon: Palette },
+  { to: "/processing", label: "Processamentos", icon: Rocket },
+  { to: "/finished", label: "Vídeos Prontos", icon: CheckCircle2 },
+  { to: "/settings", label: "Configurações", icon: Cog },
 ];
 
-function SidebarContent({ onNavigate }: { onNavigate?: () => void }) {
-  const { user, signOut } = useAuth();
+function Sidebar({ onNavigate }: { onNavigate?: () => void }) {
   return (
-    <div className="flex h-full w-60 flex-col border-r bg-sidebar">
-      <div className="flex h-14 items-center gap-2 border-b px-5">
-        <div className="flex h-6 w-6 items-center justify-center rounded-md bg-primary text-primary-foreground">
-          <Sparkles size={14} strokeWidth={2} />
+    <aside className="flex h-full w-64 flex-col border-r border-sidebar-border bg-sidebar">
+      <div className="flex h-16 items-center gap-3 border-b border-sidebar-border px-5">
+        <div className="relative flex h-9 w-9 items-center justify-center rounded-lg bg-gold-gradient glow-gold">
+          <Sparkles size={18} className="text-black" strokeWidth={2.4} />
         </div>
-        <span className="text-sm font-semibold tracking-tight">ContentFlow</span>
+        <div className="leading-tight">
+          <div className="text-sm font-semibold tracking-tight">
+            ViralFactory
+          </div>
+          <div className="text-[10px] uppercase tracking-[0.18em] text-gold">Studio</div>
+        </div>
       </div>
       <nav className="flex-1 space-y-0.5 overflow-y-auto p-3">
         {nav.map((item) => {
@@ -55,92 +51,72 @@ function SidebarContent({ onNavigate }: { onNavigate?: () => void }) {
               onClick={onNavigate}
               className={({ isActive }) =>
                 cn(
-                  "flex items-center gap-2.5 rounded-md px-3 py-2 text-sm transition-colors",
+                  "group flex items-center gap-3 rounded-lg px-3 py-2.5 text-sm transition-all",
                   isActive
-                    ? "bg-sidebar-accent text-sidebar-accent-foreground font-medium"
-                    : "text-sidebar-foreground hover:bg-sidebar-accent/60"
+                    ? "bg-sidebar-accent text-gold font-medium shadow-[inset_2px_0_0_hsl(var(--gold))]"
+                    : "text-sidebar-foreground hover:bg-sidebar-accent/60 hover:text-foreground"
                 )
               }
             >
-              <Icon size={16} strokeWidth={1.8} />
+              <Icon size={17} strokeWidth={1.8} />
               {item.label}
             </NavLink>
           );
         })}
       </nav>
-      <div className="border-t p-3">
-        <div className="mb-2 rounded-md bg-sidebar-accent/50 px-3 py-2">
-          <p className="truncate text-xs font-medium text-sidebar-foreground">
-            {user?.email ?? "Workspace"}
+      <div className="border-t border-sidebar-border p-4">
+        <div className="rounded-lg glass p-3">
+          <p className="text-[11px] uppercase tracking-wider text-muted-foreground">
+            Modo pessoal
           </p>
-          <p className="mt-0.5 text-[11px] text-muted-foreground">Workspace pessoal</p>
+          <p className="mt-0.5 text-xs text-foreground/80">Fábrica privada de vídeos</p>
         </div>
-        <Button
-          variant="ghost"
-          size="sm"
-          className="w-full justify-start gap-2 h-8"
-          onClick={signOut}
-        >
-          <LogOut size={14} /> Sair
-        </Button>
       </div>
-    </div>
+    </aside>
   );
 }
 
 export default function AppLayout() {
-  const { theme, setTheme } = useTheme();
   const [mobileOpen, setMobileOpen] = useState(false);
   const location = useLocation();
-
-  const currentLabel =
+  const current =
     nav.find((n) => (n.end ? location.pathname === n.to : location.pathname.startsWith(n.to)))
-      ?.label ?? "ContentFlow";
+      ?.label ?? "ViralFactory";
 
   return (
     <div className="flex h-screen w-full overflow-hidden bg-background">
       <div className="hidden md:flex">
-        <SidebarContent />
+        <Sidebar />
       </div>
 
       {mobileOpen && (
         <div className="fixed inset-0 z-50 md:hidden">
-          <div className="absolute inset-0 bg-black/40" onClick={() => setMobileOpen(false)} />
+          <div className="absolute inset-0 bg-black/60" onClick={() => setMobileOpen(false)} />
           <div className="absolute inset-y-0 left-0">
-            <SidebarContent onNavigate={() => setMobileOpen(false)} />
+            <Sidebar onNavigate={() => setMobileOpen(false)} />
           </div>
         </div>
       )}
 
       <div className="flex flex-1 flex-col overflow-hidden">
-        <header className="flex h-14 items-center gap-3 border-b bg-background/80 px-4 backdrop-blur md:px-6">
-          <Button
-            variant="ghost"
-            size="icon"
-            className="md:hidden"
+        <header className="flex h-16 items-center gap-3 border-b border-border/60 bg-background/70 px-4 backdrop-blur-xl md:px-8">
+          <button
+            className="rounded-md p-2 text-muted-foreground hover:bg-muted md:hidden"
             onClick={() => setMobileOpen(!mobileOpen)}
           >
             {mobileOpen ? <X size={18} /> : <Menu size={18} />}
-          </Button>
-          <h1 className="text-sm font-medium">{currentLabel}</h1>
-          <div className="ml-auto flex items-center gap-2">
-            <div className="relative hidden sm:block">
-              <Search
-                size={14}
-                className="pointer-events-none absolute left-2.5 top-1/2 -translate-y-1/2 text-muted-foreground"
-              />
-              <Input placeholder="Buscar..." className="h-8 w-56 pl-8 text-sm" />
+          </button>
+          <div>
+            <div className="text-[11px] uppercase tracking-[0.2em] text-muted-foreground">
+              ViralFactory Studio
             </div>
-            <Button
-              variant="ghost"
-              size="icon"
-              className="h-8 w-8"
-              onClick={() => setTheme(theme === "dark" ? "light" : "dark")}
-              aria-label="Alternar tema"
-            >
-              <Sun size={16} className="hidden dark:block" />
-              <Moon size={16} className="dark:hidden" />
-            </Button>
+            <h1 className="text-sm font-medium">{current}</h1>
+          </div>
+          <div className="ml-auto flex items-center gap-2">
+            <div className="hidden items-center gap-2 rounded-full border border-border/60 bg-card/60 px-3 py-1.5 text-xs text-muted-foreground sm:flex">
+              <span className="h-1.5 w-1.5 rounded-full bg-gold animate-pulse" />
+              Studio online
+            </div>
           </div>
         </header>
 
@@ -148,7 +124,7 @@ export default function AppLayout() {
           key={location.pathname}
           className="flex-1 overflow-auto animate-in fade-in duration-200"
         >
-          <div className="mx-auto max-w-6xl px-4 py-6 md:px-8 md:py-8">
+          <div className="mx-auto max-w-7xl px-4 py-8 md:px-8 md:py-10">
             <Outlet />
           </div>
         </main>

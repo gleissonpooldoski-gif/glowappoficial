@@ -14,238 +14,264 @@ export type Database = {
   }
   public: {
     Tables: {
-      media: {
+      app_settings: {
         Row: {
+          auto_cleanup: boolean
           created_at: string
+          default_format: string | null
+          default_quality: string | null
           id: string
-          mime_type: string | null
-          name: string
-          size_bytes: number | null
-          storage_path: string
-          tags: string[] | null
-          type: Database["public"]["Enums"]["media_type"]
+          storage_location: string | null
           updated_at: string
-          user_id: string
         }
         Insert: {
+          auto_cleanup?: boolean
           created_at?: string
+          default_format?: string | null
+          default_quality?: string | null
           id?: string
-          mime_type?: string | null
-          name: string
-          size_bytes?: number | null
-          storage_path: string
-          tags?: string[] | null
-          type: Database["public"]["Enums"]["media_type"]
+          storage_location?: string | null
           updated_at?: string
-          user_id: string
         }
         Update: {
+          auto_cleanup?: boolean
           created_at?: string
+          default_format?: string | null
+          default_quality?: string | null
           id?: string
-          mime_type?: string | null
-          name?: string
-          size_bytes?: number | null
-          storage_path?: string
-          tags?: string[] | null
-          type?: Database["public"]["Enums"]["media_type"]
+          storage_location?: string | null
           updated_at?: string
-          user_id?: string
         }
         Relationships: []
       }
-      posts: {
+      brand_settings: {
         Row: {
-          caption: string | null
           created_at: string
-          hashtags: string | null
+          font: string | null
           id: string
-          media_ids: string[] | null
-          networks: Database["public"]["Enums"]["social_network"][] | null
-          status: Database["public"]["Enums"]["post_status"]
+          logo_url: string | null
+          page_name: string | null
+          primary_color: string | null
+          secondary_color: string | null
           updated_at: string
-          user_id: string
+          watermark_enabled: boolean
+          watermark_position: Database["public"]["Enums"]["watermark_position"]
         }
         Insert: {
-          caption?: string | null
           created_at?: string
-          hashtags?: string | null
+          font?: string | null
           id?: string
-          media_ids?: string[] | null
-          networks?: Database["public"]["Enums"]["social_network"][] | null
-          status?: Database["public"]["Enums"]["post_status"]
+          logo_url?: string | null
+          page_name?: string | null
+          primary_color?: string | null
+          secondary_color?: string | null
           updated_at?: string
-          user_id: string
+          watermark_enabled?: boolean
+          watermark_position?: Database["public"]["Enums"]["watermark_position"]
         }
         Update: {
-          caption?: string | null
           created_at?: string
-          hashtags?: string | null
+          font?: string | null
           id?: string
-          media_ids?: string[] | null
-          networks?: Database["public"]["Enums"]["social_network"][] | null
-          status?: Database["public"]["Enums"]["post_status"]
+          logo_url?: string | null
+          page_name?: string | null
+          primary_color?: string | null
+          secondary_color?: string | null
           updated_at?: string
-          user_id?: string
+          watermark_enabled?: boolean
+          watermark_position?: Database["public"]["Enums"]["watermark_position"]
         }
         Relationships: []
       }
-      publication_logs: {
+      processing_queue: {
         Row: {
-          caption: string | null
+          brand_id: string | null
+          created_at: string
           error: string | null
           id: string
-          network: Database["public"]["Enums"]["social_network"]
-          post_id: string | null
-          published_at: string
-          result: Json | null
-          scheduled_post_id: string | null
-          status: Database["public"]["Enums"]["post_status"]
-          user_id: string
+          options: Json
+          progress: number
+          project_id: string | null
+          status: Database["public"]["Enums"]["queue_status"]
+          template_id: string | null
+          updated_at: string
+          video_id: string | null
         }
         Insert: {
-          caption?: string | null
+          brand_id?: string | null
+          created_at?: string
           error?: string | null
           id?: string
-          network: Database["public"]["Enums"]["social_network"]
-          post_id?: string | null
-          published_at?: string
-          result?: Json | null
-          scheduled_post_id?: string | null
-          status: Database["public"]["Enums"]["post_status"]
-          user_id: string
+          options?: Json
+          progress?: number
+          project_id?: string | null
+          status?: Database["public"]["Enums"]["queue_status"]
+          template_id?: string | null
+          updated_at?: string
+          video_id?: string | null
         }
         Update: {
-          caption?: string | null
+          brand_id?: string | null
+          created_at?: string
           error?: string | null
           id?: string
-          network?: Database["public"]["Enums"]["social_network"]
-          post_id?: string | null
-          published_at?: string
-          result?: Json | null
-          scheduled_post_id?: string | null
-          status?: Database["public"]["Enums"]["post_status"]
-          user_id?: string
+          options?: Json
+          progress?: number
+          project_id?: string | null
+          status?: Database["public"]["Enums"]["queue_status"]
+          template_id?: string | null
+          updated_at?: string
+          video_id?: string | null
         }
         Relationships: [
           {
-            foreignKeyName: "publication_logs_post_id_fkey"
-            columns: ["post_id"]
+            foreignKeyName: "processing_queue_brand_id_fkey"
+            columns: ["brand_id"]
             isOneToOne: false
-            referencedRelation: "posts"
+            referencedRelation: "brand_settings"
             referencedColumns: ["id"]
           },
           {
-            foreignKeyName: "publication_logs_scheduled_post_id_fkey"
-            columns: ["scheduled_post_id"]
+            foreignKeyName: "processing_queue_project_id_fkey"
+            columns: ["project_id"]
             isOneToOne: false
-            referencedRelation: "scheduled_posts"
+            referencedRelation: "projects"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "processing_queue_template_id_fkey"
+            columns: ["template_id"]
+            isOneToOne: false
+            referencedRelation: "templates"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "processing_queue_video_id_fkey"
+            columns: ["video_id"]
+            isOneToOne: false
+            referencedRelation: "videos"
             referencedColumns: ["id"]
           },
         ]
       }
-      scheduled_posts: {
+      projects: {
+        Row: {
+          category: Database["public"]["Enums"]["project_category"]
+          created_at: string
+          description: string | null
+          id: string
+          name: string
+          updated_at: string
+        }
+        Insert: {
+          category?: Database["public"]["Enums"]["project_category"]
+          created_at?: string
+          description?: string | null
+          id?: string
+          name: string
+          updated_at?: string
+        }
+        Update: {
+          category?: Database["public"]["Enums"]["project_category"]
+          created_at?: string
+          description?: string | null
+          id?: string
+          name?: string
+          updated_at?: string
+        }
+        Relationships: []
+      }
+      templates: {
         Row: {
           created_at: string
+          description: string | null
           id: string
-          networks: Database["public"]["Enums"]["social_network"][]
-          post_id: string
-          scheduled_at: string
-          status: Database["public"]["Enums"]["post_status"]
+          is_builtin: boolean
+          name: string
+          preview_url: string | null
+          settings: Json
           updated_at: string
-          user_id: string
         }
         Insert: {
           created_at?: string
+          description?: string | null
           id?: string
-          networks?: Database["public"]["Enums"]["social_network"][]
-          post_id: string
-          scheduled_at: string
-          status?: Database["public"]["Enums"]["post_status"]
+          is_builtin?: boolean
+          name: string
+          preview_url?: string | null
+          settings?: Json
           updated_at?: string
-          user_id: string
         }
         Update: {
           created_at?: string
+          description?: string | null
           id?: string
-          networks?: Database["public"]["Enums"]["social_network"][]
-          post_id?: string
-          scheduled_at?: string
-          status?: Database["public"]["Enums"]["post_status"]
+          is_builtin?: boolean
+          name?: string
+          preview_url?: string | null
+          settings?: Json
           updated_at?: string
-          user_id?: string
+        }
+        Relationships: []
+      }
+      videos: {
+        Row: {
+          created_at: string
+          duration_seconds: number | null
+          filename: string
+          id: string
+          mime_type: string | null
+          original_path: string | null
+          original_url: string | null
+          processed_path: string | null
+          processed_url: string | null
+          project_id: string | null
+          size_bytes: number | null
+          status: Database["public"]["Enums"]["video_status"]
+          template_id: string | null
+          updated_at: string
+        }
+        Insert: {
+          created_at?: string
+          duration_seconds?: number | null
+          filename: string
+          id?: string
+          mime_type?: string | null
+          original_path?: string | null
+          original_url?: string | null
+          processed_path?: string | null
+          processed_url?: string | null
+          project_id?: string | null
+          size_bytes?: number | null
+          status?: Database["public"]["Enums"]["video_status"]
+          template_id?: string | null
+          updated_at?: string
+        }
+        Update: {
+          created_at?: string
+          duration_seconds?: number | null
+          filename?: string
+          id?: string
+          mime_type?: string | null
+          original_path?: string | null
+          original_url?: string | null
+          processed_path?: string | null
+          processed_url?: string | null
+          project_id?: string | null
+          size_bytes?: number | null
+          status?: Database["public"]["Enums"]["video_status"]
+          template_id?: string | null
+          updated_at?: string
         }
         Relationships: [
           {
-            foreignKeyName: "scheduled_posts_post_id_fkey"
-            columns: ["post_id"]
+            foreignKeyName: "videos_project_id_fkey"
+            columns: ["project_id"]
             isOneToOne: false
-            referencedRelation: "posts"
+            referencedRelation: "projects"
             referencedColumns: ["id"]
           },
         ]
-      }
-      settings: {
-        Row: {
-          created_at: string
-          preferences: Json | null
-          theme: string | null
-          timezone: string | null
-          updated_at: string
-          user_id: string
-        }
-        Insert: {
-          created_at?: string
-          preferences?: Json | null
-          theme?: string | null
-          timezone?: string | null
-          updated_at?: string
-          user_id: string
-        }
-        Update: {
-          created_at?: string
-          preferences?: Json | null
-          theme?: string | null
-          timezone?: string | null
-          updated_at?: string
-          user_id?: string
-        }
-        Relationships: []
-      }
-      social_accounts: {
-        Row: {
-          account_name: string | null
-          connected_at: string | null
-          created_at: string
-          id: string
-          metadata: Json | null
-          network: Database["public"]["Enums"]["social_network"]
-          status: Database["public"]["Enums"]["account_status"]
-          updated_at: string
-          user_id: string
-        }
-        Insert: {
-          account_name?: string | null
-          connected_at?: string | null
-          created_at?: string
-          id?: string
-          metadata?: Json | null
-          network: Database["public"]["Enums"]["social_network"]
-          status?: Database["public"]["Enums"]["account_status"]
-          updated_at?: string
-          user_id: string
-        }
-        Update: {
-          account_name?: string | null
-          connected_at?: string | null
-          created_at?: string
-          id?: string
-          metadata?: Json | null
-          network?: Database["public"]["Enums"]["social_network"]
-          status?: Database["public"]["Enums"]["account_status"]
-          updated_at?: string
-          user_id?: string
-        }
-        Relationships: []
       }
     }
     Views: {
@@ -255,10 +281,23 @@ export type Database = {
       [_ in never]: never
     }
     Enums: {
-      account_status: "connected" | "disconnected" | "error"
-      media_type: "image" | "video"
-      post_status: "draft" | "scheduled" | "published" | "failed"
-      social_network: "instagram" | "tiktok"
+      project_category:
+        | "motivacao"
+        | "dinheiro"
+        | "curiosidades"
+        | "luxo"
+        | "saude"
+        | "futebol"
+        | "noticias"
+        | "celebridades"
+        | "outro"
+      queue_status: "pending" | "processing" | "done" | "error"
+      video_status: "uploaded" | "queued" | "processing" | "finished" | "error"
+      watermark_position:
+        | "top-left"
+        | "top-right"
+        | "bottom-left"
+        | "bottom-right"
     }
     CompositeTypes: {
       [_ in never]: never
@@ -386,10 +425,25 @@ export type CompositeTypes<
 export const Constants = {
   public: {
     Enums: {
-      account_status: ["connected", "disconnected", "error"],
-      media_type: ["image", "video"],
-      post_status: ["draft", "scheduled", "published", "failed"],
-      social_network: ["instagram", "tiktok"],
+      project_category: [
+        "motivacao",
+        "dinheiro",
+        "curiosidades",
+        "luxo",
+        "saude",
+        "futebol",
+        "noticias",
+        "celebridades",
+        "outro",
+      ],
+      queue_status: ["pending", "processing", "done", "error"],
+      video_status: ["uploaded", "queued", "processing", "finished", "error"],
+      watermark_position: [
+        "top-left",
+        "top-right",
+        "bottom-left",
+        "bottom-right",
+      ],
     },
   },
 } as const
