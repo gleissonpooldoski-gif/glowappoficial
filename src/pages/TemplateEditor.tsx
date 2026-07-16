@@ -196,6 +196,36 @@ export default function TemplateEditor() {
     }
   };
 
+  const regenerateWithAi = async () => {
+    if (!aiStyle.trim()) return toast.error("Descreva o estilo desejado");
+    setRegenerating(true);
+    try {
+      const { data, error } = await supabase.functions.invoke("generate-template", {
+        body: {
+          niche: name,
+          stylePrompt: aiStyle.trim(),
+          currentTemplate: doc,
+        },
+      });
+      if (error) throw error;
+      if (data?.error) throw new Error(data.error);
+      if (data.canvas && data.elements) {
+        setDoc({ canvas: data.canvas, elements: data.elements });
+        if (data.name) setName(data.name);
+        if (data.description) setDescription(data.description);
+        toast.success("Novo estilo gerado!");
+        setAiOpen(false);
+        setAiStyle("");
+      } else {
+        throw new Error("Resposta inválida da IA");
+      }
+    } catch (e: any) {
+      toast.error(e.message || "Falha ao regenerar");
+    } finally {
+      setRegenerating(false);
+    }
+  };
+
   const sortedLayers = [...doc.elements].sort((a, b) => b.zIndex - a.zIndex);
 
   useEffect(() => {
