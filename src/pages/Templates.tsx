@@ -127,7 +127,8 @@ export default function Templates() {
         file_type: file.type,
         is_builtin: false,
         settings: {},
-      });
+        project_id: activeProject?.id ?? null,
+      } as any);
       if (insErr) throw insErr;
 
       setUploading({ name: file.name, progress: 100 });
