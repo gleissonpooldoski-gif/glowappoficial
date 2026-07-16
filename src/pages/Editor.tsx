@@ -453,6 +453,8 @@ export default function Editor() {
       text: "Novo texto",
       x: 50, y: 50, size: 42, color: doc.colors.secondary,
       font: "Montserrat", weight: 700, animation: "none",
+      transform: "none", letterSpacing: 0, lineHeight: 1.2, align: "center",
+      shadow: true, strokeWidth: 0, strokeColor: "#000000", bgColor: null,
     };
     setDoc((d) => ({ ...d, texts: [...d.texts, t] }));
     setSelectedTextId(t.id);
