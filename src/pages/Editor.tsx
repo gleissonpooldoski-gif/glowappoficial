@@ -198,7 +198,7 @@ export default function Editor() {
   }
 
   const r = RATIOS[ratio] ?? RATIOS["9:16"];
-  const videoSrc = video?.processed_url || video?.original_url || null;
+  const videoSrc = videoUrl;
 
   return (
     <div className="flex h-[calc(100vh-6rem)] flex-col gap-3">
