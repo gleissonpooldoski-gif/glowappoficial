@@ -183,8 +183,11 @@ export type Database = {
       }
       templates: {
         Row: {
+          category: string | null
           created_at: string
           description: string | null
+          file_path: string | null
+          file_type: string | null
           id: string
           is_builtin: boolean
           name: string
@@ -193,8 +196,11 @@ export type Database = {
           updated_at: string
         }
         Insert: {
+          category?: string | null
           created_at?: string
           description?: string | null
+          file_path?: string | null
+          file_type?: string | null
           id?: string
           is_builtin?: boolean
           name: string
@@ -203,8 +209,11 @@ export type Database = {
           updated_at?: string
         }
         Update: {
+          category?: string | null
           created_at?: string
           description?: string | null
+          file_path?: string | null
+          file_type?: string | null
           id?: string
           is_builtin?: boolean
           name?: string

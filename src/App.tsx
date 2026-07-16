@@ -9,7 +9,6 @@ import Projects from "./pages/Projects";
 import ProjectDetail from "./pages/ProjectDetail";
 import VideoLibrary from "./pages/VideoLibrary";
 import Templates from "./pages/Templates";
-import TemplateEditor from "./pages/TemplateEditor";
 import Brand from "./pages/Brand";
 import Processing from "./pages/Processing";
 import Finished from "./pages/Finished";
@@ -31,7 +30,7 @@ const App = () => (
             <Route path="/projects/:id" element={<ProjectDetail />} />
             <Route path="/videos" element={<VideoLibrary />} />
             <Route path="/templates" element={<Templates />} />
-            <Route path="/templates/editor/:id" element={<TemplateEditor />} />
+            
             <Route path="/brand" element={<Brand />} />
             <Route path="/processing" element={<Processing />} />
             <Route path="/finished" element={<Finished />} />
