@@ -9,7 +9,7 @@ const POLL_INTERVAL_MS = 5000;
 
 type Account = "resenha" | "frame";
 
-function tokensFor(account: Account) {
+function envTokensFor(account: Account) {
   if (account === "resenha") {
     return {
       token: Deno.env.get("META_RESENHA_ACCESS_TOKEN") ?? "",
@@ -19,6 +19,19 @@ function tokensFor(account: Account) {
   return {
     token: Deno.env.get("META_FRAME_ACCESS_TOKEN") ?? "",
     igId: Deno.env.get("META_FRAME_INSTAGRAM_ID") ?? "",
+  };
+}
+
+async function tokensFor(supabase: any, account: Account) {
+  const { data } = await supabase
+    .from("instagram_credentials")
+    .select("access_token, ig_business_id")
+    .eq("account", account)
+    .maybeSingle();
+  const env = envTokensFor(account);
+  return {
+    token: data?.access_token || env.token,
+    igId: data?.ig_business_id || env.igId,
   };
 }
 
