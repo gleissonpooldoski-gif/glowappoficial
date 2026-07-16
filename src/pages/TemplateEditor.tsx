@@ -3,8 +3,11 @@ import { useNavigate, useParams } from "react-router-dom";
 import {
   Type, Image as ImageIcon, Sparkles, Video, Square, Captions,
   Save, ArrowLeft, Copy, Trash2, Eye, EyeOff, Lock, Unlock,
-  ChevronUp, ChevronDown, ChevronsUp, ChevronsDown, RotateCcw, Layers,
+  ChevronUp, ChevronDown, ChevronsUp, ChevronsDown, RotateCcw, Layers, Wand2, Loader2,
 } from "lucide-react";
+import {
+  Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle,
+} from "@/components/ui/dialog";
 import { supabase } from "@/integrations/supabase/client";
 import { toast } from "sonner";
 import { Button } from "@/components/ui/button";
@@ -43,6 +46,9 @@ export default function TemplateEditor() {
   const [doc, setDoc] = useState<TemplateDoc>(emptyDoc());
   const [selectedId, setSelectedId] = useState<string | null>(null);
   const [saving, setSaving] = useState(false);
+  const [aiOpen, setAiOpen] = useState(false);
+  const [aiStyle, setAiStyle] = useState("");
+  const [regenerating, setRegenerating] = useState(false);
   const fileInputRef = useRef<HTMLInputElement>(null);
   const uploadTypeRef = useRef<"image" | "logo">("image");
 
@@ -190,6 +196,36 @@ export default function TemplateEditor() {
     }
   };
 
+  const regenerateWithAi = async () => {
+    if (!aiStyle.trim()) return toast.error("Descreva o estilo desejado");
+    setRegenerating(true);
+    try {
+      const { data, error } = await supabase.functions.invoke("generate-template", {
+        body: {
+          niche: name,
+          stylePrompt: aiStyle.trim(),
+          currentTemplate: doc,
+        },
+      });
+      if (error) throw error;
+      if (data?.error) throw new Error(data.error);
+      if (data.canvas && data.elements) {
+        setDoc({ canvas: data.canvas, elements: data.elements });
+        if (data.name) setName(data.name);
+        if (data.description) setDescription(data.description);
+        toast.success("Novo estilo gerado!");
+        setAiOpen(false);
+        setAiStyle("");
+      } else {
+        throw new Error("Resposta inválida da IA");
+      }
+    } catch (e: any) {
+      toast.error(e.message || "Falha ao regenerar");
+    } finally {
+      setRegenerating(false);
+    }
+  };
+
   const sortedLayers = [...doc.elements].sort((a, b) => b.zIndex - a.zIndex);
 
   useEffect(() => {
@@ -220,6 +256,14 @@ export default function TemplateEditor() {
         />
         <Badge variant="outline" className="border-gold/30 text-[10px] text-gold">1080×1920</Badge>
         <div className="ml-auto flex items-center gap-2">
+          <Button
+            onClick={() => setAiOpen(true)}
+            size="sm"
+            variant="outline"
+            className="border-gold/40 text-gold hover:bg-gold/10"
+          >
+            <Wand2 size={14} className="mr-1" /> Gerar novo estilo com IA
+          </Button>
           <Button
             onClick={save}
             disabled={saving}
@@ -524,6 +568,59 @@ export default function TemplateEditor() {
           </div>
         </aside>
       </div>
+
+      <Dialog open={aiOpen} onOpenChange={(o) => !regenerating && setAiOpen(o)}>
+        <DialogContent className="glass border-gold/30 sm:max-w-lg">
+          <DialogHeader>
+            <DialogTitle className="flex items-center gap-2">
+              <Wand2 size={18} className="text-gold" /> Gerar novo estilo com IA
+            </DialogTitle>
+            <DialogDescription>
+              Descreva o estilo desejado. A IA mantém os elementos editáveis, mas ajusta cores, fontes, textos e composição.
+            </DialogDescription>
+          </DialogHeader>
+          <div className="space-y-3 py-2">
+            <div className="space-y-1.5">
+              <Label className="text-xs">Instrução de estilo</Label>
+              <Input
+                autoFocus
+                placeholder='Ex: "Deixe mais premium", "estilo Netflix", "TikTok viral"'
+                value={aiStyle}
+                onChange={(e) => setAiStyle(e.target.value)}
+                onKeyDown={(e) => e.key === "Enter" && !regenerating && regenerateWithAi()}
+              />
+              <div className="flex flex-wrap gap-1 pt-1">
+                {["Deixe mais premium", "Estilo Netflix", "TikTok viral", "Trailer de cinema", "Minimalista elegante"].map((s) => (
+                  <button
+                    key={s}
+                    type="button"
+                    onClick={() => setAiStyle(s)}
+                    className="rounded-full border border-border/60 px-2 py-0.5 text-[10px] text-muted-foreground hover:border-gold/40 hover:text-gold"
+                  >
+                    {s}
+                  </button>
+                ))}
+              </div>
+            </div>
+          </div>
+          <DialogFooter>
+            <Button variant="ghost" onClick={() => setAiOpen(false)} disabled={regenerating}>
+              Cancelar
+            </Button>
+            <Button
+              onClick={regenerateWithAi}
+              disabled={regenerating || !aiStyle.trim()}
+              className="bg-gold-gradient text-black glow-gold"
+            >
+              {regenerating ? (
+                <><Loader2 size={14} className="mr-1 animate-spin" /> Gerando...</>
+              ) : (
+                <><Sparkles size={14} className="mr-1" /> Regenerar</>
+              )}
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
     </div>
   );
 }
