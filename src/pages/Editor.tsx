@@ -762,7 +762,52 @@ export default function Editor() {
                 </Button>
               </TabsContent>
 
-              <TabsContent value="assets" className="mt-3 space-y-3">
+              <TabsContent value="template" className="mt-3 space-y-3">
+                {templateSrc ? (
+                  <>
+                    <div className="space-y-1.5">
+                      <Label className="text-xs">Opacidade: {Math.round(doc.template.opacity * 100)}%</Label>
+                      <Slider min={0} max={1} step={0.01} value={[doc.template.opacity]}
+                        onValueChange={([v]) => setDoc((d) => ({ ...d, template: { ...d.template, opacity: v } }))} />
+                    </div>
+                    <div className="space-y-1.5">
+                      <Label className="text-xs">Modo de mesclagem</Label>
+                      <Select value={doc.template.blend}
+                        onValueChange={(v: BlendMode) => setDoc((d) => ({ ...d, template: { ...d.template, blend: v } }))}>
+                        <SelectTrigger><SelectValue /></SelectTrigger>
+                        <SelectContent>
+                          {BLEND_MODES.map((m) => (
+                            <SelectItem key={m.value} value={m.value}>{m.label}</SelectItem>
+                          ))}
+                        </SelectContent>
+                      </Select>
+                      <p className="text-[11px] text-muted-foreground">
+                        Use "Screen" ou "Multiply" se o template tiver fundo preto ou branco em vez de alpha.
+                      </p>
+                    </div>
+                    <div className="space-y-1.5">
+                      <Label className="text-xs">Ajuste ao canvas</Label>
+                      <Select value={doc.template.fit}
+                        onValueChange={(v: "contain" | "cover") => setDoc((d) => ({ ...d, template: { ...d.template, fit: v } }))}>
+                        <SelectTrigger><SelectValue /></SelectTrigger>
+                        <SelectContent>
+                          <SelectItem value="contain">Contain (mantém proporção)</SelectItem>
+                          <SelectItem value="cover">Cover (preenche cortando)</SelectItem>
+                        </SelectContent>
+                      </Select>
+                    </div>
+                    <Button variant="outline" size="sm" className="w-full"
+                      onClick={() => setDoc((d) => ({ ...d, template: { opacity: 1, blend: "normal", fit: "contain" } }))}>
+                      Resetar overlay
+                    </Button>
+                  </>
+                ) : (
+                  <p className="py-8 text-center text-xs text-muted-foreground">
+                    Nenhum template aplicado.
+                  </p>
+                )}
+              </TabsContent>
+
                 <div className="space-y-1.5">
                   <Label className="text-xs">URL do logo</Label>
                   <Input value={doc.logo_url ?? ""} placeholder="https://..."
