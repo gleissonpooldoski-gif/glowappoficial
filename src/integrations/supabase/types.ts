@@ -94,8 +94,11 @@ export type Database = {
           queue_id: string | null
           status: Database["public"]["Enums"]["edit_status"]
           template_id: string | null
+          template_url: string | null
           updated_at: string
+          user_id: string
           video_id: string | null
+          video_url: string | null
         }
         Insert: {
           aspect_ratio?: string
@@ -107,8 +110,11 @@ export type Database = {
           queue_id?: string | null
           status?: Database["public"]["Enums"]["edit_status"]
           template_id?: string | null
+          template_url?: string | null
           updated_at?: string
+          user_id?: string
           video_id?: string | null
+          video_url?: string | null
         }
         Update: {
           aspect_ratio?: string
@@ -120,8 +126,11 @@ export type Database = {
           queue_id?: string | null
           status?: Database["public"]["Enums"]["edit_status"]
           template_id?: string | null
+          template_url?: string | null
           updated_at?: string
+          user_id?: string
           video_id?: string | null
+          video_url?: string | null
         }
         Relationships: [
           {

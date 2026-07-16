@@ -61,6 +61,8 @@ import {
   validateFile,
 } from "@/lib/uploadQueue";
 
+const TEMPLATE_BUCKET = "media";
+
 type Video = {
   id: string;
   project_id: string | null;
@@ -86,7 +88,13 @@ export default function VideoLibrary() {
   const [videos, setVideos] = useState<Video[] | null>(null);
   const [thumbs, setThumbs] = useState<Record<string, string>>({});
   const [projects, setProjects] = useState<{ id: string; name: string }[]>([]);
-  const [templates, setTemplates] = useState<{ id: string; name: string; preview_url: string | null }[]>([]);
+  const [templates, setTemplates] = useState<{
+    id: string;
+    name: string;
+    preview_url: string | null;
+    file_path: string | null;
+    file_type: string | null;
+  }[]>([]);
   const [selectedProject, setSelectedProject] = useState<string>("none");
   const [filterProject, setFilterProject] = useState<string>("all");
   const [queue, setQueue] = useState<QueueItem[]>([]);
@@ -117,7 +125,7 @@ export default function VideoLibrary() {
     const [v, p, t] = await Promise.all([
       supabase.from("videos").select("*").order("created_at", { ascending: false }),
       supabase.from("projects").select("id, name").order("created_at", { ascending: false }),
-      supabase.from("templates").select("id, name, preview_url").order("created_at", { ascending: false }),
+      supabase.from("templates").select("id, name, preview_url, file_path, file_type").order("created_at", { ascending: false }),
     ]);
     const list = (v.data ?? []) as Video[];
     setVideos(list);
@@ -383,11 +391,58 @@ export default function VideoLibrary() {
     try {
       const ids = Array.from(selected);
       const byId = new Map((videos ?? []).map((v) => [v.id, v] as const));
-      const rows = ids.map((vid) => {
+      const chosen = templates.find((t) => t.id === chosenTemplate);
+      if (!chosen) throw new Error("Template selecionado não foi encontrado.");
+
+      let templateUrl = chosen.preview_url;
+      if (chosen.file_path) {
+        const { data, error } = await supabase.storage
+          .from(TEMPLATE_BUCKET)
+          .createSignedUrl(chosen.file_path, 60 * 60 * 6);
+        if (error || !data?.signedUrl) {
+          console.error("[VideoLibrary] template signed URL error", {
+            template_id: chosen.id,
+            file_path: chosen.file_path,
+            error,
+          });
+          throw new Error(error?.message ?? "Não foi possível gerar URL do template.");
+        }
+        templateUrl = data.signedUrl;
+      }
+      if (!templateUrl) throw new Error("Template selecionado não tem arquivo/URL de preview.");
+
+      const rows = await Promise.all(ids.map(async (vid) => {
         const v = byId.get(vid);
+        if (!v) throw new Error("Vídeo selecionado não foi encontrado.");
+        if (!v.original_path) throw new Error(`${v.filename} não tem arquivo original armazenado.`);
+
+        const { data, error } = await supabase.storage
+          .from(BUCKET)
+          .createSignedUrl(v.original_path, 60 * 60 * 6);
+        if (error || !data?.signedUrl) {
+          console.error("[VideoLibrary] video signed URL error", {
+            video_id: vid,
+            original_path: v.original_path,
+            error,
+          });
+          throw new Error(error?.message ?? `Não foi possível gerar URL do vídeo ${v.filename}.`);
+        }
+
+        console.log("[VideoLibrary] creating edit project", {
+          video_id: vid,
+          video_url: data.signedUrl,
+          template_id: chosenTemplate,
+          template_url: templateUrl,
+          user_id: "single-user",
+          status: "draft",
+        });
+
         return {
           video_id: vid,
+          video_url: data.signedUrl,
           template_id: chosenTemplate,
+          template_url: templateUrl,
+          user_id: "single-user",
           project_id: v?.project_id ?? null,
           name: v?.filename ?? "Rascunho",
           aspect_ratio: "9:16",
@@ -398,12 +453,13 @@ export default function VideoLibrary() {
             colors: { primary: "#D4AF37", secondary: "#FFFFFF" },
           },
         };
-      });
+      }));
       const { data: created, error } = await (supabase as any)
         .from("edits")
         .insert(rows)
-        .select("id");
+        .select("id, video_id, video_url, template_id, template_url, user_id, status");
       if (error) throw error;
+      console.log("[VideoLibrary] edit project created", created);
       const firstId = created?.[0]?.id;
       toast.success(`${rows.length} rascunho(s) criado(s). Abrindo editor...`);
       setApplyOpen(false);

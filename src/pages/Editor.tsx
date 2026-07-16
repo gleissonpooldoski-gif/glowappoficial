@@ -37,6 +37,12 @@ type EditDoc = {
   logo_url?: string | null;
 };
 
+type LoadError = {
+  title: string;
+  reason: string;
+  url?: string | null;
+};
+
 const RATIOS: Record<string, { w: number; h: number; label: string }> = {
   "9:16": { w: 9, h: 16, label: "9:16 TikTok/Reels" },
   "16:9": { w: 16, h: 9, label: "16:9 YouTube" },
@@ -50,6 +56,77 @@ const defaultDoc: EditDoc = {
   texts: [],
   colors: { primary: "#D4AF37", secondary: "#FFFFFF" },
 };
+
+const safeDoc = (value: unknown): EditDoc => {
+  const raw = (value ?? {}) as Partial<EditDoc>;
+  return {
+    ...defaultDoc,
+    ...raw,
+    video: { ...defaultDoc.video, ...(raw.video ?? {}) },
+    colors: { ...defaultDoc.colors, ...(raw.colors ?? {}) },
+    texts: Array.isArray(raw.texts) ? raw.texts : [],
+  };
+};
+
+const mediaErrorReason = (video: HTMLVideoElement) => {
+  const code = video.error?.code;
+  if (code === MediaError.MEDIA_ERR_ABORTED) return "Carregamento do vídeo foi interrompido pelo navegador.";
+  if (code === MediaError.MEDIA_ERR_NETWORK) return "Falha de rede ao baixar o vídeo.";
+  if (code === MediaError.MEDIA_ERR_DECODE) return "O navegador não conseguiu decodificar o arquivo de vídeo.";
+  if (code === MediaError.MEDIA_ERR_SRC_NOT_SUPPORTED) return "Formato, codec ou URL do vídeo não suportado pelo player.";
+  return video.error?.message || "Falha desconhecida no player de vídeo.";
+};
+
+const preloadVideo = (url: string) => new Promise<void>((resolve, reject) => {
+  const el = document.createElement("video");
+  const timeout = window.setTimeout(() => {
+    cleanup();
+    reject(new Error("Tempo limite excedido ao carregar o vídeo."));
+  }, 15000);
+  const cleanup = () => {
+    window.clearTimeout(timeout);
+    el.onloadeddata = null;
+    el.onerror = null;
+    el.removeAttribute("src");
+    el.load();
+  };
+  el.preload = "auto";
+  el.muted = true;
+  el.playsInline = true;
+  el.onloadeddata = () => {
+    cleanup();
+    resolve();
+  };
+  el.onerror = () => {
+    const reason = mediaErrorReason(el);
+    cleanup();
+    reject(new Error(reason));
+  };
+  el.src = url;
+  el.load();
+});
+
+const preloadImage = (url: string) => new Promise<void>((resolve, reject) => {
+  const img = new Image();
+  const timeout = window.setTimeout(() => {
+    cleanup();
+    reject(new Error("Tempo limite excedido ao carregar o template."));
+  }, 15000);
+  const cleanup = () => {
+    window.clearTimeout(timeout);
+    img.onload = null;
+    img.onerror = null;
+  };
+  img.onload = () => {
+    cleanup();
+    resolve();
+  };
+  img.onerror = () => {
+    cleanup();
+    reject(new Error("Arquivo de template inacessível ou inválido."));
+  };
+  img.src = url;
+});
 
 export default function Editor() {
   const { id } = useParams<{ id: string }>();
@@ -67,7 +144,8 @@ export default function Editor() {
   const dragRef = useRef<{ id: string; sx: number; sy: number; px: number; py: number } | null>(null);
 
   const [videoUrl, setVideoUrl] = useState<string | null>(null);
-  const [loadError, setLoadError] = useState<string | null>(null);
+  const [templateUrl, setTemplateUrl] = useState<string | null>(null);
+  const [loadError, setLoadError] = useState<LoadError | null>(null);
   const [videoReady, setVideoReady] = useState(false);
 
   useEffect(() => {
@@ -82,10 +160,31 @@ export default function Editor() {
         navigate("/edits");
         return;
       }
-      console.log("[Editor] edit ->", { video_id: data.video_id, template_id: data.template_id, status: data.status });
+      console.log("[Editor] edit ->", {
+        video_id: data.video_id,
+        video_url: data.video_url,
+        template_id: data.template_id,
+        template_url: data.template_url,
+        user_id: data.user_id,
+        status: data.status,
+      });
 
       if (!data.video_id) {
-        setLoadError("Este projeto não tem vídeo associado. Volte à biblioteca e recrie a edição.");
+        setLoadError({
+          title: "Erro ao carregar vídeo",
+          reason: "Este projeto não tem vídeo associado. Volte à biblioteca e recrie a edição.",
+          url: data.video_url,
+        });
+        setEdit(data);
+        setLoading(false);
+        return;
+      }
+      if (!data.template_id) {
+        setLoadError({
+          title: "Erro ao carregar vídeo",
+          reason: "Este projeto não tem template associado. Volte à biblioteca e selecione um template.",
+          url: data.template_url,
+        });
         setEdit(data);
         setLoading(false);
         return;
@@ -93,27 +192,53 @@ export default function Editor() {
 
       setEdit(data);
       setRatio(data.aspect_ratio ?? "9:16");
-      setDoc({ ...defaultDoc, ...(data.doc ?? {}) });
+      setDoc(safeDoc(data.doc));
 
       const [{ data: v, error: vErr }, { data: t, error: tErr }] = await Promise.all([
         supabase.from("videos").select("*").eq("id", data.video_id).maybeSingle(),
-        data.template_id
-          ? supabase.from("templates").select("*").eq("id", data.template_id).maybeSingle()
-          : Promise.resolve({ data: null, error: null } as any),
+        supabase.from("templates").select("*").eq("id", data.template_id).maybeSingle(),
       ]);
 
       if (vErr) console.error("[Editor] video fetch error", vErr);
       if (tErr) console.error("[Editor] template fetch error", tErr);
-      console.log("[Editor] video row ->", v ? { id: v.id, original_path: v.original_path, status: v.status } : null);
-      console.log("[Editor] template row ->", t ? { id: t.id, file_path: t.file_path, preview_url: t.preview_url } : null);
+      console.log("[Editor] video row ->", v ? {
+        id: v.id,
+        original_path: v.original_path,
+        original_url: v.original_url,
+        status: v.status,
+      } : null);
+      console.log("[Editor] template row ->", t ? {
+        id: t.id,
+        file_path: t.file_path,
+        preview_url: t.preview_url,
+        file_type: t.file_type,
+      } : null);
 
       if (!v) {
-        setLoadError("Vídeo original não encontrado no banco (pode ter sido excluído).");
+        setLoadError({
+          title: "Erro ao carregar vídeo",
+          reason: vErr?.message ?? "Vídeo original não encontrado no banco (pode ter sido excluído).",
+          url: data.video_url,
+        });
         setLoading(false);
         return;
       }
-      if (!v.original_path) {
-        setLoadError("O vídeo não tem arquivo original armazenado.");
+      if (!t) {
+        setLoadError({
+          title: "Erro ao carregar vídeo",
+          reason: tErr?.message ?? "Template selecionado não encontrado no banco (pode ter sido excluído).",
+          url: data.template_url,
+        });
+        setVideo(v);
+        setLoading(false);
+        return;
+      }
+      if (!v.original_path && !v.original_url && !data.video_url) {
+        setLoadError({
+          title: "Erro ao carregar vídeo",
+          reason: "O vídeo não tem arquivo original armazenado nem URL salva no projeto.",
+          url: data.video_url ?? v.original_url,
+        });
         setVideo(v);
         setTemplate(t);
         setLoading(false);
@@ -123,23 +248,97 @@ export default function Editor() {
       setVideo(v);
       setTemplate(t);
 
-      // Sign the original video path so <video> can play it inside the editor
-      const { data: signed, error: signErr } = await supabase.storage
-        .from("videos")
-        .createSignedUrl(v.original_path, 60 * 60 * 6);
-      if (signErr || !signed?.signedUrl) {
-        console.error("[Editor] createSignedUrl failed", signErr, "path:", v.original_path);
-        setLoadError(
-          `Não foi possível gerar URL do vídeo (${signErr?.message ?? "sem permissão"}).`
-        );
+      let nextVideoUrl = data.video_url ?? v.original_url ?? null;
+      if (v.original_path) {
+        const { data: signed, error: signErr } = await supabase.storage
+          .from("videos")
+          .createSignedUrl(v.original_path, 60 * 60 * 6);
+        if (signErr || !signed?.signedUrl) {
+          console.error("[Editor] createSignedUrl failed", signErr, "path:", v.original_path);
+          setLoadError({
+            title: "Erro ao carregar vídeo",
+            reason: `Não foi possível gerar URL assinada do vídeo (${signErr?.message ?? "sem permissão"}).`,
+            url: nextVideoUrl,
+          });
+          setLoading(false);
+          return;
+        }
+        nextVideoUrl = signed.signedUrl;
+      }
+      if (!nextVideoUrl) {
+        setLoadError({
+          title: "Erro ao carregar vídeo",
+          reason: "URL do vídeo está vazia.",
+          url: null,
+        });
         setLoading(false);
         return;
       }
-      console.log("[Editor] video signed URL ready");
-      setVideoUrl(signed.signedUrl);
 
-      // mark as editing
-      await (supabase as any).from("edits").update({ status: "editing" }).eq("id", id);
+      let nextTemplateUrl = data.template_url ?? t.preview_url ?? null;
+      if (t.file_path) {
+        const { data: signedTemplate, error: templateSignErr } = await supabase.storage
+          .from("media")
+          .createSignedUrl(t.file_path, 60 * 60 * 6);
+        if (templateSignErr || !signedTemplate?.signedUrl) {
+          console.error("[Editor] template createSignedUrl failed", templateSignErr, "path:", t.file_path);
+          setLoadError({
+            title: "Erro ao carregar vídeo",
+            reason: `Não foi possível gerar URL assinada do template (${templateSignErr?.message ?? "sem permissão"}).`,
+            url: nextTemplateUrl,
+          });
+          setLoading(false);
+          return;
+        }
+        nextTemplateUrl = signedTemplate.signedUrl;
+      }
+      if (!nextTemplateUrl) {
+        setLoadError({
+          title: "Erro ao carregar vídeo",
+          reason: "URL do template está vazia.",
+          url: null,
+        });
+        setLoading(false);
+        return;
+      }
+
+      console.log("[Editor] video URL loaded", nextVideoUrl);
+      console.log("[Editor] template URL loaded", nextTemplateUrl);
+
+      try {
+        await preloadVideo(nextVideoUrl);
+        if ((t.file_type ?? "").startsWith("video/")) {
+          await preloadVideo(nextTemplateUrl);
+        } else {
+          await preloadImage(nextTemplateUrl);
+        }
+      } catch (err: any) {
+        console.error("[Editor] media preload failed", {
+          video_id: data.video_id,
+          video_url: nextVideoUrl,
+          template_id: data.template_id,
+          template_url: nextTemplateUrl,
+          error: err,
+        });
+        setLoadError({
+          title: "Erro ao carregar vídeo",
+          reason: err?.message ?? "Falha no carregamento do player.",
+          url: nextVideoUrl,
+        });
+        setLoading(false);
+        return;
+      }
+
+      setVideoUrl(nextVideoUrl);
+      setTemplateUrl(nextTemplateUrl);
+
+      const { error: editUpdateErr } = await (supabase as any).from("edits").update({
+        status: "editing",
+        video_url: nextVideoUrl,
+        template_url: nextTemplateUrl,
+        user_id: data.user_id ?? "single-user",
+      }).eq("id", id);
+      if (editUpdateErr) console.error("[Editor] edit status/url update error", editUpdateErr);
       setLoading(false);
     })();
   }, [id, navigate]);
@@ -252,8 +451,12 @@ export default function Editor() {
         <div className="rounded-full bg-destructive/10 p-3 text-destructive">
           <ArrowLeft size={18} />
         </div>
-        <h2 className="text-lg font-semibold">Não foi possível abrir o editor</h2>
-        <p className="text-sm text-muted-foreground">{loadError}</p>
+        <h2 className="text-lg font-semibold">{loadError.title}</h2>
+        <p className="text-sm text-muted-foreground">{loadError.reason}</p>
+        <div className="w-full rounded-md border border-border/50 bg-muted/30 p-2 text-left text-[11px] text-muted-foreground">
+          <div className="mb-1 font-medium text-foreground">URL recebida</div>
+          <div className="break-all">{loadError.url || "URL vazia"}</div>
+        </div>
         <div className="flex gap-2">
           <Button variant="outline" size="sm" onClick={() => navigate("/edits")}>
             <ArrowLeft size={14} className="mr-1" /> Meus projetos
@@ -268,6 +471,7 @@ export default function Editor() {
 
   const r = RATIOS[ratio] ?? RATIOS["9:16"];
   const videoSrc = videoUrl;
+  const templateSrc = templateUrl;
 
   return (
     <div className="flex h-[calc(100vh-6rem)] flex-col gap-3">
@@ -386,7 +590,6 @@ export default function Editor() {
               <>
                 <video
                   src={videoSrc}
-                  crossOrigin="anonymous"
                   className="absolute inset-0 h-full w-full object-cover"
                   style={{
                     zIndex: 1,
@@ -401,8 +604,15 @@ export default function Editor() {
                     setVideoReady(true);
                   }}
                   onError={(e) => {
-                    console.error("[Editor] <video> error", e);
-                    setLoadError("Falha ao reproduzir o vídeo (arquivo corrompido ou inacessível).");
+                    const el = e.currentTarget;
+                    const reason = mediaErrorReason(el);
+                    console.error("[Editor] <video> error", {
+                      video_id: edit?.video_id,
+                      url: videoSrc,
+                      error: el.error,
+                      reason,
+                    });
+                    setLoadError({ title: "Erro ao carregar vídeo", reason, url: videoSrc });
                   }}
                 />
                 {!videoReady && (
@@ -418,17 +628,17 @@ export default function Editor() {
               </div>
             )}
             {/* Layer 2 — Template overlay (acima do vídeo, sem blend, opacidade total) */}
-            {template?.preview_url && (template.file_type ?? "").startsWith("image/") && (
+            {templateSrc && (template?.file_type ?? "").startsWith("image/") && (
               <img
-                src={template.preview_url}
+                src={templateSrc}
                 alt=""
                 className="pointer-events-none absolute inset-0 h-full w-full object-contain"
                 style={{ zIndex: 2, mixBlendMode: "normal", opacity: 1 }}
               />
             )}
-            {template?.preview_url && (template.file_type ?? "").startsWith("video/") && (
+            {templateSrc && (template?.file_type ?? "").startsWith("video/") && (
               <video
-                src={template.preview_url}
+                src={templateSrc}
                 className="pointer-events-none absolute inset-0 h-full w-full object-contain"
                 style={{ zIndex: 2, mixBlendMode: "normal", opacity: 1 }}
                 autoPlay muted loop playsInline
