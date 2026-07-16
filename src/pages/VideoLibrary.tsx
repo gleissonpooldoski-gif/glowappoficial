@@ -204,9 +204,7 @@ export default function VideoLibrary() {
     async (files: FileList | File[]) => {
       const arr = Array.from(files);
       const newItems: QueueItem[] = [];
-      const localHashes = new Set<string>();
       let rejected = 0;
-      let dupes = 0;
 
       for (const file of arr) {
         const err = validateFile(file);
@@ -221,37 +219,17 @@ export default function VideoLibrary() {
           });
           continue;
         }
-        let hash: string | undefined;
-        try {
-          hash = await computeFileHash(file);
-        } catch {
-          hash = undefined;
-        }
-        if (hash && (seenHashes.current.has(hash) || localHashes.has(hash))) {
-          dupes++;
-          newItems.push({
-            id: crypto.randomUUID(),
-            file,
-            status: "duplicate",
-            progress: 0,
-            fileHash: hash,
-            error: "Este vídeo já foi enviado.",
-          });
-          continue;
-        }
-        if (hash) localHashes.add(hash);
+        // Uploads duplicados são permitidos — não bloqueia por hash/nome/tamanho.
         newItems.push({
           id: crypto.randomUUID(),
           file,
           status: "pending",
           progress: 0,
-          fileHash: hash,
         });
       }
       if (newItems.length === 0) return;
       setQueue((q) => [...newItems, ...q]);
       if (rejected > 0) toast.error(`${rejected} arquivo(s) rejeitado(s)`);
-      if (dupes > 0) toast.warning(`${dupes} vídeo(s) duplicado(s) ignorado(s)`);
       setTimeout(() => runNext(), 0);
     },
     [runNext]
