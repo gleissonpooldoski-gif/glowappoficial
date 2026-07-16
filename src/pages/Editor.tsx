@@ -67,36 +67,84 @@ export default function Editor() {
   const dragRef = useRef<{ id: string; sx: number; sy: number; px: number; py: number } | null>(null);
 
   const [videoUrl, setVideoUrl] = useState<string | null>(null);
+  const [loadError, setLoadError] = useState<string | null>(null);
+  const [videoReady, setVideoReady] = useState(false);
 
   useEffect(() => {
     if (!id) return;
     (async () => {
+      console.log("[Editor] loading edit", id);
       const { data, error } = await (supabase as any)
         .from("edits").select("*").eq("id", id).maybeSingle();
-      if (error || !data) { toast.error("Projeto de edição não encontrado"); navigate("/edits"); return; }
+      if (error || !data) {
+        console.error("[Editor] edit not found", error);
+        toast.error("Projeto de edição não encontrado");
+        navigate("/edits");
+        return;
+      }
+      console.log("[Editor] edit ->", { video_id: data.video_id, template_id: data.template_id, status: data.status });
+
+      if (!data.video_id) {
+        setLoadError("Este projeto não tem vídeo associado. Volte à biblioteca e recrie a edição.");
+        setEdit(data);
+        setLoading(false);
+        return;
+      }
+
       setEdit(data);
       setRatio(data.aspect_ratio ?? "9:16");
       setDoc({ ...defaultDoc, ...(data.doc ?? {}) });
-      const [{ data: v }, { data: t }] = await Promise.all([
-        data.video_id ? supabase.from("videos").select("*").eq("id", data.video_id).maybeSingle() : Promise.resolve({ data: null } as any),
-        data.template_id ? supabase.from("templates").select("*").eq("id", data.template_id).maybeSingle() : Promise.resolve({ data: null } as any),
+
+      const [{ data: v, error: vErr }, { data: t, error: tErr }] = await Promise.all([
+        supabase.from("videos").select("*").eq("id", data.video_id).maybeSingle(),
+        data.template_id
+          ? supabase.from("templates").select("*").eq("id", data.template_id).maybeSingle()
+          : Promise.resolve({ data: null, error: null } as any),
       ]);
+
+      if (vErr) console.error("[Editor] video fetch error", vErr);
+      if (tErr) console.error("[Editor] template fetch error", tErr);
+      console.log("[Editor] video row ->", v ? { id: v.id, original_path: v.original_path, status: v.status } : null);
+      console.log("[Editor] template row ->", t ? { id: t.id, file_path: t.file_path, preview_url: t.preview_url } : null);
+
+      if (!v) {
+        setLoadError("Vídeo original não encontrado no banco (pode ter sido excluído).");
+        setLoading(false);
+        return;
+      }
+      if (!v.original_path) {
+        setLoadError("O vídeo não tem arquivo original armazenado.");
+        setVideo(v);
+        setTemplate(t);
+        setLoading(false);
+        return;
+      }
+
       setVideo(v);
       setTemplate(t);
+
       // Sign the original video path so <video> can play it inside the editor
-      if (v?.original_path) {
-        const { data: signed } = await supabase.storage
-          .from("videos")
-          .createSignedUrl(v.original_path, 60 * 60 * 6);
-        setVideoUrl(signed?.signedUrl ?? v.original_url ?? v.processed_url ?? null);
-      } else {
-        setVideoUrl(v?.processed_url ?? v?.original_url ?? null);
+      const { data: signed, error: signErr } = await supabase.storage
+        .from("videos")
+        .createSignedUrl(v.original_path, 60 * 60 * 6);
+      if (signErr || !signed?.signedUrl) {
+        console.error("[Editor] createSignedUrl failed", signErr, "path:", v.original_path);
+        setLoadError(
+          `Não foi possível gerar URL do vídeo (${signErr?.message ?? "sem permissão"}).`
+        );
+        setLoading(false);
+        return;
       }
+      console.log("[Editor] video signed URL ready");
+      setVideoUrl(signed.signedUrl);
+
       // mark as editing
       await (supabase as any).from("edits").update({ status: "editing" }).eq("id", id);
       setLoading(false);
     })();
   }, [id, navigate]);
+
+
 
   const selectedText = useMemo(
     () => doc.texts.find((t) => t.id === selectedTextId) ?? null,
