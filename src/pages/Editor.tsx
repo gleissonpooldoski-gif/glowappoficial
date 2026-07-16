@@ -554,86 +554,118 @@ export default function Editor() {
 
   const exportVideo = async () => {
     if (!id || !edit) return;
+    if (!videoUrl) {
+      toast.error("Vídeo original não está carregado.");
+      return;
+    }
     setExporting(true);
     setExportPhase("prep");
-    setExportPercent(5);
+    setExportPercent(2);
     try {
       const okSave = await save(true);
       if (!okSave) return;
 
-      setExportPhase("template");
-      setExportPercent(15);
+      const outRatio = RATIOS[ratio] ?? RATIOS["9:16"];
+      // Output pixel dimensions
+      const px = outRatio.w >= outRatio.h
+        ? { width: 1920, height: Math.round((1920 * outRatio.h) / outRatio.w) }
+        : { width: Math.round((1920 * outRatio.w) / outRatio.h), height: 1920 };
 
-      // Enqueue job on the backend — no ffmpeg/subprocess in Edge Runtime.
-      const { data, error } = await supabase.functions.invoke("render-video", {
-        body: { editId: id },
+      const templateKind: "image" | "video" | null =
+        template?.file_type?.startsWith("video/") ? "video"
+        : template?.file_type?.startsWith("image/") ? "image"
+        : templateUrl ? "image" : null;
+
+      const { renderComposition } = await import("@/lib/exportComposition");
+      const result = await renderComposition({
+        videoUrl,
+        templateUrl: templateUrl ?? null,
+        templateKind,
+        ratio: px,
+        videoTransform: doc.video,
+        templateOpts: doc.template,
+        texts: doc.texts as any,
+        onProgress: (pct, phase) => {
+          setExportPercent(Math.round(pct));
+          if (phase.includes("template")) setExportPhase("template");
+          else if (phase.includes("Renderiz")) setExportPhase("render");
+          else if (phase.includes("Final")) setExportPhase("encode");
+          else setExportPhase("prep");
+        },
       });
 
-      if (error) {
-        let details = error.message;
-        if (error instanceof FunctionsHttpError) {
-          details = await error.context.text();
-        }
-        console.error("[Editor] enqueue render failed", details);
-        try {
-          const parsed = JSON.parse(details);
-          throw new Error(parsed.details || parsed.error || "Falha ao criar job de renderização.");
-        } catch (parseErr) {
-          if (parseErr instanceof SyntaxError) throw new Error(details || "Falha ao criar job de renderização.");
-          throw parseErr;
-        }
+      // Validate output before publishing
+      if (!result.blob || result.blob.size === 0) {
+        throw new Error("Arquivo renderizado ficou vazio.");
       }
 
-      const jobId = data?.jobId as string | undefined;
-      if (!jobId) throw new Error("Job de renderização não foi criado.");
+      setExportPhase("upload");
+      setExportPercent(98);
 
-      setExportPhase("render");
-      setExportPercent(30);
-      toast.success("Renderização enfileirada. Você pode continuar navegando.");
+      const stamp = Date.now();
+      const base = (edit.name?.trim() || video?.filename || "video-final").replace(/\.[^.]+$/, "").replace(/[^\w.\-]+/g, "_");
+      const finalName = `${base}.${result.extension}`;
+      const processedPath = `exports/${id}/${stamp}-${finalName}`;
 
-      // Non-blocking poll — user can leave the page; Finished lists queued jobs too.
-      const started = Date.now();
-      const poll = window.setInterval(async () => {
-        try {
-          const { data: job } = await (supabase as any)
-            .from("render_jobs")
-            .select("status, progress, output_path, error")
-            .eq("id", jobId)
-            .maybeSingle();
-          if (!job) return;
-          const p = Math.max(30, Math.min(95, Number(job.progress || 0)));
-          setExportPercent(p);
-          if (job.status === "PROCESSING") setExportPhase("encode");
-          if (job.status === "COMPLETED") {
-            window.clearInterval(poll);
-            setExportPhase("upload");
-            setExportPercent(100);
-            toast.success("Vídeo pronto! Enviado para Vídeos Prontos.");
-            setExporting(false);
-            setExportPhase("idle");
-            navigate("/finished");
-          }
-          if (job.status === "FAILED") {
-            window.clearInterval(poll);
-            setExporting(false);
-            setExportPhase("idle");
-            toast.error(job.error || "Renderização falhou no worker externo.");
-          }
-          // Timeout after 15 min of polling — job continues on server
-          if (Date.now() - started > 15 * 60 * 1000) {
-            window.clearInterval(poll);
-            setExporting(false);
-            setExportPhase("idle");
-            toast.info("Renderização ainda em andamento. Acompanhe em Vídeos Prontos.");
-            navigate("/finished");
-          }
-        } catch (err) {
-          console.warn("[Editor] poll render_jobs failed", err);
-        }
-      }, 3000);
+      const { error: upErr } = await supabase.storage
+        .from("videos-processed")
+        .upload(processedPath, result.blob, { contentType: result.mime, upsert: true });
+      if (upErr) throw new Error(`Falha ao enviar arquivo final: ${upErr.message}`);
+
+      // Confirm file exists in storage before creating DB row
+      const { data: signedProbe, error: probeErr } = await supabase.storage
+        .from("videos-processed")
+        .createSignedUrl(processedPath, 60);
+      if (probeErr || !signedProbe?.signedUrl) {
+        throw new Error("Arquivo enviado mas não foi possível validar a URL final.");
+      }
+
+      const { data: finishedRow, error: insErr } = await (supabase as any)
+        .from("videos")
+        .insert({
+          filename: finalName,
+          mime_type: result.mime,
+          status: "finished",
+          progress: 100,
+          project_id: edit.project_id,
+          template_id: edit.template_id,
+          duration_seconds: result.durationSeconds || video?.duration_seconds || null,
+          size_bytes: result.blob.size,
+          processed_path: processedPath,
+          thumbnail_path: video?.thumbnail_path ?? null,
+          thumbnail_url: video?.thumbnail_url ?? null,
+        })
+        .select("id")
+        .single();
+      if (insErr) throw new Error(`Falha ao registrar vídeo final: ${insErr.message}`);
+
+      // Log a completed job for consistency (best-effort)
+      try {
+        await (supabase as any).from("render_jobs").insert({
+          edit_id: id,
+          project_id: edit.project_id,
+          video_id: finishedRow.id,
+          user_id: null,
+          status: "COMPLETED",
+          provider: "client-canvas",
+          progress: 100,
+          output_path: processedPath,
+          completed_at: new Date().toISOString(),
+        });
+      } catch (e) {
+        console.warn("[Editor] failed to log render_job", e);
+      }
+
+      await (supabase as any).from("edits").update({ status: "completed" }).eq("id", id);
+
+      setExportPercent(100);
+      toast.success("Vídeo pronto! Enviado para Vídeos Prontos.");
+      setExporting(false);
+      setExportPhase("idle");
+      navigate("/finished");
     } catch (e: any) {
       console.error("[Editor] export failed", e);
-      toast.error(e?.message ?? "Não foi possível iniciar a renderização. Tente novamente em instantes.");
+      toast.error(e?.message ?? "Não foi possível renderizar o vídeo. Tente novamente.");
       setExporting(false);
       setExportPhase("idle");
       setExportPercent(0);
