@@ -601,20 +601,36 @@ export default function Editor() {
                 Vídeo indisponível
               </div>
             )}
-            {/* Layer 2 — Template overlay (acima do vídeo, sem blend, opacidade total) */}
+            {/* Layer 2 — Template overlay (acima do vídeo; alpha do arquivo é preservado, sem fundo sólido) */}
             {templateSrc && (template?.file_type ?? "").startsWith("image/") && (
               <img
                 src={templateSrc}
                 alt=""
-                className="pointer-events-none absolute inset-0 h-full w-full object-contain"
-                style={{ zIndex: 2, mixBlendMode: "normal", opacity: 1 }}
+                className={cn(
+                  "pointer-events-none absolute inset-0 h-full w-full",
+                  doc.template.fit === "cover" ? "object-cover" : "object-contain",
+                )}
+                style={{
+                  zIndex: 2,
+                  mixBlendMode: doc.template.blend,
+                  opacity: doc.template.opacity,
+                  background: "transparent",
+                }}
               />
             )}
             {templateSrc && (template?.file_type ?? "").startsWith("video/") && (
               <video
                 src={templateSrc}
-                className="pointer-events-none absolute inset-0 h-full w-full object-contain"
-                style={{ zIndex: 2, mixBlendMode: "normal", opacity: 1 }}
+                className={cn(
+                  "pointer-events-none absolute inset-0 h-full w-full",
+                  doc.template.fit === "cover" ? "object-cover" : "object-contain",
+                )}
+                style={{
+                  zIndex: 2,
+                  mixBlendMode: doc.template.blend,
+                  opacity: doc.template.opacity,
+                  background: "transparent",
+                }}
                 autoPlay muted loop playsInline
               />
             )}
