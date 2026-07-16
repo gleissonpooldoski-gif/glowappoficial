@@ -98,7 +98,7 @@ const TRANSFORM_OPTIONS: { value: TextTransform; label: string; sample: string }
 
 const defaultDoc: EditDoc = {
   video: { zoom: 1, x: 0, y: 0 },
-  template: { opacity: 1, blend: "normal", fit: "contain" },
+  template: { opacity: 1, blend: "normal", fit: "contain", x: 0, y: 0 },
   texts: [],
   colors: { primary: "#D4AF37", secondary: "#FFFFFF" },
 };
