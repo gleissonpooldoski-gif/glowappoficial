@@ -30,8 +30,12 @@ type TextEl = {
   animation: "none" | "fade" | "slide-up" | "pulse";
 };
 
+type BlendMode =
+  | "normal" | "multiply" | "screen" | "overlay" | "lighten" | "darken" | "soft-light" | "hard-light";
+
 type EditDoc = {
   video: { zoom: number; x: number; y: number };
+  template: { opacity: number; blend: BlendMode; fit: "contain" | "cover" };
   texts: TextEl[];
   colors: { primary: string; secondary: string };
   logo_url?: string | null;
@@ -49,10 +53,22 @@ const RATIOS: Record<string, { w: number; h: number; label: string }> = {
   "1:1": { w: 1, h: 1, label: "1:1 Instagram" },
 };
 
+const BLEND_MODES: { value: BlendMode; label: string }[] = [
+  { value: "normal", label: "Normal (usa alpha do template)" },
+  { value: "screen", label: "Screen (clareia)" },
+  { value: "multiply", label: "Multiply (escurece)" },
+  { value: "overlay", label: "Overlay" },
+  { value: "lighten", label: "Lighten" },
+  { value: "darken", label: "Darken" },
+  { value: "soft-light", label: "Soft light" },
+  { value: "hard-light", label: "Hard light" },
+];
+
 const FONTS = ["Montserrat", "Inter", "Poppins", "Playfair Display", "Bebas Neue", "Roboto", "Oswald"];
 
 const defaultDoc: EditDoc = {
   video: { zoom: 1, x: 0, y: 0 },
+  template: { opacity: 1, blend: "normal", fit: "contain" },
   texts: [],
   colors: { primary: "#D4AF37", secondary: "#FFFFFF" },
 };
@@ -63,10 +79,12 @@ const safeDoc = (value: unknown): EditDoc => {
     ...defaultDoc,
     ...raw,
     video: { ...defaultDoc.video, ...(raw.video ?? {}) },
+    template: { ...defaultDoc.template, ...(raw.template ?? {}) },
     colors: { ...defaultDoc.colors, ...(raw.colors ?? {}) },
     texts: Array.isArray(raw.texts) ? raw.texts : [],
   };
 };
+
 
 const mediaErrorReason = (video: HTMLVideoElement) => {
   const code = video.error?.code;
@@ -583,20 +601,36 @@ export default function Editor() {
                 Vídeo indisponível
               </div>
             )}
-            {/* Layer 2 — Template overlay (acima do vídeo, sem blend, opacidade total) */}
+            {/* Layer 2 — Template overlay (acima do vídeo; alpha do arquivo é preservado, sem fundo sólido) */}
             {templateSrc && (template?.file_type ?? "").startsWith("image/") && (
               <img
                 src={templateSrc}
                 alt=""
-                className="pointer-events-none absolute inset-0 h-full w-full object-contain"
-                style={{ zIndex: 2, mixBlendMode: "normal", opacity: 1 }}
+                className={cn(
+                  "pointer-events-none absolute inset-0 h-full w-full",
+                  doc.template.fit === "cover" ? "object-cover" : "object-contain",
+                )}
+                style={{
+                  zIndex: 2,
+                  mixBlendMode: doc.template.blend,
+                  opacity: doc.template.opacity,
+                  background: "transparent",
+                }}
               />
             )}
             {templateSrc && (template?.file_type ?? "").startsWith("video/") && (
               <video
                 src={templateSrc}
-                className="pointer-events-none absolute inset-0 h-full w-full object-contain"
-                style={{ zIndex: 2, mixBlendMode: "normal", opacity: 1 }}
+                className={cn(
+                  "pointer-events-none absolute inset-0 h-full w-full",
+                  doc.template.fit === "cover" ? "object-cover" : "object-contain",
+                )}
+                style={{
+                  zIndex: 2,
+                  mixBlendMode: doc.template.blend,
+                  opacity: doc.template.opacity,
+                  background: "transparent",
+                }}
                 autoPlay muted loop playsInline
               />
             )}
@@ -629,9 +663,10 @@ export default function Editor() {
         <Card className="glass border-border/50 overflow-y-auto">
           <CardContent className="p-3">
             <Tabs defaultValue="text">
-              <TabsList className="grid w-full grid-cols-3">
+              <TabsList className="grid w-full grid-cols-4">
                 <TabsTrigger value="text" className="text-xs"><Type size={12} className="mr-1" />Texto</TabsTrigger>
                 <TabsTrigger value="video" className="text-xs"><Move size={12} className="mr-1" />Vídeo</TabsTrigger>
+                <TabsTrigger value="template" className="text-xs"><Layers size={12} className="mr-1" />Overlay</TabsTrigger>
                 <TabsTrigger value="assets" className="text-xs"><ImageIcon size={12} className="mr-1" />Logo</TabsTrigger>
               </TabsList>
 
@@ -725,6 +760,52 @@ export default function Editor() {
                   onClick={() => setDoc((d) => ({ ...d, video: { zoom: 1, x: 0, y: 0 } }))}>
                   <ZoomOut size={12} className="mr-1" /> Resetar enquadramento
                 </Button>
+              </TabsContent>
+
+              <TabsContent value="template" className="mt-3 space-y-3">
+                {templateSrc ? (
+                  <>
+                    <div className="space-y-1.5">
+                      <Label className="text-xs">Opacidade: {Math.round(doc.template.opacity * 100)}%</Label>
+                      <Slider min={0} max={1} step={0.01} value={[doc.template.opacity]}
+                        onValueChange={([v]) => setDoc((d) => ({ ...d, template: { ...d.template, opacity: v } }))} />
+                    </div>
+                    <div className="space-y-1.5">
+                      <Label className="text-xs">Modo de mesclagem</Label>
+                      <Select value={doc.template.blend}
+                        onValueChange={(v: BlendMode) => setDoc((d) => ({ ...d, template: { ...d.template, blend: v } }))}>
+                        <SelectTrigger><SelectValue /></SelectTrigger>
+                        <SelectContent>
+                          {BLEND_MODES.map((m) => (
+                            <SelectItem key={m.value} value={m.value}>{m.label}</SelectItem>
+                          ))}
+                        </SelectContent>
+                      </Select>
+                      <p className="text-[11px] text-muted-foreground">
+                        Use "Screen" ou "Multiply" se o template tiver fundo preto ou branco em vez de alpha.
+                      </p>
+                    </div>
+                    <div className="space-y-1.5">
+                      <Label className="text-xs">Ajuste ao canvas</Label>
+                      <Select value={doc.template.fit}
+                        onValueChange={(v: "contain" | "cover") => setDoc((d) => ({ ...d, template: { ...d.template, fit: v } }))}>
+                        <SelectTrigger><SelectValue /></SelectTrigger>
+                        <SelectContent>
+                          <SelectItem value="contain">Contain (mantém proporção)</SelectItem>
+                          <SelectItem value="cover">Cover (preenche cortando)</SelectItem>
+                        </SelectContent>
+                      </Select>
+                    </div>
+                    <Button variant="outline" size="sm" className="w-full"
+                      onClick={() => setDoc((d) => ({ ...d, template: { opacity: 1, blend: "normal", fit: "contain" } }))}>
+                      Resetar overlay
+                    </Button>
+                  </>
+                ) : (
+                  <p className="py-8 text-center text-xs text-muted-foreground">
+                    Nenhum template aplicado.
+                  </p>
+                )}
               </TabsContent>
 
               <TabsContent value="assets" className="mt-3 space-y-3">
