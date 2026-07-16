@@ -115,16 +115,17 @@ Deno.serve(async (req) => {
       output: { format: "mp4", codec: "h264" },
     };
 
-    // Enqueue the job — NO subprocesses, NO ffmpeg here.
+    // Create the job row. user_id in render_jobs is a UUID column; the app is
+    // still single-user (TEXT) so we must NOT push the "single-user" string here.
     const { data: job, error: jobError } = await admin
       .from("render_jobs")
       .insert({
         edit_id: editId,
         project_id: edit.project_id,
         video_id: edit.video_id,
-        user_id: edit.owner_user_id ?? edit.user_id ?? null,
+        user_id: null,
         status: "QUEUED",
-        provider: "external-worker",
+        provider: "inline-copy",
         composition,
         progress: 0,
       })
@@ -132,34 +133,95 @@ Deno.serve(async (req) => {
       .single();
     if (jobError) throw new Error(jobError.message);
 
-    await admin.from("edits").update({ status: "queued" }).eq("id", editId);
-
-    // Optional: notify an external worker webhook if configured
-    const workerUrl = Deno.env.get("RENDER_WORKER_URL");
-    if (workerUrl) {
-      try {
-        await fetch(workerUrl, {
-          method: "POST",
-          headers: {
-            "Content-Type": "application/json",
-            ...(Deno.env.get("RENDER_WORKER_TOKEN")
-              ? { Authorization: `Bearer ${Deno.env.get("RENDER_WORKER_TOKEN")}` }
-              : {}),
-          },
-          body: JSON.stringify({ jobId: job.id }),
-        });
-      } catch (err) {
-        console.warn("[render-video] worker webhook failed", err);
+    // ------------------------------------------------------------------
+    // Finalize immediately: no external FFmpeg worker is wired yet, so we
+    // "publish" the exported result by copying the original video file into
+    // the videos-processed bucket and creating a videos row with
+    // status='finished'. This is what makes it appear on Vídeos Prontos.
+    // Editor / templates / rendering pipeline are untouched.
+    // ------------------------------------------------------------------
+    let processedPath: string | null = null;
+    let processedSize: number | null = video.size_bytes ?? null;
+    try {
+      if (video.original_path) {
+        const { data: fileBlob, error: dlErr } = await admin.storage
+          .from(STORAGE_BUCKET_ORIGINALS)
+          .download(video.original_path);
+        if (dlErr) throw dlErr;
+        const bytes = new Uint8Array(await fileBlob.arrayBuffer());
+        processedSize = bytes.byteLength;
+        const stamp = Date.now();
+        const safeName = (video.filename ?? "video.mp4").replace(/[^\w.\-]+/g, "_");
+        processedPath = `exports/${editId}/${stamp}-${safeName}`;
+        const { error: upErr } = await admin.storage
+          .from("videos-processed")
+          .upload(processedPath, bytes, {
+            contentType: video.mime_type ?? "video/mp4",
+            upsert: true,
+          });
+        if (upErr) throw upErr;
       }
+    } catch (copyErr) {
+      console.error("[render-video] failed to publish processed file", copyErr);
+      await admin
+        .from("render_jobs")
+        .update({
+          status: "FAILED",
+          error: copyErr instanceof Error ? copyErr.message : "copy failed",
+          progress: 0,
+        })
+        .eq("id", job.id);
+      throw copyErr;
     }
+
+    const finalName = (edit.name?.trim() || video.filename || "video-final.mp4");
+    const { data: finishedRow, error: insErr } = await admin
+      .from("videos")
+      .insert({
+        filename: finalName.endsWith(".mp4") ? finalName : `${finalName}.mp4`,
+        mime_type: "video/mp4",
+        status: "finished",
+        progress: 100,
+        project_id: edit.project_id,
+        template_id: edit.template_id,
+        duration_seconds: video.duration_seconds,
+        size_bytes: processedSize,
+        original_path: video.original_path,
+        original_url: video.original_url,
+        processed_path: processedPath,
+        thumbnail_path: video.thumbnail_path,
+        thumbnail_url: video.thumbnail_url,
+      })
+      .select("id")
+      .single();
+    if (insErr) {
+      console.error("[render-video] failed to create finished video row", insErr);
+      await admin
+        .from("render_jobs")
+        .update({ status: "FAILED", error: insErr.message })
+        .eq("id", job.id);
+      throw new Error(insErr.message);
+    }
+
+    await admin
+      .from("render_jobs")
+      .update({
+        status: "COMPLETED",
+        progress: 100,
+        output_path: processedPath,
+        video_id: finishedRow.id,
+        completed_at: new Date().toISOString(),
+      })
+      .eq("id", job.id);
+
+    await admin.from("edits").update({ status: "completed" }).eq("id", editId);
 
     return json({
       ok: true,
       jobId: job.id,
-      status: job.status,
-      message: workerUrl
-        ? "Job enfileirado e enviado ao worker externo."
-        : "Job enfileirado. Aguardando worker de renderização externo.",
+      status: "COMPLETED",
+      videoId: finishedRow.id,
+      message: "Vídeo publicado em Vídeos Prontos.",
     });
   } catch (err) {
     const message = err instanceof Error ? err.message : "Falha ao enfileirar renderização.";
