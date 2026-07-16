@@ -483,6 +483,17 @@ export default function Editor() {
   const removeText = (tid: string) => {
     setDoc((d) => ({ ...d, texts: d.texts.filter((t) => t.id !== tid) }));
     if (selectedTextId === tid) setSelectedTextId(null);
+    toast.success("Texto excluído");
+  };
+
+  const duplicateText = (tid: string) => {
+    setDoc((d) => {
+      const src = d.texts.find((t) => t.id === tid);
+      if (!src) return d;
+      const copy: TextEl = { ...src, id: crypto.randomUUID(), x: Math.min(100, src.x + 4), y: Math.min(100, src.y + 4) };
+      setSelectedTextId(copy.id);
+      return { ...d, texts: [...d.texts, copy] };
+    });
   };
 
   const onStagePointerDown = (e: React.PointerEvent, tid: string) => {
