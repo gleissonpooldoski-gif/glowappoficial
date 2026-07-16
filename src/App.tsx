@@ -12,6 +12,8 @@ import Library from "./pages/Library";
 import NewPost from "./pages/NewPost";
 import CalendarPage from "./pages/CalendarPage";
 import History from "./pages/History";
+import Analytics from "./pages/Analytics";
+import AI from "./pages/AI";
 import Settings from "./pages/Settings";
 import NotFound from "./pages/NotFound";
 
@@ -31,7 +33,7 @@ function Protected() {
 
 const App = () => (
   <QueryClientProvider client={queryClient}>
-    <ThemeProvider attribute="class" defaultTheme="system" enableSystem>
+    <ThemeProvider attribute="class" defaultTheme="dark" enableSystem>
       <TooltipProvider>
         <AuthProvider>
           <Toaster />
@@ -43,8 +45,11 @@ const App = () => (
                 <Route path="/" element={<Dashboard />} />
                 <Route path="/library" element={<Library />} />
                 <Route path="/new" element={<NewPost />} />
+                <Route path="/new/:id" element={<NewPost />} />
                 <Route path="/calendar" element={<CalendarPage />} />
                 <Route path="/history" element={<History />} />
+                <Route path="/analytics" element={<Analytics />} />
+                <Route path="/ai" element={<AI />} />
                 <Route path="/settings" element={<Settings />} />
               </Route>
               <Route path="*" element={<NotFound />} />
