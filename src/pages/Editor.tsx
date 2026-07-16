@@ -54,7 +54,7 @@ type BlendMode =
 
 type EditDoc = {
   video: { zoom: number; x: number; y: number };
-  template: { opacity: number; blend: BlendMode; fit: "contain" | "cover" };
+  template: { opacity: number; blend: BlendMode; fit: "contain" | "cover"; x: number; y: number };
   texts: TextEl[];
   colors: { primary: string; secondary: string };
   logo_url?: string | null;
