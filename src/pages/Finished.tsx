@@ -307,6 +307,16 @@ export default function Finished() {
               size="sm"
               variant="outline"
               className="border-gold/40 text-gold hover:bg-gold/10"
+              disabled={selected.size === 0}
+              onClick={() => setIgBatchOpen(true)}
+            >
+              <Layers size={14} className="mr-1.5" />
+              Publicar em lote ({selected.size})
+            </Button>
+            <Button
+              size="sm"
+              variant="outline"
+              className="border-gold/40 text-gold hover:bg-gold/10"
               disabled={zipBusy}
               onClick={downloadAll}
             >
