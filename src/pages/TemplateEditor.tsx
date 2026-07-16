@@ -568,6 +568,59 @@ export default function TemplateEditor() {
           </div>
         </aside>
       </div>
+
+      <Dialog open={aiOpen} onOpenChange={(o) => !regenerating && setAiOpen(o)}>
+        <DialogContent className="glass border-gold/30 sm:max-w-lg">
+          <DialogHeader>
+            <DialogTitle className="flex items-center gap-2">
+              <Wand2 size={18} className="text-gold" /> Gerar novo estilo com IA
+            </DialogTitle>
+            <DialogDescription>
+              Descreva o estilo desejado. A IA mantém os elementos editáveis, mas ajusta cores, fontes, textos e composição.
+            </DialogDescription>
+          </DialogHeader>
+          <div className="space-y-3 py-2">
+            <div className="space-y-1.5">
+              <Label className="text-xs">Instrução de estilo</Label>
+              <Input
+                autoFocus
+                placeholder='Ex: "Deixe mais premium", "estilo Netflix", "TikTok viral"'
+                value={aiStyle}
+                onChange={(e) => setAiStyle(e.target.value)}
+                onKeyDown={(e) => e.key === "Enter" && !regenerating && regenerateWithAi()}
+              />
+              <div className="flex flex-wrap gap-1 pt-1">
+                {["Deixe mais premium", "Estilo Netflix", "TikTok viral", "Trailer de cinema", "Minimalista elegante"].map((s) => (
+                  <button
+                    key={s}
+                    type="button"
+                    onClick={() => setAiStyle(s)}
+                    className="rounded-full border border-border/60 px-2 py-0.5 text-[10px] text-muted-foreground hover:border-gold/40 hover:text-gold"
+                  >
+                    {s}
+                  </button>
+                ))}
+              </div>
+            </div>
+          </div>
+          <DialogFooter>
+            <Button variant="ghost" onClick={() => setAiOpen(false)} disabled={regenerating}>
+              Cancelar
+            </Button>
+            <Button
+              onClick={regenerateWithAi}
+              disabled={regenerating || !aiStyle.trim()}
+              className="bg-gold-gradient text-black glow-gold"
+            >
+              {regenerating ? (
+                <><Loader2 size={14} className="mr-1 animate-spin" /> Gerando...</>
+              ) : (
+                <><Sparkles size={14} className="mr-1" /> Regenerar</>
+              )}
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
     </div>
   );
 }
