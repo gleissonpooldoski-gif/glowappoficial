@@ -612,6 +612,7 @@ export type Database = {
         | "completed"
         | "failed"
         | "in_editing"
+        | "published"
       watermark_position:
         | "top-left"
         | "top-right"
@@ -769,6 +770,7 @@ export const Constants = {
         "completed",
         "failed",
         "in_editing",
+        "published",
       ],
       watermark_position: [
         "top-left",
