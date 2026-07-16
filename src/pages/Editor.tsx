@@ -24,6 +24,7 @@ import { ScrollArea } from "@/components/ui/scroll-area";
 import { Sparkles, MessageSquareText } from "lucide-react";
 import { TEXT_CATEGORIES, TEXT_PRESETS, type TextPreset, type TextPresetCategory } from "@/lib/text-library";
 import { cn } from "@/lib/utils";
+import { useRenderQueue } from "@/context/RenderQueueContext";
 
 type TextTransform = "none" | "uppercase" | "lowercase" | "capitalize";
 type TextAlign = "left" | "center" | "right";
@@ -573,6 +574,8 @@ export default function Editor() {
   const [exportPercent, setExportPercent] = useState(0);
   const exportProgress = exportPhase === "idle" ? null : PHASE_LABEL[exportPhase];
 
+  const { enqueue: enqueueRender } = useRenderQueue();
+
   const exportVideo = async () => {
     if (!id || !edit) return;
     if (!videoUrl) {
@@ -581,13 +584,17 @@ export default function Editor() {
     }
     setExporting(true);
     setExportPhase("prep");
-    setExportPercent(2);
+    setExportPercent(5);
     try {
       const okSave = await save(true);
-      if (!okSave) return;
+      if (!okSave) {
+        setExporting(false);
+        setExportPhase("idle");
+        setExportPercent(0);
+        return;
+      }
 
       const outRatio = RATIOS[ratio] ?? RATIOS["9:16"];
-      // Output pixel dimensions
       const px = outRatio.w >= outRatio.h
         ? { width: 1920, height: Math.round((1920 * outRatio.h) / outRatio.w) }
         : { width: Math.round((1920 * outRatio.w) / outRatio.h), height: 1920 };
@@ -597,104 +604,44 @@ export default function Editor() {
         : template?.file_type?.startsWith("image/") ? "image"
         : templateUrl ? "image" : null;
 
-      const { renderComposition } = await import("@/lib/exportComposition");
-      const result = await renderComposition({
-        videoUrl,
-        templateUrl: templateUrl ?? null,
-        templateKind,
-        ratio: px,
-        videoTransform: doc.video,
-        templateOpts: doc.template,
-        texts: doc.texts as any,
-        onProgress: (pct, phase) => {
-          setExportPercent(Math.round(pct));
-          if (phase.includes("template")) setExportPhase("template");
-          else if (phase.includes("Renderiz")) setExportPhase("render");
-          else if (phase.includes("Final") || phase.includes("MP4")) setExportPhase("encode");
-          else setExportPhase("prep");
+      const jobName = edit.name?.trim() || video?.filename || "Vídeo sem nome";
+
+      enqueueRender({
+        editId: id,
+        projectId: edit.project_id,
+        templateId: edit.template_id,
+        name: jobName,
+        composition: {
+          videoUrl,
+          templateUrl: templateUrl ?? null,
+          templateKind,
+          ratio: px,
+          videoTransform: doc.video,
+          templateOpts: doc.template,
+          texts: doc.texts as any,
+        },
+        videoMeta: {
+          filename: video?.filename ?? null,
+          duration_seconds: video?.duration_seconds ?? null,
+          thumbnail_path: video?.thumbnail_path ?? null,
+          thumbnail_url: video?.thumbnail_url ?? null,
         },
       });
 
-      // Validate output before publishing: only MP4 H.264/AAC final files are allowed.
-      if (!result.blob || result.blob.size === 0) {
-        throw new Error("Arquivo renderizado ficou vazio.");
-      }
-      if (result.extension !== "mp4" || !result.mime.startsWith("video/mp4")) {
-        throw new Error("Exportação inválida: somente arquivos MP4 finais podem ser salvos.");
-      }
-
-      setExportPhase("upload");
-      setExportPercent(98);
-
-      const stamp = Date.now();
-      const base = (edit.name?.trim() || video?.filename || "video-final").replace(/\.[^.]+$/, "").replace(/[^\w.\-]+/g, "_");
-      const finalName = `${base}.${result.extension}`;
-      const processedPath = `exports/${id}/${stamp}-${finalName}`;
-
-      const { error: upErr } = await supabase.storage
-        .from("videos-processed")
-        .upload(processedPath, result.blob, { contentType: result.mime, upsert: true });
-      if (upErr) throw new Error(`Falha ao enviar arquivo final: ${upErr.message}`);
-
-      // Confirm file exists in storage before creating DB row
-      const { data: signedProbe, error: probeErr } = await supabase.storage
-        .from("videos-processed")
-        .createSignedUrl(processedPath, 60);
-      if (probeErr || !signedProbe?.signedUrl) {
-        throw new Error("Arquivo enviado mas não foi possível validar a URL final.");
-      }
-
-      const { data: finishedRow, error: insErr } = await (supabase as any)
-        .from("videos")
-        .insert({
-          filename: finalName,
-          mime_type: result.mime,
-          status: "completed",
-          progress: 100,
-          project_id: edit.project_id,
-          template_id: edit.template_id,
-          duration_seconds: result.durationSeconds || video?.duration_seconds || null,
-          size_bytes: result.blob.size,
-          processed_path: processedPath,
-          thumbnail_path: video?.thumbnail_path ?? null,
-          thumbnail_url: video?.thumbnail_url ?? null,
-        })
-        .select("id")
-        .single();
-      if (insErr) throw new Error(`Falha ao registrar vídeo final: ${insErr.message}`);
-
-      // Log a completed job for consistency (best-effort)
-      try {
-        await (supabase as any).from("render_jobs").insert({
-          edit_id: id,
-          project_id: edit.project_id,
-          video_id: finishedRow.id,
-          user_id: null,
-          status: "COMPLETED",
-          provider: "client-canvas",
-          progress: 100,
-          output_path: processedPath,
-          completed_at: new Date().toISOString(),
-        });
-      } catch (e) {
-        console.warn("[Editor] failed to log render_job", e);
-      }
-
-      await (supabase as any).from("edits").update({ status: "completed" }).eq("id", id);
-
-      setExportPercent(100);
-      toast.success("Vídeo pronto! Enviado para Vídeos Prontos.");
+      toast.success("Renderização iniciada em segundo plano. Você já pode começar outro vídeo.");
       setExporting(false);
       setExportPhase("idle");
-      navigate("/finished");
+      setExportPercent(0);
+      navigate("/videos");
     } catch (e: any) {
       console.error("[Editor] export failed", e);
-      toast.error(e?.message ?? "Não foi possível renderizar o vídeo. Tente novamente.");
+      toast.error(e?.message ?? "Não foi possível iniciar a renderização.");
       setExporting(false);
       setExportPhase("idle");
       setExportPercent(0);
     }
   };
+
 
   if (loading) {
     return (
