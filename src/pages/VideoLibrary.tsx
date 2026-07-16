@@ -443,7 +443,7 @@ export default function VideoLibrary() {
           template_url: templateUrl,
           user_id: "single-user",
           owner_user_id: "single-user",
-          project_id: v?.project_id ?? null,
+          project_id: activeProject?.id ?? v?.project_id ?? null,
           name: v?.filename ?? "Rascunho",
           aspect_ratio: "9:16",
           status: "editing" as const,
