@@ -34,7 +34,7 @@ type Log = {
 const statusVariant: Record<string, "default" | "secondary" | "destructive" | "outline"> = {
   published: "default",
   scheduled: "secondary",
-  error: "destructive",
+  failed: "destructive",
 };
 
 export default function History() {
@@ -100,7 +100,7 @@ export default function History() {
             <SelectItem value="all">Todos status</SelectItem>
             <SelectItem value="published">Publicado</SelectItem>
             <SelectItem value="scheduled">Agendado</SelectItem>
-            <SelectItem value="error">Erro</SelectItem>
+            <SelectItem value="failed">Erro</SelectItem>
           </SelectContent>
         </Select>
         <Select value={network} onValueChange={setNetwork}>

@@ -76,7 +76,7 @@ export default function Dashboard() {
           .from("scheduled_posts")
           .select("*", { count: "exact", head: true })
           .eq("status", "scheduled"),
-        supabase.from("publication_logs").select("*", { count: "exact", head: true }).eq("status", "error"),
+        supabase.from("publication_logs").select("*", { count: "exact", head: true }).eq("status", "failed"),
         supabase
           .from("scheduled_posts")
           .select("scheduled_at, post_id, posts(caption)")
