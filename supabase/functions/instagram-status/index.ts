@@ -4,7 +4,7 @@ import { corsHeaders } from "npm:@supabase/supabase-js@2/cors";
 
 const GRAPH_VERSION = "v21.0";
 
-function credentialsFor(account: string) {
+function envCredentialsFor(account: string) {
   if (account === "resenha") {
     return {
       token: Deno.env.get("META_RESENHA_ACCESS_TOKEN") ?? "",
@@ -18,6 +18,19 @@ function credentialsFor(account: string) {
     };
   }
   return { token: "", igId: "" };
+}
+
+async function credentialsFor(supabase: any, account: string) {
+  const { data } = await supabase
+    .from("instagram_credentials")
+    .select("access_token, ig_business_id")
+    .eq("account", account)
+    .maybeSingle();
+  const env = envCredentialsFor(account);
+  return {
+    token: data?.access_token || env.token,
+    igId: data?.ig_business_id || env.igId,
+  };
 }
 
 function safeJson(value: unknown) {
