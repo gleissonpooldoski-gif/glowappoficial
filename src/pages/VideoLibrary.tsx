@@ -1,4 +1,5 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import { useNavigate } from "react-router-dom";
 import {
   Film,
   Upload,
@@ -13,6 +14,8 @@ import {
   Play,
   Ban,
   Download,
+  Wand2,
+  Rocket,
 } from "lucide-react";
 import { supabase } from "@/integrations/supabase/client";
 import { toast } from "sonner";
