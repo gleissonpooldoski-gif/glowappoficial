@@ -470,6 +470,8 @@ export default function Editor() {
       font: "Montserrat",
       weight: p.weight ?? 800,
       animation: p.animation ?? "fade",
+      transform: "uppercase", letterSpacing: 1, lineHeight: 1.15, align: "center",
+      shadow: true, strokeWidth: 0, strokeColor: "#000000", bgColor: null,
     };
     setDoc((d) => ({ ...d, texts: [...d.texts, t] }));
     setSelectedTextId(t.id);
