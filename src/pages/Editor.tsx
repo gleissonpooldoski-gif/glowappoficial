@@ -262,6 +262,16 @@ export default function Editor() {
     }
   };
 
+  const seekTo = (t: number) => {
+    const el = videoRef.current;
+    if (!el) return;
+    const d = el.duration && isFinite(el.duration) ? el.duration : duration;
+    const clamped = Math.max(0, Math.min(d || 0, t));
+    try { el.currentTime = clamped; } catch (err) { console.error("[Editor] seek failed", err); }
+    setCurrentTime(clamped);
+  };
+  const skip = (delta: number) => seekTo((videoRef.current?.currentTime ?? currentTime) + delta);
+
   const toggleMute = () => {
     const el = videoRef.current;
     if (!el) return;
