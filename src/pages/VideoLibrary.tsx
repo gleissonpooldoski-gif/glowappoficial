@@ -174,7 +174,7 @@ export default function VideoLibrary() {
 
   useEffect(() => {
     load();
-  }, []);
+  }, [activeProject?.id]);
 
   const updateItem = useCallback((id: string, patch: Partial<QueueItem>) => {
     setQueue((q) => q.map((it) => (it.id === id ? { ...it, ...patch } : it)));
