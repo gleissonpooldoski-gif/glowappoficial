@@ -589,7 +589,7 @@ export default function Editor() {
           setExportPercent(Math.round(pct));
           if (phase.includes("template")) setExportPhase("template");
           else if (phase.includes("Renderiz")) setExportPhase("render");
-          else if (phase.includes("Final")) setExportPhase("encode");
+          else if (phase.includes("Final") || phase.includes("MP4")) setExportPhase("encode");
           else setExportPhase("prep");
         },
       });
