@@ -66,6 +66,11 @@ export default function Finished() {
   const [captions, setCaptions] = useState<Record<string, CaptionResult>>({});
   const [captionLoading, setCaptionLoading] = useState<Record<string, boolean>>({});
   const [captionOpen, setCaptionOpen] = useState<Record<string, boolean>>({});
+  const [selected, setSelected] = useState<Set<string>>(new Set());
+  const [confirmMode, setConfirmMode] = useState<null | "all" | "selection" | "one">(null);
+  const [pendingRemoveId, setPendingRemoveId] = useState<string | null>(null);
+  const [bulkBusy, setBulkBusy] = useState(false);
+  const [zipBusy, setZipBusy] = useState(false);
 
   const load = async () => {
     if (!activeProject) { setVideos([]); setJobs([]); return; }
