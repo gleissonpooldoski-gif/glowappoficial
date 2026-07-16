@@ -1,5 +1,5 @@
-import { useEffect, useState } from "react";
-import { Download, Trash2, Film, Package, Play, Calendar, Clock, LayoutTemplate, CheckCircle2, Loader2, AlertCircle, Sparkles, Copy, ChevronDown, ChevronUp } from "lucide-react";
+import { useEffect, useMemo, useState } from "react";
+import { Download, Trash2, Film, Package, Play, Calendar, Clock, LayoutTemplate, CheckCircle2, Loader2, AlertCircle, Sparkles, Copy, ChevronDown, ChevronUp, CheckSquare, Square } from "lucide-react";
 import { supabase } from "@/integrations/supabase/client";
 import { toast } from "sonner";
 import { Card, CardContent } from "@/components/ui/card";
@@ -11,6 +11,12 @@ import { formatBytes } from "@/lib/format";
 import { format } from "date-fns";
 import { ptBR } from "date-fns/locale";
 import { useActiveProject } from "@/context/ProjectContext";
+import { cn } from "@/lib/utils";
+import JSZip from "jszip";
+import {
+  AlertDialog, AlertDialogAction, AlertDialogCancel, AlertDialogContent,
+  AlertDialogDescription, AlertDialogFooter, AlertDialogHeader, AlertDialogTitle,
+} from "@/components/ui/alert-dialog";
 
 const BUCKET = "videos-processed";
 
@@ -60,6 +66,11 @@ export default function Finished() {
   const [captions, setCaptions] = useState<Record<string, CaptionResult>>({});
   const [captionLoading, setCaptionLoading] = useState<Record<string, boolean>>({});
   const [captionOpen, setCaptionOpen] = useState<Record<string, boolean>>({});
+  const [selected, setSelected] = useState<Set<string>>(new Set());
+  const [confirmMode, setConfirmMode] = useState<null | "all" | "selection" | "one">(null);
+  const [pendingRemoveId, setPendingRemoveId] = useState<string | null>(null);
+  const [bulkBusy, setBulkBusy] = useState(false);
+  const [zipBusy, setZipBusy] = useState(false);
 
   const load = async () => {
     if (!activeProject) { setVideos([]); setJobs([]); return; }
@@ -140,11 +151,89 @@ export default function Finished() {
     document.body.appendChild(a); a.click(); a.remove();
   };
 
-  const remove = async (v: FinishedVideo) => {
-    if (!confirm(`Excluir "${v.filename}"?`)) return;
-    if (v.processed_path) await supabase.storage.from(BUCKET).remove([v.processed_path]);
-    await supabase.from("videos").delete().eq("id", v.id);
+  const removeMany = async (ids: string[]) => {
+    if (!videos || ids.length === 0) return;
+    const targets = videos.filter((v) => ids.includes(v.id));
+    const paths = targets.map((v) => v.processed_path).filter(Boolean) as string[];
+    if (paths.length) {
+      const { error: sErr } = await supabase.storage.from(BUCKET).remove(paths);
+      if (sErr) console.warn("[Finished] storage remove failed", sErr);
+    }
+    const { error } = await supabase.from("videos").delete().in("id", ids);
+    if (error) return toast.error(error.message);
+    toast.success(`${ids.length} vídeo(s) excluído(s)`);
+    setSelected(new Set());
     load();
+  };
+
+  const askRemoveOne = (id: string) => { setPendingRemoveId(id); setConfirmMode("one"); };
+
+  const runConfirmedDelete = async () => {
+    if (!videos) { setConfirmMode(null); return; }
+    setBulkBusy(true);
+    let ids: string[] = [];
+    if (confirmMode === "all") ids = videos.map((v) => v.id);
+    else if (confirmMode === "selection") ids = Array.from(selected);
+    else if (confirmMode === "one" && pendingRemoveId) ids = [pendingRemoveId];
+    await removeMany(ids);
+    setBulkBusy(false);
+    setConfirmMode(null);
+    setPendingRemoveId(null);
+  };
+
+  const toggleOne = (id: string) => setSelected((prev) => {
+    const n = new Set(prev); if (n.has(id)) n.delete(id); else n.add(id); return n;
+  });
+  const allSelected = useMemo(
+    () => !!videos && videos.length > 0 && selected.size === videos.length, [videos, selected]);
+  const toggleAll = () => {
+    if (!videos) return;
+    setSelected(allSelected ? new Set() : new Set(videos.map((v) => v.id)));
+  };
+
+  const downloadAll = async () => {
+    if (!videos || videos.length === 0) return;
+    const targets = selected.size > 0
+      ? videos.filter((v) => selected.has(v.id))
+      : videos;
+    if (targets.length === 0) return;
+    if (targets.length === 1) return download(targets[0]);
+    setZipBusy(true);
+    try {
+      const zip = new JSZip();
+      const usedNames = new Set<string>();
+      let done = 0;
+      for (const v of targets) {
+        if (!v.processed_path) continue;
+        const { data, error } = await supabase.storage.from(BUCKET)
+          .createSignedUrl(v.processed_path, 60 * 10);
+        if (error || !data?.signedUrl) continue;
+        const res = await fetch(data.signedUrl);
+        if (!res.ok) continue;
+        const blob = await res.blob();
+        let name = v.filename;
+        let i = 1;
+        while (usedNames.has(name)) {
+          name = v.filename.replace(/\.mp4$/i, `_${i}.mp4`); i++;
+        }
+        usedNames.add(name);
+        zip.file(name, blob);
+        done++;
+        toast.message(`Preparando ZIP… (${done}/${targets.length})`);
+      }
+      const out = await zip.generateAsync({ type: "blob" });
+      const url = URL.createObjectURL(out);
+      const a = document.createElement("a");
+      const stamp = format(new Date(), "yyyyMMdd-HHmm");
+      a.href = url; a.download = `videos-prontos-${stamp}.zip`;
+      document.body.appendChild(a); a.click(); a.remove();
+      URL.revokeObjectURL(url);
+      toast.success(`ZIP com ${done} vídeo(s) baixado`);
+    } catch (e: any) {
+      toast.error(e?.message ?? "Falha ao gerar ZIP");
+    } finally {
+      setZipBusy(false);
+    }
   };
 
   const copyText = async (text: string, label: string) => {
@@ -183,15 +272,50 @@ export default function Finished() {
 
   return (
     <div className="space-y-6">
-      <header className="flex flex-col gap-3 md:flex-row md:items-center md:justify-between">
+      <header className="flex flex-col gap-3 md:flex-row md:items-start md:justify-between">
         <div>
           <h1 className="text-2xl font-semibold tracking-tight">Vídeos Prontos</h1>
           <p className="text-sm text-muted-foreground">Seus vídeos finalizados. Reproduza, baixe ou exclua.</p>
         </div>
-        <Button variant="outline" className="border-border/60" disabled>
-          <Package size={14} className="mr-1" /> Baixar todos (ZIP) — em breve
-        </Button>
+        {videos && videos.length > 0 && (
+          <div className="flex flex-wrap items-center gap-2">
+            <Button size="sm" variant="outline" onClick={toggleAll}>
+              {allSelected ? <CheckSquare size={14} className="mr-1.5" /> : <Square size={14} className="mr-1.5" />}
+              {allSelected ? "Limpar seleção" : "Selecionar todos"}
+            </Button>
+            <Button
+              size="sm"
+              variant="outline"
+              className="border-gold/40 text-gold hover:bg-gold/10"
+              disabled={zipBusy}
+              onClick={downloadAll}
+            >
+              {zipBusy ? <Loader2 size={14} className="mr-1.5 animate-spin" /> : <Package size={14} className="mr-1.5" />}
+              {selected.size > 0 ? `Baixar selecionados (${selected.size})` : "Baixar todos"}
+            </Button>
+            <Button
+              size="sm"
+              variant="outline"
+              className="border-destructive/40 text-destructive hover:bg-destructive/10"
+              disabled={selected.size === 0 || bulkBusy}
+              onClick={() => setConfirmMode("selection")}
+            >
+              <Trash2 size={14} className="mr-1.5" />
+              Excluir selecionados ({selected.size})
+            </Button>
+            <Button
+              size="sm"
+              variant="destructive"
+              disabled={bulkBusy}
+              onClick={() => setConfirmMode("all")}
+            >
+              <Trash2 size={14} className="mr-1.5" />
+              Excluir todos
+            </Button>
+          </div>
+        )}
       </header>
+
 
       {jobs.length > 0 && (
         <div className="space-y-2">
@@ -244,8 +368,12 @@ export default function Finished() {
             const cap = captions[v.id];
             const loading = !!captionLoading[v.id];
             const open = !!captionOpen[v.id];
+            const isSelected = selected.has(v.id);
             return (
-              <Card key={v.id} className="glass border-border/50 group overflow-hidden">
+              <Card key={v.id} className={cn(
+                "glass group overflow-hidden",
+                isSelected ? "border-gold ring-1 ring-gold/60" : "border-border/50",
+              )}>
                 <div className="relative aspect-[9/16] bg-black">
                   {src ? (
                     <video src={src} controls preload="metadata" className="h-full w-full object-contain" />
@@ -257,6 +385,17 @@ export default function Finished() {
                   <Badge className="absolute left-2 top-2 border-emerald-400/40 bg-black/70 text-[10px] text-emerald-300" variant="outline">
                     <CheckCircle2 size={10} className="mr-1" /> Concluído
                   </Badge>
+                  <button
+                    type="button"
+                    onClick={() => toggleOne(v.id)}
+                    className={cn(
+                      "absolute right-2 top-2 z-10 flex h-7 w-7 items-center justify-center rounded-md border bg-black/70 backdrop-blur",
+                      isSelected ? "border-gold text-gold" : "border-white/30 text-white/70 hover:text-white",
+                    )}
+                    title={isSelected ? "Remover da seleção" : "Selecionar"}
+                  >
+                    {isSelected ? <CheckSquare size={14} /> : <Square size={14} />}
+                  </button>
                 </div>
                 <CardContent className="p-3">
                   <p className="truncate text-xs font-medium" title={v.filename}>{v.filename}</p>
@@ -281,10 +420,11 @@ export default function Finished() {
                     <Button size="sm" className="h-7 flex-1 bg-gold-gradient text-[11px] text-black" onClick={() => download(v)}>
                       <Download size={12} className="mr-1" /> Baixar
                     </Button>
-                    <Button size="sm" variant="ghost" className="h-7 w-7 p-0 text-muted-foreground hover:text-destructive" onClick={() => remove(v)}>
+                    <Button size="sm" variant="ghost" className="h-7 w-7 p-0 text-muted-foreground hover:text-destructive" onClick={() => askRemoveOne(v.id)}>
                       <Trash2 size={12} />
                     </Button>
                   </div>
+
 
                   {/* Legenda e Hashtags */}
                   <div className="mt-3 border-t border-border/50 pt-2">
@@ -363,6 +503,39 @@ export default function Finished() {
           })}
         </div>
       )}
+
+      <AlertDialog open={confirmMode !== null} onOpenChange={(o) => { if (!o) { setConfirmMode(null); setPendingRemoveId(null); } }}>
+        <AlertDialogContent>
+          <AlertDialogHeader>
+            <AlertDialogTitle>
+              {confirmMode === "all"
+                ? "Excluir todos os vídeos prontos?"
+                : confirmMode === "selection"
+                ? "Excluir vídeos selecionados?"
+                : "Excluir este vídeo?"}
+            </AlertDialogTitle>
+            <AlertDialogDescription>
+              {confirmMode === "all"
+                ? "Tem certeza que deseja excluir todos os vídeos prontos? Os arquivos serão removidos do armazenamento e essa ação não poderá ser desfeita."
+                : confirmMode === "selection"
+                ? `Tem certeza que deseja excluir ${selected.size} vídeo(s) selecionado(s)? Os arquivos serão removidos do armazenamento.`
+                : "O arquivo será removido do armazenamento e essa ação não poderá ser desfeita."}
+            </AlertDialogDescription>
+          </AlertDialogHeader>
+          <AlertDialogFooter>
+            <AlertDialogCancel disabled={bulkBusy}>Cancelar</AlertDialogCancel>
+            <AlertDialogAction
+              onClick={(e) => { e.preventDefault(); runConfirmedDelete(); }}
+              disabled={bulkBusy}
+              className="bg-destructive text-destructive-foreground hover:bg-destructive/90"
+            >
+              {bulkBusy ? <Loader2 size={14} className="mr-1.5 animate-spin" /> : <Trash2 size={14} className="mr-1.5" />}
+              {confirmMode === "all" ? "Excluir todos" : confirmMode === "selection" ? "Excluir selecionados" : "Excluir"}
+            </AlertDialogAction>
+          </AlertDialogFooter>
+        </AlertDialogContent>
+      </AlertDialog>
     </div>
   );
 }
+

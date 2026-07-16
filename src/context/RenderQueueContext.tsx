@@ -123,7 +123,8 @@ export function RenderQueueProvider({ children }: { children: ReactNode }) {
         console.warn("[RenderQueue] failed to log render_job", e);
       }
 
-      await (supabase as any).from("edits").update({ status: "completed" }).eq("id", editId);
+      // Remove edit from "Projetos de Edição" — final video lives in "Vídeos Prontos".
+      await (supabase as any).from("edits").delete().eq("id", editId);
 
       update(jobId, { phase: "completed", progress: 100 });
       toast.success(`"${name}" pronto! Enviado para Vídeos Prontos.`);
