@@ -81,7 +81,18 @@ const BLEND_MODES: { value: BlendMode; label: string }[] = [
   { value: "hard-light", label: "Hard light" },
 ];
 
-const FONTS = ["Montserrat", "Inter", "Poppins", "Playfair Display", "Bebas Neue", "Roboto", "Oswald"];
+const FONTS = [
+  "Montserrat", "Inter", "Poppins", "Roboto",
+  "Bebas Neue", "Oswald", "Anton", "Impact",
+  "Playfair Display",
+];
+
+const TRANSFORM_OPTIONS: { value: TextTransform; label: string; sample: string }[] = [
+  { value: "none", label: "Normal", sample: "Aa" },
+  { value: "uppercase", label: "MAIÚSCULO", sample: "AA" },
+  { value: "lowercase", label: "minúsculo", sample: "aa" },
+  { value: "capitalize", label: "Título", sample: "Aa" },
+];
 
 const defaultDoc: EditDoc = {
   video: { zoom: 1, x: 0, y: 0 },
