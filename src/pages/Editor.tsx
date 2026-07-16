@@ -432,6 +432,23 @@ export default function Editor() {
     setSelectedTextId(t.id);
   };
 
+  const addPreset = (p: TextPreset) => {
+    const t: TextEl = {
+      id: crypto.randomUUID(),
+      text: p.text,
+      x: 50, y: 80,
+      size: p.size ?? 44,
+      color: doc.colors.secondary,
+      font: "Montserrat",
+      weight: p.weight ?? 800,
+      animation: p.animation ?? "fade",
+    };
+    setDoc((d) => ({ ...d, texts: [...d.texts, t] }));
+    setSelectedTextId(t.id);
+    toast.success("Texto adicionado ao vídeo");
+  };
+
+
   const removeText = (tid: string) => {
     setDoc((d) => ({ ...d, texts: d.texts.filter((t) => t.id !== tid) }));
     if (selectedTextId === tid) setSelectedTextId(null);
