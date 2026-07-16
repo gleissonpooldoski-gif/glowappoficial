@@ -15,6 +15,8 @@ import Editor from "./pages/Editor";
 import MyEdits from "./pages/MyEdits";
 
 import { ProjectProvider } from "@/context/ProjectContext";
+import { RenderQueueProvider } from "@/context/RenderQueueContext";
+import RenderQueueIndicator from "@/components/RenderQueueIndicator";
 
 const queryClient = new QueryClient();
 
