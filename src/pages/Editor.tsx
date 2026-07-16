@@ -926,6 +926,7 @@ export default function Editor() {
                 <video
                   ref={videoRef}
                   src={videoSrc}
+                  crossOrigin="anonymous"
                   className="absolute inset-0 h-full w-full object-cover"
                   style={{
                     zIndex: 1,
