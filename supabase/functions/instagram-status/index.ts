@@ -78,10 +78,24 @@ Deno.serve(async (req) => {
     } catch (_) { /* noop */ }
   };
 
+  let activePostId: string | null = null;
+
+  const failPost = async (postId: string | null, message: string) => {
+    if (!postId) return;
+    const { data: current } = await supabase.from("instagram_posts").select("status, publish_id").eq("id", postId).maybeSingle();
+    if (current?.status === "PUBLICADO" || current?.publish_id) {
+      await appendLog(postId, { event: "manual_error_ignored_already_published", message });
+      return;
+    }
+    await supabase.from("instagram_posts").update({ status: "ERRO", error_message: message }).eq("id", postId);
+    await appendLog(postId, { event: "manual_status_error", message });
+  };
+
   try {
     const url = new URL(req.url);
     const body = req.method === "POST" ? await req.json().catch(() => ({})) : {};
     const postId = body.postId ?? url.searchParams.get("postId");
+    activePostId = postId;
     if (!postId) {
       return new Response(JSON.stringify({ error: "postId é obrigatório." }),
         { status: 400, headers: { ...corsHeaders, "Content-Type": "application/json" } });
@@ -106,6 +120,13 @@ Deno.serve(async (req) => {
     }
 
     if (!post.container_id) {
+      const ageMs = Date.now() - new Date(post.created_at).getTime();
+      if (ageMs > 5 * 60 * 1000) {
+        const message = "Timeout de 5 minutos: publicação ficou em PUBLICANDO sem creation_id/container_id salvo.";
+        await failPost(post.id, message);
+        return new Response(JSON.stringify({ success: false, status: "ERRO", error: message }),
+          { status: 200, headers: { ...corsHeaders, "Content-Type": "application/json" } });
+      }
       throw new Error("Publicação ainda não possui creation_id/container_id salvo.");
     }
 
@@ -115,6 +136,12 @@ Deno.serve(async (req) => {
 
     const ageMs = Date.now() - new Date(post.created_at).getTime();
     if (statusCode === "FINISHED") {
+      const { data: current } = await supabase.from("instagram_posts").select("status, publish_id").eq("id", post.id).maybeSingle();
+      if (current?.status === "PUBLICADO" || current?.publish_id) {
+        await appendLog(post.id, { event: "manual_publish_skipped_already_published", publish_id: current.publish_id });
+        return new Response(JSON.stringify({ success: true, status: "PUBLICADO", publish_id: current.publish_id }),
+          { status: 200, headers: { ...corsHeaders, "Content-Type": "application/json" } });
+      }
       const publishRes = await metaPost(`https://graph.facebook.com/${GRAPH_VERSION}/${igId}/media_publish`, {
         creation_id: post.container_id,
         access_token: token,
@@ -149,6 +176,7 @@ Deno.serve(async (req) => {
       { status: 200, headers: { ...corsHeaders, "Content-Type": "application/json" } });
   } catch (e: any) {
     console.error("[instagram-status]", e?.message);
+    await failPost(activePostId, e?.message ?? "Erro desconhecido.");
     return new Response(JSON.stringify({ error: e?.message ?? "Erro desconhecido.", status: "ERRO" }),
       { status: 200, headers: { ...corsHeaders, "Content-Type": "application/json" } });
   }
