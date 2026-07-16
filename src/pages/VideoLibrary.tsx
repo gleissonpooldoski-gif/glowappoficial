@@ -54,9 +54,7 @@ import { cn } from "@/lib/utils";
 import {
   BUCKET,
   CONCURRENCY,
-  DuplicateVideoError,
   QueueItem,
-  computeFileHash,
   processItem,
   validateFile,
 } from "@/lib/uploadQueue";
