@@ -51,7 +51,7 @@ export type CompositionInput = {
   templateKind?: "image" | "video" | null;
   ratio: { width: number; height: number };
   videoTransform?: { zoom: number; x: number; y: number };
-  templateOpts?: { opacity: number; blend: BlendMode; fit: "contain" | "cover" };
+  templateOpts?: { opacity: number; blend: BlendMode; fit: "contain" | "cover"; x?: number; y?: number };
   texts: CompText[];
   onProgress?: (pct: number, phase: string) => void;
 };
@@ -391,6 +391,9 @@ export async function renderComposition(input: CompositionInput): Promise<Compos
       ctx.save();
       ctx.globalAlpha = templateOpts.opacity;
       ctx.globalCompositeOperation = (templateOpts.blend === "normal" ? "source-over" : templateOpts.blend) as GlobalCompositeOperation;
+      const ox = ((templateOpts.x ?? 0) / 100) * W;
+      const oy = ((templateOpts.y ?? 0) / 100) * H;
+      ctx.translate(ox, oy);
       if (tplImage) {
         drawImageContainCover(ctx, tplImage, tplImage.naturalWidth, tplImage.naturalHeight, W, H, templateOpts.fit);
       } else if (tplSink) {

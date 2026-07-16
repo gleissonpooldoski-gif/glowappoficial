@@ -54,7 +54,7 @@ type BlendMode =
 
 type EditDoc = {
   video: { zoom: number; x: number; y: number };
-  template: { opacity: number; blend: BlendMode; fit: "contain" | "cover" };
+  template: { opacity: number; blend: BlendMode; fit: "contain" | "cover"; x: number; y: number };
   texts: TextEl[];
   colors: { primary: string; secondary: string };
   logo_url?: string | null;
@@ -98,7 +98,7 @@ const TRANSFORM_OPTIONS: { value: TextTransform; label: string; sample: string }
 
 const defaultDoc: EditDoc = {
   video: { zoom: 1, x: 0, y: 0 },
-  template: { opacity: 1, blend: "normal", fit: "contain" },
+  template: { opacity: 1, blend: "normal", fit: "contain", x: 0, y: 0 },
   texts: [],
   colors: { primary: "#D4AF37", secondary: "#FFFFFF" },
 };
@@ -873,6 +873,7 @@ export default function Editor() {
                   mixBlendMode: doc.template.blend,
                   opacity: doc.template.opacity,
                   background: "transparent",
+                  transform: `translate(${doc.template.x}%, ${doc.template.y}%)`,
                 }}
               />
             )}
@@ -888,6 +889,7 @@ export default function Editor() {
                   mixBlendMode: doc.template.blend,
                   opacity: doc.template.opacity,
                   background: "transparent",
+                  transform: `translate(${doc.template.x}%, ${doc.template.y}%)`,
                 }}
                 autoPlay muted loop playsInline
               />
@@ -1391,8 +1393,49 @@ export default function Editor() {
                         </SelectContent>
                       </Select>
                     </div>
+                    <div className="space-y-2 rounded-md border border-border/60 p-2">
+                      <Label className="text-xs">📍 Posição do overlay</Label>
+                      <div className="space-y-1.5">
+                        <div className="flex items-center justify-between">
+                          <span className="text-[11px] text-muted-foreground">X (horizontal)</span>
+                          <Input
+                            type="number"
+                            className="h-7 w-20 text-xs"
+                            value={Math.round(doc.template.x)}
+                            onChange={(e) => {
+                              const v = Number(e.target.value);
+                              if (!Number.isFinite(v)) return;
+                              setDoc((d) => ({ ...d, template: { ...d.template, x: v } }));
+                            }}
+                          />
+                        </div>
+                        <Slider min={-100} max={100} step={1} value={[doc.template.x]}
+                          onValueChange={([v]) => setDoc((d) => ({ ...d, template: { ...d.template, x: v } }))} />
+                      </div>
+                      <div className="space-y-1.5">
+                        <div className="flex items-center justify-between">
+                          <span className="text-[11px] text-muted-foreground">Y (vertical)</span>
+                          <Input
+                            type="number"
+                            className="h-7 w-20 text-xs"
+                            value={Math.round(doc.template.y)}
+                            onChange={(e) => {
+                              const v = Number(e.target.value);
+                              if (!Number.isFinite(v)) return;
+                              setDoc((d) => ({ ...d, template: { ...d.template, y: v } }));
+                            }}
+                          />
+                        </div>
+                        <Slider min={-100} max={100} step={1} value={[doc.template.y]}
+                          onValueChange={([v]) => setDoc((d) => ({ ...d, template: { ...d.template, y: v } }))} />
+                      </div>
+                      <Button variant="ghost" size="sm" className="h-7 w-full text-xs"
+                        onClick={() => setDoc((d) => ({ ...d, template: { ...d.template, x: 0, y: 0 } }))}>
+                        Centralizar
+                      </Button>
+                    </div>
                     <Button variant="outline" size="sm" className="w-full"
-                      onClick={() => setDoc((d) => ({ ...d, template: { opacity: 1, blend: "normal", fit: "contain" } }))}>
+                      onClick={() => setDoc((d) => ({ ...d, template: { opacity: 1, blend: "normal", fit: "contain", x: 0, y: 0 } }))}>
                       Resetar overlay
                     </Button>
                   </>
