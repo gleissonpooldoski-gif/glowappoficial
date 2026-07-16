@@ -663,9 +663,10 @@ export default function Editor() {
         <Card className="glass border-border/50 overflow-y-auto">
           <CardContent className="p-3">
             <Tabs defaultValue="text">
-              <TabsList className="grid w-full grid-cols-3">
+              <TabsList className="grid w-full grid-cols-4">
                 <TabsTrigger value="text" className="text-xs"><Type size={12} className="mr-1" />Texto</TabsTrigger>
                 <TabsTrigger value="video" className="text-xs"><Move size={12} className="mr-1" />Vídeo</TabsTrigger>
+                <TabsTrigger value="template" className="text-xs"><Layers size={12} className="mr-1" />Overlay</TabsTrigger>
                 <TabsTrigger value="assets" className="text-xs"><ImageIcon size={12} className="mr-1" />Logo</TabsTrigger>
               </TabsList>
 
