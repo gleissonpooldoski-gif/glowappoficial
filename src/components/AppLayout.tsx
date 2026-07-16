@@ -2,7 +2,7 @@ import { useState } from "react";
 import { NavLink, Outlet, useLocation, useNavigate } from "react-router-dom";
 import {
   Film, LayoutTemplate, Sparkles, CheckCircle2, Pencil, Menu, X,
-  FolderKanban, ChevronsUpDown, Plus, Check,
+  FolderKanban, ChevronsUpDown, Plus, Check, Instagram,
 } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { useActiveProject } from "@/context/ProjectContext";
@@ -16,6 +16,7 @@ const nav = [
   { to: "/templates", label: "Templates", icon: LayoutTemplate },
   { to: "/edits", label: "Projetos de Edição", icon: Pencil },
   { to: "/finished", label: "Vídeos Prontos", icon: CheckCircle2 },
+  { to: "/publications", label: "Publicações", icon: Instagram },
 ];
 
 function ProjectSwitcher({ onNavigate }: { onNavigate?: () => void }) {

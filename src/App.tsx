@@ -13,6 +13,7 @@ import Settings from "./pages/Settings";
 import NotFound from "./pages/NotFound";
 import Editor from "./pages/Editor";
 import MyEdits from "./pages/MyEdits";
+import Publications from "./pages/Publications";
 
 import { ProjectProvider } from "@/context/ProjectContext";
 import { RenderQueueProvider } from "@/context/RenderQueueContext";
@@ -38,6 +39,7 @@ const App = () => (
                 <Route path="/finished" element={<Finished />} />
                 <Route path="/settings" element={<Settings />} />
                 <Route path="/edits" element={<MyEdits />} />
+                <Route path="/publications" element={<Publications />} />
                 <Route path="/editor/:id" element={<Editor />} />
                 <Route path="/brand" element={<Navigate to="/videos" replace />} />
                 <Route path="/processing" element={<Navigate to="/finished" replace />} />
