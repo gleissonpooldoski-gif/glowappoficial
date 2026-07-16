@@ -453,15 +453,6 @@ export async function renderComposition(input: CompositionInput): Promise<Compos
   const validation = await validateFinalMp4(blob, sourceMeta);
   const muxedMime = await output.getMimeType().catch(() => MP4_MIME);
 
-  console.log("[export] final mp4 ->", {
-    size: blob.size,
-    duration: validation.duration,
-    sourceDuration: sourceMeta.duration,
-    fps: validation.fps,
-    sourceFps: sourceMeta.fps,
-    hasAudio: validation.hasAudio,
-    mime: muxedMime,
-  });
 
   onProgress?.(97, "Finalizando arquivo");
 
