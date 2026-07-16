@@ -459,7 +459,20 @@ export default function Editor() {
         project_id: edit.project_id,
         status: "pending" as const,
         progress: 0,
-        options: { edit_id: id, aspect_ratio: ratio, doc } as any,
+        options: {
+          edit_id: id,
+          aspect_ratio: ratio,
+          doc,
+          audio: {
+            // Preservar áudio original do vídeo no render final.
+            keep_original: true,
+            source: "video",
+            volume: isMuted ? 0 : volume,
+            muted: false,
+            codec: "aac",
+          },
+          ffmpeg_hint: "-map 0:v -map 0:a? -c:v libx264 -c:a aac -b:a 192k -shortest",
+        } as any,
       }).select("id").single();
       if (qErr) throw qErr;
       await (supabase as any).from("edits").update({
