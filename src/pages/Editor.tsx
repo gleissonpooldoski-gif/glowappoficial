@@ -647,17 +647,26 @@ export default function Editor() {
         {/* Center — canvas */}
         <div className="flex items-center justify-center rounded-lg border border-border/50 bg-black/60 p-4">
           <div
+            ref={canvasWrapRef}
+            className="group relative"
+            onMouseMove={revealControls}
+            onMouseEnter={revealControls}
+            onMouseLeave={() => {
+              if (videoRef.current && !videoRef.current.paused) setShowControls(false);
+            }}
+            style={{
+              aspectRatio: `${r.w} / ${r.h}`,
+              height: r.h >= r.w ? "min(78vh, 820px)" : undefined,
+              width: r.w > r.h ? "min(82vw, 1100px)" : undefined,
+            }}
+          >
+          <div
             ref={stageRef}
             onPointerMove={onStagePointerMove}
             onPointerUp={onStagePointerUp}
             onPointerLeave={onStagePointerUp}
-            onClick={() => setSelectedTextId(null)}
-            className="relative overflow-hidden rounded-md bg-black shadow-2xl ring-1 ring-gold/20"
-            style={{
-              aspectRatio: `${r.w} / ${r.h}`,
-              height: r.h >= r.w ? "min(70vh, 720px)" : undefined,
-              width: r.w > r.h ? "min(80vw, 1000px)" : undefined,
-            }}
+            onClick={() => { setSelectedTextId(null); revealControls(); }}
+            className="relative h-full w-full overflow-hidden rounded-md bg-black shadow-2xl ring-1 ring-gold/20"
           >
             {/* Layer 1 — Vídeo original (fundo, opacidade total, sem blend) */}
             {videoSrc ? (
