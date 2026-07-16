@@ -224,9 +224,9 @@ export default function Finished() {
                       </span>
                       <span>{formatBytes(v.size_bytes ?? 0)}</span>
                     </div>
-                    {v.templates?.name && (
+                    {v.templateName && (
                       <div className="flex items-center gap-1.5 text-gold">
-                        <LayoutTemplate size={10} /> {v.templates.name}
+                        <LayoutTemplate size={10} /> {v.templateName}
                       </div>
                     )}
                   </div>
