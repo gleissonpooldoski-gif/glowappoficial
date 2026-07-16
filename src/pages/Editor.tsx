@@ -470,9 +470,19 @@ export default function Editor() {
   };
 
   const onStagePointerMove = (e: React.PointerEvent) => {
-    const d = dragRef.current;
     const rect = stageRef.current?.getBoundingClientRect();
-    if (!d || !rect) return;
+    if (!rect) return;
+    const r = resizeRef.current;
+    if (r) {
+      const dy = e.clientY - r.sy;
+      const dx = e.clientX - r.sx;
+      const delta = Math.max(dx, dy);
+      const next = Math.max(12, Math.min(240, Math.round(r.base + delta * 0.6)));
+      updateText(r.id, { size: next });
+      return;
+    }
+    const d = dragRef.current;
+    if (!d) return;
     const dx = ((e.clientX - d.sx) / rect.width) * 100;
     const dy = ((e.clientY - d.sy) / rect.height) * 100;
     updateText(d.id, {
@@ -481,7 +491,15 @@ export default function Editor() {
     });
   };
 
-  const onStagePointerUp = () => { dragRef.current = null; };
+  const onStagePointerUp = () => { dragRef.current = null; resizeRef.current = null; };
+
+  const startResize = (e: React.PointerEvent, tid: string) => {
+    e.stopPropagation();
+    const t = doc.texts.find((x) => x.id === tid);
+    if (!t) return;
+    resizeRef.current = { id: tid, sx: e.clientX, sy: e.clientY, base: t.size };
+    (e.target as HTMLElement).setPointerCapture(e.pointerId);
+  };
 
   const save = async (silent = false) => {
     if (!id) return;
