@@ -75,9 +75,35 @@ export default function MyEdits() {
 
   const remove = async (id: string) => {
     if (!confirm("Excluir este projeto de edição?")) return;
+    const row = rows?.find((r) => r.id === id);
     const { error } = await (supabase as any).from("edits").delete().eq("id", id);
     if (error) return toast.error(error.message);
+    // Free the video back to the library if it isn't already completed.
+    if (row?.video_id && row.status !== "completed") {
+      await (supabase as any)
+        .from("videos")
+        .update({ status: "uploaded" })
+        .eq("id", row.video_id)
+        .neq("status", "completed");
+    }
     toast.success("Projeto excluído");
+    load();
+  };
+
+  const returnToLibrary = async (row: EditRow) => {
+    if (!row.video_id) {
+      toast.error("Este projeto não tem vídeo vinculado.");
+      return;
+    }
+    if (!confirm("Retornar este vídeo para a Biblioteca? O projeto de edição será removido.")) return;
+    const { error: vErr } = await (supabase as any)
+      .from("videos")
+      .update({ status: "uploaded" })
+      .eq("id", row.video_id);
+    if (vErr) return toast.error(vErr.message);
+    const { error: eErr } = await (supabase as any).from("edits").delete().eq("id", row.id);
+    if (eErr) return toast.error(eErr.message);
+    toast.success("Vídeo devolvido para a Biblioteca");
     load();
   };
 
