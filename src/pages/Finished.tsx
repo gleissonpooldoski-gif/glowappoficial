@@ -53,6 +53,7 @@ const formatDuration = (s: number | null) => {
 };
 
 export default function Finished() {
+  const { activeProject } = useActiveProject();
   const [videos, setVideos] = useState<FinishedVideo[] | null>(null);
   const [jobs, setJobs] = useState<RenderJob[]>([]);
   const [urls, setUrls] = useState<Record<string, string>>({});
@@ -61,11 +62,13 @@ export default function Finished() {
   const [captionOpen, setCaptionOpen] = useState<Record<string, boolean>>({});
 
   const load = async () => {
+    if (!activeProject) { setVideos([]); setJobs([]); return; }
     const [{ data: vids, error: vidsErr }, { data: jbs, error: jbsErr }] = await Promise.all([
       supabase
         .from("videos")
         .select("id, filename, mime_type, processed_path, processed_url, duration_seconds, size_bytes, template_id, project_id, created_at, updated_at, status")
         .eq("status", "completed")
+        .eq("project_id", activeProject.id)
         .order("updated_at", { ascending: false }),
       (supabase as any)
         .from("render_jobs")
