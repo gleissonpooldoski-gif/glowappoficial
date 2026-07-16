@@ -73,7 +73,7 @@ export default function Finished() {
   const [pendingRemoveId, setPendingRemoveId] = useState<string | null>(null);
   const [bulkBusy, setBulkBusy] = useState(false);
   const [zipBusy, setZipBusy] = useState(false);
-  const [igDialog, setIgDialog] = useState<{ open: boolean; mode: "now" | "schedule"; videoId: string | null; caption?: string; hashtags?: string }>({ open: false, mode: "now", videoId: null });
+  const [igDialog, setIgDialog] = useState<{ open: boolean; mode: "now" | "schedule"; videoId: string | null; caption?: string; hashtags?: string; meta?: { filename?: string; templateName?: string | null; projectName?: string | null; projectCategory?: string | null } }>({ open: false, mode: "now", videoId: null });
   const [igBatchOpen, setIgBatchOpen] = useState(false);
 
   const load = async () => {
@@ -457,7 +457,7 @@ export default function Finished() {
                       size="sm"
                       variant="outline"
                       className="h-7 flex-1 text-[11px] border-gold/40 text-gold hover:bg-gold/10"
-                      onClick={() => setIgDialog({ open: true, mode: "now", videoId: v.id, caption: cap?.caption, hashtags: cap ? flatHashtags(cap) : "" })}
+                      onClick={() => setIgDialog({ open: true, mode: "now", videoId: v.id, caption: cap?.caption, hashtags: cap ? flatHashtags(cap) : "", meta: { filename: v.filename, templateName: v.templateName ?? null, projectName: v.projectName ?? null, projectCategory: v.projectCategory ?? null } })}
                     >
                       <Instagram size={12} className="mr-1" /> Publicar
                     </Button>
@@ -465,7 +465,7 @@ export default function Finished() {
                       size="sm"
                       variant="outline"
                       className="h-7 flex-1 text-[11px]"
-                      onClick={() => setIgDialog({ open: true, mode: "schedule", videoId: v.id, caption: cap?.caption, hashtags: cap ? flatHashtags(cap) : "" })}
+                      onClick={() => setIgDialog({ open: true, mode: "schedule", videoId: v.id, caption: cap?.caption, hashtags: cap ? flatHashtags(cap) : "", meta: { filename: v.filename, templateName: v.templateName ?? null, projectName: v.projectName ?? null, projectCategory: v.projectCategory ?? null } })}
                     >
                       <CalendarClock size={12} className="mr-1" /> Agendar
                     </Button>
@@ -590,6 +590,7 @@ export default function Finished() {
         videoId={igDialog.videoId}
         defaultCaption={igDialog.caption ?? ""}
         defaultHashtags={igDialog.hashtags ?? ""}
+        videoMeta={igDialog.meta}
         onDone={() => load()}
       />
       <InstagramBatchDialog

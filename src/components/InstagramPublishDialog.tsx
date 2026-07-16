@@ -1,5 +1,5 @@
-import { useState } from "react";
-import { Loader2, Instagram, CalendarClock, Send } from "lucide-react";
+import { useEffect, useState } from "react";
+import { Loader2, Instagram, CalendarClock, Send, Sparkles, RefreshCw } from "lucide-react";
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter, DialogDescription } from "@/components/ui/dialog";
 import { Button } from "@/components/ui/button";
 import { Label } from "@/components/ui/label";
@@ -7,7 +7,15 @@ import { Input } from "@/components/ui/input";
 import { Textarea } from "@/components/ui/textarea";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { toast } from "sonner";
+import { supabase } from "@/integrations/supabase/client";
 import { ACCOUNTS, InstagramAccount, publishInstagram, friendlyError } from "@/lib/instagram";
+
+type VideoMeta = {
+  filename?: string;
+  templateName?: string | null;
+  projectName?: string | null;
+  projectCategory?: string | null;
+};
 
 type Props = {
   open: boolean;
@@ -16,6 +24,7 @@ type Props = {
   videoId: string | null;
   defaultCaption?: string;
   defaultHashtags?: string;
+  videoMeta?: VideoMeta;
   onDone?: () => void;
 };
 
@@ -27,8 +36,15 @@ function localDateTimeToIso(date: string, time: string) {
   return dt.toISOString();
 }
 
+function flattenHashtags(h: any): string {
+  if (!h) return "";
+  if (typeof h === "string") return h;
+  const groups = [h.alcance, h.nicho, h.tema].filter(Array.isArray);
+  return groups.flat().join(" ");
+}
+
 export default function InstagramPublishDialog({
-  open, onOpenChange, mode, videoId, defaultCaption = "", defaultHashtags = "", onDone,
+  open, onOpenChange, mode, videoId, defaultCaption = "", defaultHashtags = "", videoMeta, onDone,
 }: Props) {
   const [account, setAccount] = useState<InstagramAccount>("resenha");
   const [caption, setCaption] = useState(defaultCaption);
@@ -38,6 +54,42 @@ export default function InstagramPublishDialog({
   const [date, setDate] = useState(plus1h.toISOString().slice(0, 10));
   const [time, setTime] = useState(plus1h.toTimeString().slice(0, 5));
   const [busy, setBusy] = useState(false);
+  const [genBusy, setGenBusy] = useState(false);
+
+  // Auto-gera legenda/hashtags ao abrir se não vieram prontos
+  useEffect(() => {
+    if (!open || !videoId) return;
+    setCaption(defaultCaption);
+    setHashtags(defaultHashtags);
+    if (!defaultCaption && !defaultHashtags && videoMeta) {
+      void generate(true);
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [open, videoId]);
+
+  const generate = async (silent = false) => {
+    if (!videoMeta) return;
+    setGenBusy(true);
+    try {
+      const { data, error } = await supabase.functions.invoke("generate-caption", {
+        body: {
+          filename: videoMeta.filename,
+          templateName: videoMeta.templateName ?? null,
+          projectName: videoMeta.projectName ?? null,
+          projectCategory: videoMeta.projectCategory ?? null,
+        },
+      });
+      if (error) throw error;
+      if ((data as any)?.error) throw new Error((data as any).error);
+      setCaption(String((data as any)?.caption ?? ""));
+      setHashtags(flattenHashtags((data as any)?.hashtags));
+      if (!silent) toast.success("Nova opção gerada");
+    } catch (e: any) {
+      if (!silent) toast.error(e?.message ?? "Falha ao gerar legenda");
+    } finally {
+      setGenBusy(false);
+    }
+  };
 
   const submit = async () => {
     if (!videoId) { toast.error("Vídeo inválido."); return; }
@@ -93,15 +145,42 @@ export default function InstagramPublishDialog({
           </div>
 
           <div className="space-y-1.5">
-            <Label className="text-xs">Legenda</Label>
-            <Textarea value={caption} onChange={(e) => setCaption(e.target.value)} rows={4}
-              placeholder="Escreva a legenda do Reel…" />
+            <div className="flex items-center justify-between">
+              <Label className="text-xs">Legenda</Label>
+              {videoMeta && (
+                <Button
+                  type="button"
+                  size="sm"
+                  variant="ghost"
+                  className="h-7 gap-1 text-[11px] text-gold hover:bg-gold/10"
+                  onClick={() => generate(false)}
+                  disabled={genBusy || busy}
+                >
+                  {genBusy
+                    ? <Loader2 size={12} className="animate-spin" />
+                    : <RefreshCw size={12} />}
+                  Gerar outra opção
+                </Button>
+              )}
+            </div>
+            <Textarea
+              value={caption}
+              onChange={(e) => setCaption(e.target.value)}
+              rows={4}
+              placeholder={genBusy ? "Gerando legenda…" : "Escreva a legenda do Reel…"}
+              disabled={genBusy}
+            />
           </div>
 
           <div className="space-y-1.5">
             <Label className="text-xs">Hashtags</Label>
-            <Textarea value={hashtags} onChange={(e) => setHashtags(e.target.value)} rows={3}
-              placeholder="#reels #viral #skincare" />
+            <Textarea
+              value={hashtags}
+              onChange={(e) => setHashtags(e.target.value)}
+              rows={3}
+              placeholder={genBusy ? "Gerando hashtags…" : "#reels #viral #skincare"}
+              disabled={genBusy}
+            />
           </div>
 
           {mode === "schedule" && (
@@ -116,11 +195,18 @@ export default function InstagramPublishDialog({
               </div>
             </div>
           )}
+
+          {genBusy && (
+            <div className="flex items-center gap-1.5 text-[11px] text-muted-foreground">
+              <Sparkles size={11} className="text-gold" />
+              Gerando sugestão de legenda e hashtags…
+            </div>
+          )}
         </div>
 
         <DialogFooter>
           <Button variant="ghost" disabled={busy} onClick={() => onOpenChange(false)}>Cancelar</Button>
-          <Button onClick={submit} disabled={busy} className="bg-gold-gradient text-black">
+          <Button onClick={submit} disabled={busy || genBusy} className="bg-gold-gradient text-black">
             {busy ? <Loader2 size={14} className="mr-1.5 animate-spin" /> :
               mode === "now" ? <Send size={14} className="mr-1.5" /> : <CalendarClock size={14} className="mr-1.5" />}
             {mode === "now" ? "Publicar" : "Agendar"}
