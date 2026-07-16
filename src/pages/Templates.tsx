@@ -224,6 +224,67 @@ export default function Templates() {
           </AlertDialogFooter>
         </AlertDialogContent>
       </AlertDialog>
+
+      <Dialog open={aiOpen} onOpenChange={(o) => !generating && setAiOpen(o)}>
+        <DialogContent className="glass border-gold/30 sm:max-w-lg">
+          <DialogHeader>
+            <DialogTitle className="flex items-center gap-2">
+              <Wand2 size={18} className="text-gold" /> Gerador de Templates Inteligentes
+            </DialogTitle>
+            <DialogDescription>
+              Informe o nicho da sua página. A IA cria a estrutura completa (cenas, textos, CTA, gráficos) — tudo editável depois.
+            </DialogDescription>
+          </DialogHeader>
+          <div className="space-y-4 py-2">
+            <div className="space-y-1.5">
+              <Label className="text-xs">Nicho da página *</Label>
+              <Input
+                autoFocus
+                placeholder="Ex: Filmes e Séries"
+                value={niche}
+                onChange={(e) => setNiche(e.target.value)}
+                onKeyDown={(e) => e.key === "Enter" && !generating && generateWithAi()}
+              />
+              <div className="flex flex-wrap gap-1 pt-1">
+                {NICHE_SUGGESTIONS.map((n) => (
+                  <button
+                    key={n}
+                    type="button"
+                    onClick={() => setNiche(n)}
+                    className="rounded-full border border-border/60 px-2 py-0.5 text-[10px] text-muted-foreground hover:border-gold/40 hover:text-gold"
+                  >
+                    {n}
+                  </button>
+                ))}
+              </div>
+            </div>
+            <div className="space-y-1.5">
+              <Label className="text-xs">Estilo desejado (opcional)</Label>
+              <Input
+                placeholder='Ex: "estilo Netflix", "TikTok viral", "trailer de cinema"'
+                value={style}
+                onChange={(e) => setStyle(e.target.value)}
+              />
+            </div>
+          </div>
+          <DialogFooter>
+            <Button variant="ghost" onClick={() => setAiOpen(false)} disabled={generating}>
+              Cancelar
+            </Button>
+            <Button
+              onClick={generateWithAi}
+              disabled={generating || !niche.trim()}
+              className="bg-gold-gradient text-black glow-gold"
+            >
+              {generating ? (
+                <><Loader2 size={14} className="mr-1 animate-spin" /> Gerando...</>
+              ) : (
+                <><Sparkles size={14} className="mr-1" /> Gerar template</>
+              )}
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
     </div>
   );
 }
