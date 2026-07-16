@@ -249,6 +249,7 @@ export type Database = {
           created_at: string
           description: string | null
           id: string
+          logo_url: string | null
           name: string
           updated_at: string
         }
@@ -257,6 +258,7 @@ export type Database = {
           created_at?: string
           description?: string | null
           id?: string
+          logo_url?: string | null
           name: string
           updated_at?: string
         }
@@ -265,6 +267,7 @@ export type Database = {
           created_at?: string
           description?: string | null
           id?: string
+          logo_url?: string | null
           name?: string
           updated_at?: string
         }
@@ -363,6 +366,7 @@ export type Database = {
           is_builtin: boolean
           name: string
           preview_url: string | null
+          project_id: string | null
           settings: Json
           updated_at: string
         }
@@ -376,6 +380,7 @@ export type Database = {
           is_builtin?: boolean
           name: string
           preview_url?: string | null
+          project_id?: string | null
           settings?: Json
           updated_at?: string
         }
@@ -389,10 +394,19 @@ export type Database = {
           is_builtin?: boolean
           name?: string
           preview_url?: string | null
+          project_id?: string | null
           settings?: Json
           updated_at?: string
         }
-        Relationships: []
+        Relationships: [
+          {
+            foreignKeyName: "templates_project_id_fkey"
+            columns: ["project_id"]
+            isOneToOne: false
+            referencedRelation: "projects"
+            referencedColumns: ["id"]
+          },
+        ]
       }
       videos: {
         Row: {
