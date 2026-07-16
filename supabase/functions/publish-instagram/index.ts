@@ -113,6 +113,54 @@ Deno.serve(async (req) => {
     await appendLog(postId, { event: "error", message, details: details ?? null });
   };
 
+  const completePublication = async (postId: string, containerId: string, token: string, igId: string) => {
+    try {
+      const start = Date.now();
+      let lastStatus: any = null;
+      while (Date.now() - start < MAX_POLL_MS) {
+        const statusUrl = `https://graph.facebook.com/${GRAPH_VERSION}/${containerId}?fields=status_code,status&access_token=${encodeURIComponent(token)}`;
+        const statusRes = await metaGet(statusUrl);
+        lastStatus = statusRes.data;
+        const statusCode = statusRes.data?.status_code ?? "UNKNOWN";
+        await appendLog(postId, { event: "container_status_response", elapsed_ms: Date.now() - start, status_code: statusCode, response: statusRes.data });
+
+        if (statusCode === "FINISHED") break;
+        if (statusCode === "ERROR" || statusCode === "EXPIRED") {
+          throw new Error(`Container não finalizou: ${statusCode}. Motivo Meta: ${statusRes.data?.status ?? safeJson(statusRes.data)}`);
+        }
+        await new Promise((resolve) => setTimeout(resolve, POLL_INTERVAL_MS));
+      }
+
+      if (lastStatus?.status_code !== "FINISHED") {
+        throw new Error(`Timeout de 5 minutos aguardando FINISHED. Último status Meta: ${safeJson(lastStatus)}`);
+      }
+      await appendLog(postId, { event: "container_finished", creation_id: containerId, response: lastStatus });
+
+      const publishUrl = `https://graph.facebook.com/${GRAPH_VERSION}/${igId}/media_publish`;
+      const publishRes = await metaPost(publishUrl, {
+        creation_id: containerId,
+        access_token: token,
+      });
+      const publishId = publishRes.data?.id;
+      await appendLog(postId, { event: "media_publish_response", status: publishRes.status, response: publishRes.data });
+      if (!publishId) throw new Error(`Meta não retornou publish_id. Resposta: ${safeJson(publishRes.data)}`);
+
+      const nowIso = new Date().toISOString();
+      await supabase.from("instagram_posts").update({
+        publish_id: publishId,
+        status: "PUBLICADO",
+        published_at: nowIso,
+        error_message: null,
+      }).eq("id", postId);
+      await appendLog(postId, { event: "publish_id_saved", publish_id: publishId });
+      await appendLog(postId, { event: "published", publish_id: publishId, published_at: nowIso });
+    } catch (e: any) {
+      const message = e?.message ?? "Erro desconhecido ao finalizar publicação.";
+      console.error("[publish-instagram/background]", message);
+      await failPost(postId, message, { error: e?.cause ?? null });
+    }
+  };
+
   try {
     body = await req.json().catch(() => ({}));
     let {
@@ -256,48 +304,12 @@ Deno.serve(async (req) => {
     await supabase.from("instagram_posts").update({ container_id: containerId }).eq("id", post.id);
     await appendLog(post.id, { event: "creation_id_saved", creation_id: containerId });
 
-    const start = Date.now();
-    let lastStatus: any = null;
-    while (Date.now() - start < MAX_POLL_MS) {
-      const statusUrl = `https://graph.facebook.com/${GRAPH_VERSION}/${containerId}?fields=status_code,status&access_token=${encodeURIComponent(token)}`;
-      const statusRes = await metaGet(statusUrl);
-      lastStatus = statusRes.data;
-      const statusCode = statusRes.data?.status_code ?? "UNKNOWN";
-      await appendLog(post.id, { event: "container_status_response", elapsed_ms: Date.now() - start, status_code: statusCode, response: statusRes.data });
+    const background = completePublication(post.id, containerId, token, igId);
+    const edgeRuntime = (globalThis as any).EdgeRuntime;
+    if (edgeRuntime?.waitUntil) edgeRuntime.waitUntil(background);
 
-      if (statusCode === "FINISHED") break;
-      if (statusCode === "ERROR" || statusCode === "EXPIRED") {
-        throw new Error(`Container não finalizou: ${statusCode}. Motivo Meta: ${statusRes.data?.status ?? safeJson(statusRes.data)}`);
-      }
-      await new Promise((resolve) => setTimeout(resolve, POLL_INTERVAL_MS));
-    }
-
-    if (lastStatus?.status_code !== "FINISHED") {
-      throw new Error(`Timeout de 5 minutos aguardando FINISHED. Último status Meta: ${safeJson(lastStatus)}`);
-    }
-    await appendLog(post.id, { event: "container_finished", creation_id: containerId, response: lastStatus });
-
-    const publishUrl = `https://graph.facebook.com/${GRAPH_VERSION}/${igId}/media_publish`;
-    const publishRes = await metaPost(publishUrl, {
-      creation_id: containerId,
-      access_token: token,
-    });
-    const publishId = publishRes.data?.id;
-    await appendLog(post.id, { event: "media_publish_response", status: publishRes.status, response: publishRes.data });
-    if (!publishId) throw new Error(`Meta não retornou publish_id. Resposta: ${safeJson(publishRes.data)}`);
-
-    const nowIso = new Date().toISOString();
-    await supabase.from("instagram_posts").update({
-      publish_id: publishId,
-      status: "PUBLICADO",
-      published_at: nowIso,
-      error_message: null,
-    }).eq("id", post.id);
-    await appendLog(post.id, { event: "publish_id_saved", publish_id: publishId });
-    await appendLog(post.id, { event: "published", publish_id: publishId, published_at: nowIso });
-
-    return new Response(JSON.stringify({ success: true, publish_id: publishId, post_id: post.id, status: "PUBLICADO" }),
-      { status: 200, headers: { ...corsHeaders, "Content-Type": "application/json" } });
+    return new Response(JSON.stringify({ success: true, accepted: true, creation_id: containerId, post_id: post.id, status: "PUBLICANDO" }),
+      { status: 202, headers: { ...corsHeaders, "Content-Type": "application/json" } });
   } catch (e: any) {
     const message = e?.message ?? "Erro desconhecido.";
     console.error("[publish-instagram]", message);
