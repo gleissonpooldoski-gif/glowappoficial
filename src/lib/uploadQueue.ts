@@ -194,11 +194,51 @@ export async function processItem(
     .select("id")
     .single();
   if (insertErr) {
-    // Cleanup uploaded files if DB insert fails
-    const paths = [originalPath, thumbnailPath].filter(Boolean) as string[];
-    if (paths.length) await supabase.storage.from(BUCKET).remove(paths);
+    await supabase.storage.from(BUCKET).remove([originalPath]);
     throw insertErr;
   }
+  const videoId = inserted!.id as string;
+  onCreated?.(videoId);
 
-  return { videoId: inserted!.id as string, thumbnailUrl, duration, fileHash };
+  // 3) Processamento pesado em background (thumbnail + duração). Não bloqueia o retorno:
+  //    o vídeo já aparece na Biblioteca com status="processing" e é atualizado quando pronto.
+  (async () => {
+    try {
+      const { duration, thumbnail } = await probeDurationAndThumbnail(item.file);
+      let thumbnailPath: string | null = null;
+      let thumbnailUrl: string | undefined;
+      if (thumbnail) {
+        thumbnailPath = `thumbnails/${key}.jpg`;
+        try {
+          const { promise: tp } = uploadWithProgress(thumbnailPath, thumbnail, "image/jpeg", () => {});
+          await tp;
+          const { data } = await supabase.storage
+            .from(BUCKET)
+            .createSignedUrl(thumbnailPath, 60 * 60 * 24 * 7);
+          thumbnailUrl = data?.signedUrl;
+        } catch {
+          thumbnailPath = null;
+        }
+      }
+      await supabase
+        .from("videos")
+        .update({
+          thumbnail_path: thumbnailPath,
+          thumbnail_url: thumbnailUrl,
+          duration_seconds: duration ?? null,
+          status: "available" as any,
+        } as any)
+        .eq("id", videoId);
+    } catch (err) {
+      console.error("[uploadQueue] background finalize failed", err);
+      await supabase
+        .from("videos")
+        .update({ status: "available" as any } as any)
+        .eq("id", videoId);
+    } finally {
+      onFinalized?.(videoId);
+    }
+  })();
+
+  return { videoId, thumbnailUrl: undefined, duration: null, fileHash };
 }
