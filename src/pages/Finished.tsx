@@ -582,6 +582,22 @@ export default function Finished() {
           </AlertDialogFooter>
         </AlertDialogContent>
       </AlertDialog>
+
+      <InstagramPublishDialog
+        open={igDialog.open}
+        onOpenChange={(o) => setIgDialog((s) => ({ ...s, open: o }))}
+        mode={igDialog.mode}
+        videoId={igDialog.videoId}
+        defaultCaption={igDialog.caption ?? ""}
+        defaultHashtags={igDialog.hashtags ?? ""}
+        onDone={() => load()}
+      />
+      <InstagramBatchDialog
+        open={igBatchOpen}
+        onOpenChange={setIgBatchOpen}
+        videoIds={Array.from(selected)}
+        onDone={() => { setSelected(new Set()); load(); }}
+      />
     </div>
   );
 }
