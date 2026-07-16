@@ -800,28 +800,83 @@ export default function Editor() {
                 autoPlay muted loop playsInline
               />
             )}
-            {doc.texts.map((t) => (
-              <div
-                key={t.id}
-                onPointerDown={(e) => onStagePointerDown(e, t.id)}
-                className={cn(
-                  "absolute cursor-move select-none whitespace-pre px-2 py-1",
-                  selectedTextId === t.id && "outline outline-2 outline-gold/80",
-                  t.animation === "fade" && "animate-fade-in",
-                  t.animation === "pulse" && "animate-pulse",
-                  t.animation === "slide-up" && "animate-[slide-up_0.6s_ease-out]",
-                )}
-                style={{
-                  zIndex: 3,
-                  left: `${t.x}%`, top: `${t.y}%`,
-                  transform: "translate(-50%, -50%)",
-                  fontFamily: t.font, fontSize: t.size, color: t.color,
-                  fontWeight: t.weight, textShadow: "0 2px 8px rgba(0,0,0,0.6)",
-                }}
-              >
-                {t.text || "Texto"}
-              </div>
-            ))}
+            {doc.texts.map((t) => {
+              const isSelected = selectedTextId === t.id;
+              const isEditing = editingTextId === t.id;
+              return (
+                <div
+                  key={t.id}
+                  onPointerDown={(e) => {
+                    if (isEditing) return;
+                    onStagePointerDown(e, t.id);
+                  }}
+                  onClick={(e) => {
+                    e.stopPropagation();
+                    setSelectedTextId(t.id);
+                  }}
+                  onDoubleClick={(e) => {
+                    e.stopPropagation();
+                    setSelectedTextId(t.id);
+                    setEditingTextId(t.id);
+                  }}
+                  className={cn(
+                    "absolute px-2 py-1 whitespace-pre",
+                    isEditing ? "cursor-text select-text" : "cursor-move select-none",
+                    isSelected && "outline outline-2 outline-gold/80",
+                    !isEditing && t.animation === "fade" && "animate-fade-in",
+                    !isEditing && t.animation === "pulse" && "animate-pulse",
+                    !isEditing && t.animation === "slide-up" && "animate-[slide-up_0.6s_ease-out]",
+                  )}
+                  style={{
+                    zIndex: 3,
+                    left: `${t.x}%`, top: `${t.y}%`,
+                    transform: "translate(-50%, -50%)",
+                    fontFamily: t.font, fontSize: t.size, color: t.color,
+                    fontWeight: t.weight, textShadow: "0 2px 8px rgba(0,0,0,0.6)",
+                  }}
+                >
+                  {isEditing ? (
+                    <span
+                      contentEditable
+                      suppressContentEditableWarning
+                      autoFocus
+                      ref={(el) => {
+                        if (el && document.activeElement !== el) {
+                          el.focus();
+                          const range = document.createRange();
+                          range.selectNodeContents(el);
+                          const sel = window.getSelection();
+                          sel?.removeAllRanges();
+                          sel?.addRange(range);
+                        }
+                      }}
+                      onBlur={(e) => {
+                        updateText(t.id, { text: e.currentTarget.textContent ?? "" });
+                        setEditingTextId(null);
+                      }}
+                      onKeyDown={(e) => {
+                        if (e.key === "Escape") {
+                          (e.currentTarget as HTMLElement).blur();
+                        }
+                      }}
+                      className="outline-none"
+                    >
+                      {t.text || "Texto"}
+                    </span>
+                  ) : (
+                    <>{t.text || "Texto"}</>
+                  )}
+
+                  {isSelected && !isEditing && (
+                    <div
+                      onPointerDown={(e) => startResize(e, t.id)}
+                      className="absolute -bottom-2 -right-2 h-4 w-4 cursor-se-resize rounded-full border-2 border-gold bg-black shadow"
+                      title="Arrastar para redimensionar"
+                    />
+                  )}
+                </div>
+              );
+            })}
           </div>
 
           {/* Controles overlay estilo CapCut — aparecem no hover/click */}
