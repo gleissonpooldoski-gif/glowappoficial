@@ -594,9 +594,12 @@ export default function Editor() {
         },
       });
 
-      // Validate output before publishing
+      // Validate output before publishing: only MP4 H.264/AAC final files are allowed.
       if (!result.blob || result.blob.size === 0) {
         throw new Error("Arquivo renderizado ficou vazio.");
+      }
+      if (result.extension !== "mp4" || !result.mime.startsWith("video/mp4")) {
+        throw new Error("Exportação inválida: somente arquivos MP4 finais podem ser salvos.");
       }
 
       setExportPhase("upload");
@@ -625,7 +628,7 @@ export default function Editor() {
         .insert({
           filename: finalName,
           mime_type: result.mime,
-          status: "finished",
+          status: "completed",
           progress: 100,
           project_id: edit.project_id,
           template_id: edit.template_id,
