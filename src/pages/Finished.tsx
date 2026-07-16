@@ -121,6 +121,37 @@ export default function Finished() {
         </Button>
       </header>
 
+      {jobs.length > 0 && (
+        <div className="space-y-2">
+          <h2 className="text-sm font-medium text-muted-foreground">Renderizações em andamento</h2>
+          <div className="grid gap-2 md:grid-cols-2">
+            {jobs.map((j) => (
+              <Card key={j.id} className="glass border-border/50">
+                <CardContent className="flex items-center gap-3 p-3">
+                  {j.status === "FAILED" ? (
+                    <AlertCircle className="text-destructive" size={18} />
+                  ) : (
+                    <Loader2 className="animate-spin text-gold" size={18} />
+                  )}
+                  <div className="min-w-0 flex-1">
+                    <div className="flex items-center justify-between text-xs">
+                      <span className="font-medium">
+                        {j.status === "QUEUED" && "Na fila"}
+                        {j.status === "PROCESSING" && "Renderizando…"}
+                        {j.status === "FAILED" && "Falhou"}
+                      </span>
+                      <span className="text-muted-foreground">{j.progress ?? 0}%</span>
+                    </div>
+                    <Progress value={j.progress ?? (j.status === "QUEUED" ? 5 : 40)} className="mt-1 h-1.5" />
+                    {j.error && <p className="mt-1 text-[10px] text-destructive">{j.error}</p>}
+                  </div>
+                </CardContent>
+              </Card>
+            ))}
+          </div>
+        </div>
+      )}
+
       {!videos ? (
         <div className="grid gap-3 sm:grid-cols-2 md:grid-cols-3 lg:grid-cols-4">
           {Array.from({ length: 4 }).map((_, i) => (
