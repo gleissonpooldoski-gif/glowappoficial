@@ -29,6 +29,16 @@ Deno.serve(async (req) => {
       .limit(10);
     if (publishingError) throw publishingError;
 
+    const noContainerCutoff = new Date(Date.now() - 5 * 60_000).toISOString();
+    const { data: orphanPublishing, error: orphanPublishingError } = await supabase
+      .from("instagram_posts")
+      .select("id")
+      .eq("status", "PUBLICANDO")
+      .is("container_id", null)
+      .lte("created_at", noContainerCutoff)
+      .limit(10);
+    if (orphanPublishingError) throw orphanPublishingError;
+
     const results: any[] = [];
     for (const row of due ?? []) {
       // Marca imediatamente para evitar dupla execução.
@@ -80,6 +90,12 @@ Deno.serve(async (req) => {
         }).eq("id", row.id);
         results.push({ id: row.id, recovery: true, ok: false, error: e?.message });
       }
+    }
+
+    for (const row of orphanPublishing ?? []) {
+      const message = "Timeout de 5 minutos: publicação ficou em PUBLICANDO sem creation_id/container_id salvo.";
+      await supabase.from("instagram_posts").update({ status: "ERRO", error_message: message }).eq("id", row.id);
+      results.push({ id: row.id, recovery: true, ok: false, status: "ERRO", error: message });
     }
 
     return new Response(JSON.stringify({ success: true, processed: results.length, results }),
