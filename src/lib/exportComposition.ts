@@ -266,8 +266,14 @@ export async function renderComposition(input: CompositionInput): Promise<Compos
   const referenceEdge = Math.min(W, H);
   const scale = referenceEdge / 1080;
 
-  const stream = canvas.captureStream(30);
-  // attach audio track from original video
+  // captureStream(0) => manual frame push via requestFrame(), so canvas frames
+  // are emitted only when a new source video frame arrives. This keeps A/V in
+  // sync even if the draw loop can't keep up with realtime.
+  const stream: MediaStream = (canvas as any).captureStream(0);
+  const videoTrack = stream.getVideoTracks()[0] as any;
+  const canRequestFrame = typeof videoTrack?.requestFrame === "function";
+
+  // attach audio track from original video (same clock as playback => in sync)
   const anyVideo = video as any;
   try {
     const vStream: MediaStream | undefined = anyVideo.captureStream?.() ?? anyVideo.mozCaptureStream?.();
@@ -288,7 +294,6 @@ export async function renderComposition(input: CompositionInput): Promise<Compos
     ctx.fillStyle = "#000";
     ctx.fillRect(0, 0, W, H);
 
-    // Video layer with zoom + translate
     const vw = video.videoWidth;
     const vh = video.videoHeight;
     if (vw && vh) {
@@ -303,7 +308,6 @@ export async function renderComposition(input: CompositionInput): Promise<Compos
       ctx.restore();
     }
 
-    // Template overlay
     if (tplImage || tplVideo) {
       ctx.save();
       ctx.globalAlpha = templateOpts.opacity;
@@ -316,7 +320,6 @@ export async function renderComposition(input: CompositionInput): Promise<Compos
       ctx.restore();
     }
 
-    // Texts
     ctx.save();
     ctx.globalCompositeOperation = "source-over";
     for (const t of texts) drawText(ctx, t, W, H, scale);
@@ -328,38 +331,67 @@ export async function renderComposition(input: CompositionInput): Promise<Compos
   onProgress?.(18, "Renderizando");
 
   const duration = isFinite(video.duration) && video.duration > 0 ? video.duration : 0;
-  let rafId = 0;
   let stopReq = false;
+  let rafId = 0;
 
-  const loop = () => {
+  // Preferred path: requestVideoFrameCallback — fires once per decoded source
+  // frame, so we emit exactly one canvas frame per source frame (constant frame
+  // rate matching the source, no dupes, no drops relative to source).
+  const hasRVFC = typeof (video as any).requestVideoFrameCallback === "function";
+
+  const onVideoFrame = (_now: number, meta: any) => {
     if (stopReq) return;
     drawFrame();
+    if (canRequestFrame) {
+      try { videoTrack.requestFrame(); } catch { /* noop */ }
+    }
+    if (duration > 0) {
+      const t = typeof meta?.mediaTime === "number" ? meta.mediaTime : video.currentTime;
+      const p = Math.min(95, 18 + (t / duration) * 77);
+      onProgress?.(p, "Renderizando");
+    }
+    (video as any).requestVideoFrameCallback(onVideoFrame);
+  };
+
+  const rafLoop = () => {
+    if (stopReq) return;
+    drawFrame();
+    if (canRequestFrame) {
+      try { videoTrack.requestFrame(); } catch { /* noop */ }
+    }
     if (duration > 0) {
       const p = Math.min(95, 18 + (video.currentTime / duration) * 77);
       onProgress?.(p, "Renderizando");
     }
-    rafId = requestAnimationFrame(loop);
+    rafId = requestAnimationFrame(rafLoop);
   };
 
-  // Start playback + recording
+  // Start playback + recording (start recorder BEFORE playback to avoid missing
+  // the first frames and to keep A/V start-of-stream aligned).
   video.muted = false;
   video.volume = 1;
   if (tplVideo) await tplVideo.play().catch(() => {});
-  await video.play();
   recorder.start(500);
-  loop();
+  await video.play();
+
+  if (hasRVFC) {
+    (video as any).requestVideoFrameCallback(onVideoFrame);
+  } else {
+    rafLoop();
+  }
 
   await new Promise<void>((resolve) => {
     const onEnd = () => { video.removeEventListener("ended", onEnd); resolve(); };
     video.addEventListener("ended", onEnd);
-    // safety timeout in case ended never fires: 2x duration + 5s
     if (duration > 0) {
       setTimeout(() => { if (!video.ended) { try { video.pause(); } catch {} resolve(); } }, duration * 1000 * 2 + 5000);
     }
   });
 
   stopReq = true;
-  cancelAnimationFrame(rafId);
+  if (rafId) cancelAnimationFrame(rafId);
+  // Give the recorder a tick to flush the final frame + audio tail before stop.
+  await new Promise((r) => setTimeout(r, 150));
   try { recorder.stop(); } catch {}
   await stopped;
 
@@ -374,3 +406,4 @@ export async function renderComposition(input: CompositionInput): Promise<Compos
 
   return { blob, mime: mime.split(";")[0], extension: ext, durationSeconds: duration };
 }
+
