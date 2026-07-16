@@ -73,7 +73,7 @@ const mediaErrorReason = (video: HTMLVideoElement) => {
   if (code === MediaError.MEDIA_ERR_ABORTED) return "Carregamento do vídeo foi interrompido pelo navegador.";
   if (code === MediaError.MEDIA_ERR_NETWORK) return "Falha de rede ao baixar o vídeo.";
   if (code === MediaError.MEDIA_ERR_DECODE) return "O navegador não conseguiu decodificar o arquivo de vídeo.";
-  if (code === MediaError.MEDIA_ERR_SRC_NOT_SUPPORTED) return "Formato, codec ou URL do vídeo não suportado pelo player.";
+  if (code === MediaError.MEDIA_ERR_SRC_NOT_SUPPORTED) return "Arquivo encontrado, mas o formato ou codec do vídeo não é suportado pelo player deste navegador.";
   return video.error?.message || "Falha desconhecida no player de vídeo.";
 };
 
