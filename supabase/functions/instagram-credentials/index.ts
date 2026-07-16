@@ -56,7 +56,7 @@ async function validateAccount(token: string, igId: string): Promise<ValidationR
 
   // 3) Business account
   try {
-    const igRes = await fetch(`https://graph.facebook.com/${GRAPH_VERSION}/${encodeURIComponent(igId)}?fields=id,username,account_type&access_token=${encodeURIComponent(token)}`);
+    const igRes = await fetch(`https://graph.facebook.com/${GRAPH_VERSION}/${encodeURIComponent(igId)}?fields=id,username&access_token=${encodeURIComponent(token)}`);
     const ig = await readMeta(igRes);
     if (ig.data?.error) {
       const code = ig.data.error.code;
