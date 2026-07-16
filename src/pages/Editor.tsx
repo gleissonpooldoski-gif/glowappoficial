@@ -166,6 +166,73 @@ export default function Editor() {
   const [loadError, setLoadError] = useState<LoadError | null>(null);
   const [videoReady, setVideoReady] = useState(false);
 
+  // Áudio / playback do vídeo original
+  const videoRef = useRef<HTMLVideoElement>(null);
+  const [isPlaying, setIsPlaying] = useState(false);
+  const [volume, setVolume] = useState(1);
+  const [isMuted, setIsMuted] = useState(false);
+  const [duration, setDuration] = useState(0);
+  const [currentTime, setCurrentTime] = useState(0);
+  const [hasAudioTrack, setHasAudioTrack] = useState<boolean | null>(null);
+
+  useEffect(() => {
+    const el = videoRef.current;
+    if (!el) return;
+    const onPlay = () => setIsPlaying(true);
+    const onPause = () => setIsPlaying(false);
+    const onTime = () => setCurrentTime(el.currentTime);
+    const onMeta = () => {
+      setDuration(el.duration || 0);
+      const anyEl = el as any;
+      const tracks = anyEl.mozHasAudio ?? (anyEl.webkitAudioDecodedByteCount ? anyEl.webkitAudioDecodedByteCount > 0 : null) ?? (anyEl.audioTracks ? anyEl.audioTracks.length > 0 : null);
+      setHasAudioTrack(tracks);
+    };
+    el.addEventListener("play", onPlay);
+    el.addEventListener("pause", onPause);
+    el.addEventListener("timeupdate", onTime);
+    el.addEventListener("loadedmetadata", onMeta);
+    return () => {
+      el.removeEventListener("play", onPlay);
+      el.removeEventListener("pause", onPause);
+      el.removeEventListener("timeupdate", onTime);
+      el.removeEventListener("loadedmetadata", onMeta);
+    };
+  }, [videoUrl]);
+
+  const togglePlay = () => {
+    const el = videoRef.current;
+    if (!el) return;
+    if (el.paused) {
+      el.play().catch((err) => console.error("[Editor] play failed", err));
+    } else {
+      el.pause();
+    }
+  };
+
+  const toggleMute = () => {
+    const el = videoRef.current;
+    if (!el) return;
+    const next = !el.muted;
+    el.muted = next;
+    setIsMuted(next);
+  };
+
+  const onVolume = (v: number) => {
+    setVolume(v);
+    if (videoRef.current) {
+      videoRef.current.volume = v;
+      videoRef.current.muted = v === 0;
+      setIsMuted(v === 0);
+    }
+  };
+
+  const formatTime = (t: number) => {
+    if (!isFinite(t)) return "0:00";
+    const m = Math.floor(t / 60);
+    const s = Math.floor(t % 60);
+    return `${m}:${s < 10 ? "0" : ""}${s}`;
+  };
+
   useEffect(() => {
     if (!id) return;
     (async () => {
