@@ -53,7 +53,7 @@ export default function InstagramPublishDialog({
       } else {
         toast.message("Enviando para o Instagram… isso pode levar alguns minutos.");
         await publishInstagram({ account, videoId, caption, hashtags, publishNow: true });
-        toast.success("Publicado no Instagram!");
+        toast.success("Publicação iniciada. Acompanhe o status em Publicações.");
       }
       onOpenChange(false);
       onDone?.();

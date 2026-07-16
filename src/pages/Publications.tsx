@@ -1,11 +1,13 @@
 import { useEffect, useState } from "react";
-import { Instagram, Loader2, CheckCircle2, AlertCircle, Clock, Trash2, Calendar } from "lucide-react";
+import { Instagram, Loader2, CheckCircle2, AlertCircle, Clock, Trash2, Calendar, ScrollText } from "lucide-react";
 import { Card, CardContent } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
+import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogDescription } from "@/components/ui/dialog";
+import { ScrollArea } from "@/components/ui/scroll-area";
 import { format } from "date-fns";
 import { ptBR } from "date-fns/locale";
-import { listInstagramPosts, InstagramPost, ACCOUNTS } from "@/lib/instagram";
+import { listInstagramPosts, InstagramPost, ACCOUNTS, getInstagramStatus } from "@/lib/instagram";
 import { supabase } from "@/integrations/supabase/client";
 import { toast } from "sonner";
 
@@ -25,15 +27,26 @@ const statusIcon = {
 
 export default function Publications() {
   const [posts, setPosts] = useState<InstagramPost[] | null>(null);
+  const [selectedPost, setSelectedPost] = useState<InstagramPost | null>(null);
 
   const load = async () => {
-    try { setPosts(await listInstagramPosts()); }
+    try {
+      const nextPosts = await listInstagramPosts();
+      setPosts(nextPosts);
+      const publishing = nextPosts.filter((p) => p.status === "PUBLICANDO" && p.container_id);
+      if (publishing.length > 0) {
+        const results = await Promise.allSettled(publishing.map((p) => getInstagramStatus(p.id)));
+        if (results.some((r) => r.status === "fulfilled" && ["PUBLICADO", "ERRO"].includes((r.value as any)?.status))) {
+          setPosts(await listInstagramPosts());
+        }
+      }
+    }
     catch (e: any) { toast.error(e?.message ?? "Falha ao carregar"); setPosts([]); }
   };
 
   useEffect(() => {
     load();
-    const t = window.setInterval(load, 8000);
+    const t = window.setInterval(load, 5000);
     return () => window.clearInterval(t);
   }, []);
 
@@ -86,10 +99,16 @@ export default function Publications() {
                 <CardContent className="space-y-1.5 p-3">
                   <div className="flex items-center justify-between text-[11px]">
                     <span className="font-medium text-gold">{accountLabel}</span>
-                    <Button size="sm" variant="ghost" className="h-6 w-6 p-0 text-muted-foreground hover:text-destructive"
-                      onClick={() => remove(p.id)}>
-                      <Trash2 size={12} />
-                    </Button>
+                    <div className="flex items-center gap-1">
+                      <Button size="sm" variant="ghost" className="h-6 w-6 p-0 text-muted-foreground hover:text-gold"
+                        onClick={() => setSelectedPost(p)} title="Ver logs">
+                        <ScrollText size={12} />
+                      </Button>
+                      <Button size="sm" variant="ghost" className="h-6 w-6 p-0 text-muted-foreground hover:text-destructive"
+                        onClick={() => remove(p.id)} title="Excluir">
+                        <Trash2 size={12} />
+                      </Button>
+                    </div>
                   </div>
                   <p className="line-clamp-3 text-xs text-foreground/80 whitespace-pre-wrap">
                     {p.caption || <span className="text-muted-foreground italic">(sem legenda)</span>}
@@ -114,6 +133,62 @@ export default function Publications() {
           })}
         </div>
       )}
+
+      <Dialog open={!!selectedPost} onOpenChange={(open) => !open && setSelectedPost(null)}>
+        <DialogContent className="max-w-3xl">
+          <DialogHeader>
+            <DialogTitle className="flex items-center gap-2">
+              <ScrollText size={16} className="text-gold" /> Logs da publicação
+            </DialogTitle>
+            <DialogDescription>
+              Diagnóstico completo da URL, criação do container, polling de status e publicação na Meta.
+            </DialogDescription>
+          </DialogHeader>
+          <ScrollArea className="h-[520px] rounded-md border border-border/60 bg-muted/20 p-3">
+            <div className="space-y-3 pr-3">
+              {selectedPost?.video_url && (
+                <div className="rounded-md border border-border/50 p-2 text-[11px]">
+                  <div className="mb-1 font-medium text-gold">URL enviada para a Meta</div>
+                  <p className="break-all text-muted-foreground">{selectedPost.video_url}</p>
+                </div>
+              )}
+              {selectedPost?.container_id && (
+                <div className="rounded-md border border-border/50 p-2 text-[11px]">
+                  <div className="mb-1 font-medium text-gold">creation_id</div>
+                  <p className="break-all text-muted-foreground">{selectedPost.container_id}</p>
+                </div>
+              )}
+              {selectedPost?.publish_id && (
+                <div className="rounded-md border border-border/50 p-2 text-[11px]">
+                  <div className="mb-1 font-medium text-gold">publish_id</div>
+                  <p className="break-all text-muted-foreground">{selectedPost.publish_id}</p>
+                </div>
+              )}
+              {(selectedPost?.logs ?? []).length === 0 ? (
+                <p className="py-8 text-center text-sm text-muted-foreground">Nenhum log registrado.</p>
+              ) : (
+                selectedPost!.logs.map((log, index) => (
+                  <div key={index} className="rounded-md border border-border/50 bg-background/70 p-2">
+                    <div className="mb-1 flex items-center justify-between gap-2 text-[11px]">
+                      <span className="font-medium text-gold">{log?.event ?? `log_${index + 1}`}</span>
+                      {log?.ts && <span className="text-muted-foreground">{format(new Date(log.ts), "dd/MM HH:mm:ss", { locale: ptBR })}</span>}
+                    </div>
+                    <pre className="whitespace-pre-wrap break-words text-[10px] leading-relaxed text-muted-foreground">
+                      {JSON.stringify(log, null, 2)}
+                    </pre>
+                  </div>
+                ))
+              )}
+              {selectedPost?.error_message && (
+                <div className="rounded-md border border-destructive/40 bg-destructive/5 p-2 text-[11px] text-destructive">
+                  <div className="mb-1 font-medium">Erro salvo</div>
+                  <pre className="whitespace-pre-wrap break-words">{selectedPost.error_message}</pre>
+                </div>
+              )}
+            </div>
+          </ScrollArea>
+        </DialogContent>
+      </Dialog>
     </div>
   );
 }

@@ -19,6 +19,26 @@ Deno.serve(async (req) => {
       .limit(10);
     if (error) throw error;
 
+    const staleCutoff = new Date(Date.now() - 60_000).toISOString();
+    const { data: publishing, error: publishingError } = await supabase
+      .from("instagram_posts")
+      .select("id")
+      .eq("status", "PUBLICANDO")
+      .not("container_id", "is", null)
+      .lte("created_at", staleCutoff)
+      .limit(10);
+    if (publishingError) throw publishingError;
+
+    const noContainerCutoff = new Date(Date.now() - 5 * 60_000).toISOString();
+    const { data: orphanPublishing, error: orphanPublishingError } = await supabase
+      .from("instagram_posts")
+      .select("id")
+      .eq("status", "PUBLICANDO")
+      .is("container_id", null)
+      .lte("created_at", noContainerCutoff)
+      .limit(10);
+    if (orphanPublishingError) throw orphanPublishingError;
+
     const results: any[] = [];
     for (const row of due ?? []) {
       // Marca imediatamente para evitar dupla execução.
@@ -49,6 +69,33 @@ Deno.serve(async (req) => {
         }).eq("id", row.id);
         results.push({ id: row.id, ok: false, error: e?.message });
       }
+    }
+
+    for (const row of publishing ?? []) {
+      const invokeUrl = `${Deno.env.get("SUPABASE_URL")}/functions/v1/instagram-status`;
+      try {
+        const res = await fetch(invokeUrl, {
+          method: "POST",
+          headers: {
+            "Content-Type": "application/json",
+            Authorization: `Bearer ${Deno.env.get("SUPABASE_SERVICE_ROLE_KEY")}`,
+          },
+          body: JSON.stringify({ postId: row.id }),
+        });
+        const j = await res.json().catch(() => ({}));
+        results.push({ id: row.id, recovery: true, ok: !!j?.success, ...j });
+      } catch (e: any) {
+        await supabase.from("instagram_posts").update({
+          status: "ERRO", error_message: e?.message ?? "Falha ao consultar status do Instagram",
+        }).eq("id", row.id);
+        results.push({ id: row.id, recovery: true, ok: false, error: e?.message });
+      }
+    }
+
+    for (const row of orphanPublishing ?? []) {
+      const message = "Timeout de 5 minutos: publicação ficou em PUBLICANDO sem creation_id/container_id salvo.";
+      await supabase.from("instagram_posts").update({ status: "ERRO", error_message: message }).eq("id", row.id);
+      results.push({ id: row.id, recovery: true, ok: false, status: "ERRO", error: message });
     }
 
     return new Response(JSON.stringify({ success: true, processed: results.length, results }),
