@@ -296,7 +296,7 @@ Deno.serve(async (req) => {
       throw new Error(`URL pública do vídeo inacessível para a Meta (HTTP ${urlCheck.status}).`);
     }
 
-    const { token, igId } = tokensFor(account as Account);
+    const { token, igId } = await tokensFor(supabase, account as Account);
     if (!token || !igId) throw new Error(`Credenciais Meta ausentes para a conta '${account}'.`);
 
     const accountCheckUrl = `https://graph.facebook.com/${GRAPH_VERSION}/${igId}?fields=id,username,account_type&access_token=${encodeURIComponent(token)}`;
