@@ -590,6 +590,7 @@ export default function Finished() {
         videoId={igDialog.videoId}
         defaultCaption={igDialog.caption ?? ""}
         defaultHashtags={igDialog.hashtags ?? ""}
+        videoMeta={igDialog.meta}
         onDone={() => load()}
       />
       <InstagramBatchDialog
