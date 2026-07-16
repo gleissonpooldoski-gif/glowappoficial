@@ -652,11 +652,43 @@ export default function Editor() {
       setExportPhase("render");
       setExportPercent(18);
 
+      // Feature detection: captureStream + MediaRecorder são obrigatórios
+      const canvasCapture =
+        (canvas as any).captureStream ||
+        (canvas as any).mozCaptureStream;
+      if (typeof canvasCapture !== "function") {
+        console.error("[Editor] canvas.captureStream indisponível neste navegador");
+        throw new Error(
+          "Seu navegador não suporta exportação de vídeo. Use Chrome, Edge ou Firefox atualizados.",
+        );
+      }
+      if (typeof MediaRecorder === "undefined") {
+        console.error("[Editor] MediaRecorder indisponível");
+        throw new Error(
+          "Seu navegador não suporta gravação de vídeo. Use Chrome, Edge ou Firefox atualizados.",
+        );
+      }
+
+      // Garante vídeo carregado antes de capturar áudio/frames
+      if (videoEl.readyState < 2) {
+        await new Promise<void>((res) => {
+          const on = () => { videoEl.removeEventListener("loadeddata", on); res(); };
+          videoEl.addEventListener("loadeddata", on);
+        });
+      }
+
       // Streams — 30fps é suficiente para plataformas sociais; menos overhead que 60.
-      const canvasStream = (canvas as any).captureStream(30) as MediaStream;
+      const canvasStream = canvasCapture.call(canvas, 30) as MediaStream;
       try {
-        const vs = (videoEl as any).captureStream?.() as MediaStream | undefined;
-        vs?.getAudioTracks().forEach((t) => canvasStream.addTrack(t));
+        const vCap =
+          (videoEl as any).captureStream ||
+          (videoEl as any).mozCaptureStream;
+        if (typeof vCap === "function") {
+          const vs = vCap.call(videoEl) as MediaStream | undefined;
+          vs?.getAudioTracks().forEach((t) => canvasStream.addTrack(t));
+        } else {
+          console.warn("[Editor] video.captureStream indisponível — exportando sem áudio");
+        }
       } catch (err) {
         console.warn("[Editor] captureStream de áudio falhou", err);
       }
@@ -670,9 +702,10 @@ export default function Editor() {
         "video/webm",
       ];
       const mime =
-        mimeCandidates.find(
-          (m) => typeof MediaRecorder !== "undefined" && MediaRecorder.isTypeSupported(m),
-        ) || "video/webm";
+        mimeCandidates.find((m) => MediaRecorder.isTypeSupported(m)) || "";
+      if (!mime) {
+        throw new Error("Nenhum codec de vídeo suportado neste navegador.");
+      }
       const isMp4 = mime.startsWith("video/mp4");
       const ext = isMp4 ? "mp4" : "webm";
       const outMime = isMp4 ? "video/mp4" : "video/webm";
