@@ -13,6 +13,7 @@ import {
   SelectTrigger,
   SelectValue,
 } from "@/components/ui/select";
+import InstagramCredentialsCard from "@/components/InstagramCredentialsCard";
 
 type App = {
   id?: string;
