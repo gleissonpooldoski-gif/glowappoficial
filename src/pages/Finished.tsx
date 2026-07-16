@@ -1,5 +1,5 @@
 import { useEffect, useState } from "react";
-import { Download, Trash2, Film, Package, Play, Calendar, Clock, LayoutTemplate, CheckCircle2, Loader2, AlertCircle } from "lucide-react";
+import { Download, Trash2, Film, Package, Play, Calendar, Clock, LayoutTemplate, CheckCircle2, Loader2, AlertCircle, Sparkles, Copy, ChevronDown, ChevronUp } from "lucide-react";
 import { supabase } from "@/integrations/supabase/client";
 import { toast } from "sonner";
 import { Card, CardContent } from "@/components/ui/card";
@@ -22,9 +22,12 @@ type FinishedVideo = {
   duration_seconds: number | null;
   size_bytes: number | null;
   template_id: string | null;
+  project_id?: string | null;
   created_at: string;
   updated_at: string;
   templateName?: string | null;
+  projectName?: string | null;
+  projectCategory?: string | null;
 };
 
 type RenderJob = {
@@ -34,6 +37,11 @@ type RenderJob = {
   error: string | null;
   created_at: string;
   edit_id: string | null;
+};
+
+type CaptionResult = {
+  caption: string;
+  hashtags: { alcance: string[]; nicho: string[]; tema: string[] };
 };
 
 const formatDuration = (s: number | null) => {
@@ -47,12 +55,15 @@ export default function Finished() {
   const [videos, setVideos] = useState<FinishedVideo[] | null>(null);
   const [jobs, setJobs] = useState<RenderJob[]>([]);
   const [urls, setUrls] = useState<Record<string, string>>({});
+  const [captions, setCaptions] = useState<Record<string, CaptionResult>>({});
+  const [captionLoading, setCaptionLoading] = useState<Record<string, boolean>>({});
+  const [captionOpen, setCaptionOpen] = useState<Record<string, boolean>>({});
 
   const load = async () => {
     const [{ data: vids, error: vidsErr }, { data: jbs, error: jbsErr }] = await Promise.all([
       supabase
         .from("videos")
-        .select("id, filename, mime_type, processed_path, processed_url, duration_seconds, size_bytes, template_id, created_at, updated_at, status")
+        .select("id, filename, mime_type, processed_path, processed_url, duration_seconds, size_bytes, template_id, project_id, created_at, updated_at, status")
         .eq("status", "completed")
         .order("updated_at", { ascending: false }),
       (supabase as any)
@@ -69,23 +80,33 @@ export default function Finished() {
       v.filename.toLowerCase().endsWith(".mp4") &&
       (v.mime_type ?? "video/mp4").startsWith("video/mp4"),
     );
-    console.log("[Finished] loaded videos ->", list.length, list);
 
-    // Enrich with template names (no FK, so no PostgREST join possible)
+    // Enrich with template names
     const templateIds = Array.from(new Set(list.map((v) => v.template_id).filter(Boolean))) as string[];
     if (templateIds.length) {
       const { data: tpls } = await (supabase as any)
-        .from("templates")
-        .select("id, name")
-        .in("id", templateIds);
+        .from("templates").select("id, name").in("id", templateIds);
       const map = new Map((tpls ?? []).map((t: any) => [t.id, t.name]));
       list.forEach((v) => { if (v.template_id) v.templateName = (map.get(v.template_id) as string) ?? null; });
+    }
+    // Enrich with project name/category
+    const projectIds = Array.from(new Set(list.map((v) => v.project_id).filter(Boolean))) as string[];
+    if (projectIds.length) {
+      const { data: prjs } = await (supabase as any)
+        .from("projects").select("id, name, category").in("id", projectIds);
+      const map = new Map((prjs ?? []).map((p: any) => [p.id, p]));
+      list.forEach((v) => {
+        if (v.project_id) {
+          const p: any = map.get(v.project_id);
+          v.projectName = p?.name ?? null;
+          v.projectCategory = p?.category ?? null;
+        }
+      });
     }
 
     setVideos(list);
     setJobs(((jbs ?? []) as any[]) as RenderJob[]);
 
-    // Signed URLs for inline preview
     const next: Record<string, string> = {};
     await Promise.all(
       list.map(async (v) => {
@@ -104,24 +125,15 @@ export default function Finished() {
   }, []);
 
   const download = async (v: FinishedVideo) => {
-    if (!v.processed_path) {
-      toast.info("Arquivo ainda não disponível.");
-      return;
-    }
+    if (!v.processed_path) { toast.info("Arquivo ainda não disponível."); return; }
     if (!v.processed_path.toLowerCase().endsWith(".mp4") || !v.filename.toLowerCase().endsWith(".mp4")) {
-      toast.error("Arquivo final MP4 não encontrado para este vídeo.");
-      return;
+      toast.error("Arquivo final MP4 não encontrado para este vídeo."); return;
     }
-    const { data, error } = await supabase.storage.from(BUCKET).createSignedUrl(v.processed_path, 60, {
-      download: v.filename,
-    });
+    const { data, error } = await supabase.storage.from(BUCKET).createSignedUrl(v.processed_path, 60, { download: v.filename });
     if (error) return toast.error(error.message);
     const a = document.createElement("a");
-    a.href = data.signedUrl;
-    a.download = v.filename;
-    document.body.appendChild(a);
-    a.click();
-    a.remove();
+    a.href = data.signedUrl; a.download = v.filename;
+    document.body.appendChild(a); a.click(); a.remove();
   };
 
   const remove = async (v: FinishedVideo) => {
@@ -131,14 +143,46 @@ export default function Finished() {
     load();
   };
 
+  const copyText = async (text: string, label: string) => {
+    try {
+      await navigator.clipboard.writeText(text);
+      toast.success(`${label} copiado`);
+    } catch {
+      toast.error("Não foi possível copiar");
+    }
+  };
+
+  const flatHashtags = (c: CaptionResult) =>
+    [...c.hashtags.alcance, ...c.hashtags.nicho, ...c.hashtags.tema].join(" ");
+
+  const generateCaption = async (v: FinishedVideo) => {
+    setCaptionOpen((s) => ({ ...s, [v.id]: true }));
+    setCaptionLoading((s) => ({ ...s, [v.id]: true }));
+    try {
+      const { data, error } = await supabase.functions.invoke("generate-caption", {
+        body: {
+          filename: v.filename,
+          templateName: v.templateName ?? null,
+          projectName: v.projectName ?? null,
+          projectCategory: v.projectCategory ?? null,
+        },
+      });
+      if (error) throw error;
+      if ((data as any)?.error) throw new Error((data as any).error);
+      setCaptions((s) => ({ ...s, [v.id]: data as CaptionResult }));
+    } catch (e: any) {
+      toast.error(e?.message ?? "Falha ao gerar legenda");
+    } finally {
+      setCaptionLoading((s) => ({ ...s, [v.id]: false }));
+    }
+  };
+
   return (
     <div className="space-y-6">
       <header className="flex flex-col gap-3 md:flex-row md:items-center md:justify-between">
         <div>
           <h1 className="text-2xl font-semibold tracking-tight">Vídeos Prontos</h1>
-          <p className="text-sm text-muted-foreground">
-            Seus vídeos finalizados. Reproduza, baixe ou exclua.
-          </p>
+          <p className="text-sm text-muted-foreground">Seus vídeos finalizados. Reproduza, baixe ou exclua.</p>
         </div>
         <Button variant="outline" className="border-border/60" disabled>
           <Package size={14} className="mr-1" /> Baixar todos (ZIP) — em breve
@@ -178,9 +222,7 @@ export default function Finished() {
 
       {!videos ? (
         <div className="grid gap-3 sm:grid-cols-2 md:grid-cols-3 lg:grid-cols-4">
-          {Array.from({ length: 4 }).map((_, i) => (
-            <Skeleton key={i} className="h-72" />
-          ))}
+          {Array.from({ length: 4 }).map((_, i) => <Skeleton key={i} className="h-72" />)}
         </div>
       ) : videos.length === 0 ? (
         <Card className="glass border-dashed">
@@ -195,32 +237,25 @@ export default function Finished() {
         <div className="grid gap-3 sm:grid-cols-2 md:grid-cols-3 lg:grid-cols-4">
           {videos.map((v) => {
             const src = urls[v.id];
+            const cap = captions[v.id];
+            const loading = !!captionLoading[v.id];
+            const open = !!captionOpen[v.id];
             return (
               <Card key={v.id} className="glass border-border/50 group overflow-hidden">
                 <div className="relative aspect-[9/16] bg-black">
                   {src ? (
-                    <video
-                      src={src}
-                      controls
-                      preload="metadata"
-                      className="h-full w-full object-contain"
-                    />
+                    <video src={src} controls preload="metadata" className="h-full w-full object-contain" />
                   ) : (
                     <div className="flex h-full items-center justify-center">
                       <Play className="text-gold/40" size={32} />
                     </div>
                   )}
-                  <Badge
-                    className="absolute left-2 top-2 border-emerald-400/40 bg-black/70 text-[10px] text-emerald-300"
-                    variant="outline"
-                  >
+                  <Badge className="absolute left-2 top-2 border-emerald-400/40 bg-black/70 text-[10px] text-emerald-300" variant="outline">
                     <CheckCircle2 size={10} className="mr-1" /> Concluído
                   </Badge>
                 </div>
                 <CardContent className="p-3">
-                  <p className="truncate text-xs font-medium" title={v.filename}>
-                    {v.filename}
-                  </p>
+                  <p className="truncate text-xs font-medium" title={v.filename}>{v.filename}</p>
                   <div className="mt-1.5 space-y-1 text-[10px] text-muted-foreground">
                     <div className="flex items-center gap-1.5">
                       <Calendar size={10} />
@@ -239,21 +274,84 @@ export default function Finished() {
                     )}
                   </div>
                   <div className="mt-2 flex gap-1">
-                    <Button
-                      size="sm"
-                      className="h-7 flex-1 bg-gold-gradient text-[11px] text-black"
-                      onClick={() => download(v)}
-                    >
+                    <Button size="sm" className="h-7 flex-1 bg-gold-gradient text-[11px] text-black" onClick={() => download(v)}>
                       <Download size={12} className="mr-1" /> Baixar
                     </Button>
-                    <Button
-                      size="sm"
-                      variant="ghost"
-                      className="h-7 w-7 p-0 text-muted-foreground hover:text-destructive"
-                      onClick={() => remove(v)}
-                    >
+                    <Button size="sm" variant="ghost" className="h-7 w-7 p-0 text-muted-foreground hover:text-destructive" onClick={() => remove(v)}>
                       <Trash2 size={12} />
                     </Button>
+                  </div>
+
+                  {/* Legenda e Hashtags */}
+                  <div className="mt-3 border-t border-border/50 pt-2">
+                    <button
+                      type="button"
+                      onClick={() => setCaptionOpen((s) => ({ ...s, [v.id]: !open }))}
+                      className="flex w-full items-center justify-between text-[11px] font-medium text-muted-foreground hover:text-gold"
+                    >
+                      <span className="flex items-center gap-1.5">
+                        <Sparkles size={12} className="text-gold" /> Legenda e Hashtags
+                      </span>
+                      {open ? <ChevronUp size={12} /> : <ChevronDown size={12} />}
+                    </button>
+
+                    {open && (
+                      <div className="mt-2 space-y-2">
+                        {!cap && !loading && (
+                          <Button
+                            size="sm"
+                            variant="outline"
+                            className="h-7 w-full text-[11px] border-gold/40 text-gold hover:bg-gold/10"
+                            onClick={() => generateCaption(v)}
+                          >
+                            <Sparkles size={12} className="mr-1" /> Gerar com IA
+                          </Button>
+                        )}
+
+                        {loading && (
+                          <div className="flex items-center justify-center gap-2 py-3 text-[11px] text-muted-foreground">
+                            <Loader2 size={12} className="animate-spin" /> Gerando…
+                          </div>
+                        )}
+
+                        {cap && !loading && (
+                          <div className="space-y-2">
+                            <div className="rounded-md border border-border/50 bg-background/40 p-2">
+                              <p className="text-[11px] leading-snug whitespace-pre-wrap">{cap.caption}</p>
+                            </div>
+                            <div className="rounded-md border border-border/50 bg-background/40 p-2 space-y-1">
+                              {cap.hashtags.alcance.length > 0 && (
+                                <p className="text-[10px] leading-snug"><span className="text-muted-foreground">Alcance: </span>{cap.hashtags.alcance.join(" ")}</p>
+                              )}
+                              {cap.hashtags.nicho.length > 0 && (
+                                <p className="text-[10px] leading-snug"><span className="text-muted-foreground">Nicho: </span>{cap.hashtags.nicho.join(" ")}</p>
+                              )}
+                              {cap.hashtags.tema.length > 0 && (
+                                <p className="text-[10px] leading-snug"><span className="text-muted-foreground">Tema: </span>{cap.hashtags.tema.join(" ")}</p>
+                              )}
+                            </div>
+                            <div className="flex flex-wrap gap-1">
+                              <Button size="sm" variant="outline" className="h-6 flex-1 text-[10px]"
+                                onClick={() => copyText(cap.caption, "Legenda")}>
+                                <Copy size={10} className="mr-1" /> Copiar legenda
+                              </Button>
+                              <Button size="sm" variant="outline" className="h-6 flex-1 text-[10px]"
+                                onClick={() => copyText(flatHashtags(cap), "Hashtags")}>
+                                <Copy size={10} className="mr-1" /> Copiar hashtags
+                              </Button>
+                              <Button size="sm" className="h-6 flex-1 bg-gold-gradient text-[10px] text-black"
+                                onClick={() => copyText(`${cap.caption}\n\n${flatHashtags(cap)}`, "Legenda + hashtags")}>
+                                <Copy size={10} className="mr-1" /> Copiar tudo
+                              </Button>
+                              <Button size="sm" variant="ghost" className="h-6 w-full text-[10px] text-muted-foreground hover:text-gold"
+                                onClick={() => generateCaption(v)}>
+                                <Sparkles size={10} className="mr-1" /> Gerar novamente
+                              </Button>
+                            </div>
+                          </div>
+                        )}
+                      </div>
+                    )}
                   </div>
                 </CardContent>
               </Card>
