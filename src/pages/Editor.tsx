@@ -727,7 +727,44 @@ export default function Editor() {
               </div>
             ))}
           </div>
+
+          {/* Controles de áudio/reprodução do vídeo original */}
+          {videoSrc && (
+            <div className="mt-3 flex items-center gap-3 rounded-md border border-border/50 bg-black/40 p-2">
+              <Button size="icon" variant="ghost" className="h-8 w-8" onClick={togglePlay}
+                title={isPlaying ? "Pausar" : "Reproduzir com áudio"}>
+                {isPlaying ? <Pause size={14} /> : <Play size={14} />}
+              </Button>
+              <input
+                type="range" min={0} max={duration || 0} step={0.1}
+                value={currentTime}
+                onChange={(e) => {
+                  const t = parseFloat(e.target.value);
+                  if (videoRef.current) videoRef.current.currentTime = t;
+                  setCurrentTime(t);
+                }}
+                className="h-1 flex-1 accent-gold"
+              />
+              <span className="min-w-[80px] text-right font-mono text-[11px] text-muted-foreground">
+                {formatTime(currentTime)} / {formatTime(duration)}
+              </span>
+              <Button size="icon" variant="ghost" className="h-8 w-8" onClick={toggleMute}
+                title={isMuted ? "Reativar áudio" : "Silenciar"}>
+                {isMuted || volume === 0 ? <VolumeX size={14} /> : <Volume2 size={14} />}
+              </Button>
+              <input
+                type="range" min={0} max={1} step={0.01}
+                value={isMuted ? 0 : volume}
+                onChange={(e) => onVolume(parseFloat(e.target.value))}
+                className="h-1 w-24 accent-gold"
+              />
+              {hasAudioTrack === false && (
+                <span className="text-[10px] text-muted-foreground">Vídeo sem faixa de áudio</span>
+              )}
+            </div>
+          )}
         </div>
+
 
         {/* Right panel — properties */}
         <Card className="glass border-border/50 overflow-y-auto">
