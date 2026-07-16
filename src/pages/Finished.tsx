@@ -20,9 +20,10 @@ type FinishedVideo = {
   processed_url: string | null;
   duration_seconds: number | null;
   size_bytes: number | null;
+  template_id: string | null;
   created_at: string;
   updated_at: string;
-  templates?: { name: string | null } | null;
+  templateName?: string | null;
 };
 
 type RenderJob = {
@@ -47,11 +48,12 @@ export default function Finished() {
   const [urls, setUrls] = useState<Record<string, string>>({});
 
   const load = async () => {
-    const [{ data: vids }, { data: jbs }] = await Promise.all([
+    // Accept both "finished" (new export flow) and legacy "completed"
+    const [{ data: vids, error: vidsErr }, { data: jbs, error: jbsErr }] = await Promise.all([
       supabase
         .from("videos")
-        .select("*, templates(name)")
-        .eq("status", "finished")
+        .select("id, filename, processed_path, processed_url, duration_seconds, size_bytes, template_id, created_at, updated_at, status")
+        .in("status", ["finished", "completed"])
         .order("updated_at", { ascending: false }),
       (supabase as any)
         .from("render_jobs")
@@ -60,10 +62,24 @@ export default function Finished() {
         .order("created_at", { ascending: false })
         .limit(20),
     ]);
+    if (vidsErr) console.error("[Finished] load videos error", vidsErr);
+    if (jbsErr) console.error("[Finished] load jobs error", jbsErr);
     const list = ((vids ?? []) as any[]) as FinishedVideo[];
+    console.log("[Finished] loaded videos ->", list.length, list);
+
+    // Enrich with template names (no FK, so no PostgREST join possible)
+    const templateIds = Array.from(new Set(list.map((v) => v.template_id).filter(Boolean))) as string[];
+    if (templateIds.length) {
+      const { data: tpls } = await (supabase as any)
+        .from("templates")
+        .select("id, name")
+        .in("id", templateIds);
+      const map = new Map((tpls ?? []).map((t: any) => [t.id, t.name]));
+      list.forEach((v) => { if (v.template_id) v.templateName = (map.get(v.template_id) as string) ?? null; });
+    }
+
     setVideos(list);
     setJobs(((jbs ?? []) as any[]) as RenderJob[]);
-
 
     // Signed URLs for inline preview
     const next: Record<string, string> = {};
@@ -208,9 +224,9 @@ export default function Finished() {
                       </span>
                       <span>{formatBytes(v.size_bytes ?? 0)}</span>
                     </div>
-                    {v.templates?.name && (
+                    {v.templateName && (
                       <div className="flex items-center gap-1.5 text-gold">
-                        <LayoutTemplate size={10} /> {v.templates.name}
+                        <LayoutTemplate size={10} /> {v.templateName}
                       </div>
                     )}
                   </div>
