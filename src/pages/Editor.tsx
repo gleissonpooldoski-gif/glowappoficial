@@ -1000,12 +1000,57 @@ export default function Editor() {
                       <Label className="text-xs">Fonte</Label>
                       <Select value={selectedText.font}
                         onValueChange={(v) => updateText(selectedText.id, { font: v })}>
-                        <SelectTrigger><SelectValue /></SelectTrigger>
+                        <SelectTrigger>
+                          <SelectValue />
+                        </SelectTrigger>
                         <SelectContent>
-                          {FONTS.map((f) => <SelectItem key={f} value={f}>{f}</SelectItem>)}
+                          {FONTS.map((f) => (
+                            <SelectItem key={f} value={f}>
+                              <span style={{ fontFamily: `"${f}", sans-serif` }}>{f}</span>
+                            </SelectItem>
+                          ))}
                         </SelectContent>
                       </Select>
+                      <div
+                        className="mt-1 rounded border border-border/40 bg-black/30 px-2 py-1 text-white"
+                        style={{
+                          fontFamily: `"${selectedText.font}", sans-serif`,
+                          fontWeight: selectedText.weight,
+                          textTransform: selectedText.transform ?? "none",
+                        }}
+                      >
+                        {selectedText.text || "Prévia"}
+                      </div>
                     </div>
+
+                    <div className="space-y-1.5">
+                      <Label className="text-xs">Capitalização</Label>
+                      <div className="grid grid-cols-4 gap-1">
+                        {TRANSFORM_OPTIONS.map((opt) => {
+                          const active = (selectedText.transform ?? "none") === opt.value;
+                          return (
+                            <button
+                              key={opt.value}
+                              type="button"
+                              onClick={() => updateText(selectedText.id, { transform: opt.value })}
+                              className={cn(
+                                "rounded-md border px-1 py-1.5 text-[10px] leading-tight transition",
+                                active
+                                  ? "border-gold bg-gold/15 text-gold"
+                                  : "border-border/40 bg-transparent text-muted-foreground hover:border-gold/40",
+                              )}
+                              title={opt.label}
+                            >
+                              <div className="text-sm font-bold" style={{ textTransform: opt.value }}>
+                                {opt.sample}
+                              </div>
+                              <div>{opt.label}</div>
+                            </button>
+                          );
+                        })}
+                      </div>
+                    </div>
+
                     <div className="space-y-1.5">
                       <Label className="text-xs">Tamanho: {selectedText.size}px</Label>
                       <Slider min={12} max={160} value={[selectedText.size]}
@@ -1016,12 +1061,113 @@ export default function Editor() {
                       <Slider min={100} max={900} step={100} value={[selectedText.weight]}
                         onValueChange={([v]) => updateText(selectedText.id, { weight: v })} />
                     </div>
+
+                    <div className="space-y-1.5">
+                      <Label className="text-xs">Alinhamento</Label>
+                      <div className="grid grid-cols-3 gap-1">
+                        {(["left", "center", "right"] as TextAlign[]).map((a) => {
+                          const active = (selectedText.align ?? "center") === a;
+                          return (
+                            <button
+                              key={a}
+                              type="button"
+                              onClick={() => updateText(selectedText.id, { align: a })}
+                              className={cn(
+                                "rounded-md border px-2 py-1.5 text-xs capitalize transition",
+                                active
+                                  ? "border-gold bg-gold/15 text-gold"
+                                  : "border-border/40 text-muted-foreground hover:border-gold/40",
+                              )}
+                            >
+                              {a === "left" ? "Esquerda" : a === "right" ? "Direita" : "Centro"}
+                            </button>
+                          );
+                        })}
+                      </div>
+                    </div>
+
+                    <div className="space-y-1.5">
+                      <Label className="text-xs">
+                        Espaçamento entre letras: {selectedText.letterSpacing ?? 0}px
+                      </Label>
+                      <Slider
+                        min={-5} max={30} step={0.5}
+                        value={[selectedText.letterSpacing ?? 0]}
+                        onValueChange={([v]) => updateText(selectedText.id, { letterSpacing: v })}
+                      />
+                    </div>
+                    <div className="space-y-1.5">
+                      <Label className="text-xs">
+                        Altura da linha: {(selectedText.lineHeight ?? 1.2).toFixed(2)}
+                      </Label>
+                      <Slider
+                        min={0.8} max={2.5} step={0.05}
+                        value={[selectedText.lineHeight ?? 1.2]}
+                        onValueChange={([v]) => updateText(selectedText.id, { lineHeight: v })}
+                      />
+                    </div>
+
                     <div className="flex items-center gap-2">
                       <input type="color" value={selectedText.color}
                         onChange={(e) => updateText(selectedText.id, { color: e.target.value })}
                         className="h-8 w-10 cursor-pointer rounded border border-border/40 bg-transparent" />
                       <Label className="text-xs">Cor do texto</Label>
                     </div>
+
+                    <div className="space-y-1.5 rounded-md border border-border/40 p-2">
+                      <div className="flex items-center justify-between">
+                        <Label className="text-xs">Contorno: {selectedText.strokeWidth ?? 0}px</Label>
+                        <input
+                          type="color"
+                          value={selectedText.strokeColor ?? "#000000"}
+                          onChange={(e) => updateText(selectedText.id, { strokeColor: e.target.value })}
+                          className="h-6 w-8 cursor-pointer rounded border border-border/40 bg-transparent"
+                        />
+                      </div>
+                      <Slider
+                        min={0} max={8} step={0.5}
+                        value={[selectedText.strokeWidth ?? 0]}
+                        onValueChange={([v]) => updateText(selectedText.id, { strokeWidth: v })}
+                      />
+                    </div>
+
+                    <div className="flex items-center justify-between rounded-md border border-border/40 p-2">
+                      <Label className="text-xs">Sombra do texto</Label>
+                      <button
+                        type="button"
+                        onClick={() => updateText(selectedText.id, { shadow: !(selectedText.shadow ?? true) })}
+                        className={cn(
+                          "rounded-full px-3 py-1 text-[10px] transition",
+                          (selectedText.shadow ?? true)
+                            ? "bg-gold/20 text-gold"
+                            : "bg-muted text-muted-foreground",
+                        )}
+                      >
+                        {(selectedText.shadow ?? true) ? "Ativa" : "Desligada"}
+                      </button>
+                    </div>
+
+                    <div className="space-y-1.5 rounded-md border border-border/40 p-2">
+                      <div className="flex items-center justify-between">
+                        <Label className="text-xs">Fundo do texto</Label>
+                        <div className="flex items-center gap-1">
+                          <input
+                            type="color"
+                            value={selectedText.bgColor ?? "#000000"}
+                            onChange={(e) => updateText(selectedText.id, { bgColor: e.target.value })}
+                            className="h-6 w-8 cursor-pointer rounded border border-border/40 bg-transparent"
+                          />
+                          <button
+                            type="button"
+                            onClick={() => updateText(selectedText.id, { bgColor: null })}
+                            className="rounded border border-border/40 px-2 py-0.5 text-[10px] text-muted-foreground hover:border-gold/40"
+                          >
+                            Sem fundo
+                          </button>
+                        </div>
+                      </div>
+                    </div>
+
                     <div className="space-y-1.5">
                       <Label className="text-xs">Animação</Label>
                       <Select value={selectedText.animation}
