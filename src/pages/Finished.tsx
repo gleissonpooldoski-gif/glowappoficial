@@ -1,5 +1,7 @@
 import { useEffect, useMemo, useState } from "react";
-import { Download, Trash2, Film, Package, Play, Calendar, Clock, LayoutTemplate, CheckCircle2, Loader2, AlertCircle, Sparkles, Copy, ChevronDown, ChevronUp, CheckSquare, Square } from "lucide-react";
+import { Download, Trash2, Film, Package, Play, Calendar, Clock, LayoutTemplate, CheckCircle2, Loader2, AlertCircle, Sparkles, Copy, ChevronDown, ChevronUp, CheckSquare, Square, Instagram, CalendarClock, Layers } from "lucide-react";
+import InstagramPublishDialog from "@/components/InstagramPublishDialog";
+import InstagramBatchDialog from "@/components/InstagramBatchDialog";
 import { supabase } from "@/integrations/supabase/client";
 import { toast } from "sonner";
 import { Card, CardContent } from "@/components/ui/card";
@@ -71,6 +73,8 @@ export default function Finished() {
   const [pendingRemoveId, setPendingRemoveId] = useState<string | null>(null);
   const [bulkBusy, setBulkBusy] = useState(false);
   const [zipBusy, setZipBusy] = useState(false);
+  const [igDialog, setIgDialog] = useState<{ open: boolean; mode: "now" | "schedule"; videoId: string | null; caption?: string; hashtags?: string }>({ open: false, mode: "now", videoId: null });
+  const [igBatchOpen, setIgBatchOpen] = useState(false);
 
   const load = async () => {
     if (!activeProject) { setVideos([]); setJobs([]); return; }
@@ -303,6 +307,16 @@ export default function Finished() {
               size="sm"
               variant="outline"
               className="border-gold/40 text-gold hover:bg-gold/10"
+              disabled={selected.size === 0}
+              onClick={() => setIgBatchOpen(true)}
+            >
+              <Layers size={14} className="mr-1.5" />
+              Publicar em lote ({selected.size})
+            </Button>
+            <Button
+              size="sm"
+              variant="outline"
+              className="border-gold/40 text-gold hover:bg-gold/10"
               disabled={zipBusy}
               onClick={downloadAll}
             >
@@ -432,14 +446,31 @@ export default function Finished() {
                       </div>
                     )}
                   </div>
-                  <div className="mt-2 flex gap-1">
+                  <div className="mt-2 flex flex-wrap gap-1">
                     <Button size="sm" className="h-7 flex-1 bg-gold-gradient text-[11px] text-black" onClick={() => download(v)}>
                       <Download size={12} className="mr-1" /> Baixar
                     </Button>
                     <Button size="sm" variant="ghost" className="h-7 w-7 p-0 text-muted-foreground hover:text-destructive" onClick={() => askRemoveOne(v.id)}>
                       <Trash2 size={12} />
                     </Button>
+                    <Button
+                      size="sm"
+                      variant="outline"
+                      className="h-7 flex-1 text-[11px] border-gold/40 text-gold hover:bg-gold/10"
+                      onClick={() => setIgDialog({ open: true, mode: "now", videoId: v.id, caption: cap?.caption, hashtags: cap ? flatHashtags(cap) : "" })}
+                    >
+                      <Instagram size={12} className="mr-1" /> Publicar
+                    </Button>
+                    <Button
+                      size="sm"
+                      variant="outline"
+                      className="h-7 flex-1 text-[11px]"
+                      onClick={() => setIgDialog({ open: true, mode: "schedule", videoId: v.id, caption: cap?.caption, hashtags: cap ? flatHashtags(cap) : "" })}
+                    >
+                      <CalendarClock size={12} className="mr-1" /> Agendar
+                    </Button>
                   </div>
+
 
 
                   {/* Legenda e Hashtags */}
@@ -551,6 +582,22 @@ export default function Finished() {
           </AlertDialogFooter>
         </AlertDialogContent>
       </AlertDialog>
+
+      <InstagramPublishDialog
+        open={igDialog.open}
+        onOpenChange={(o) => setIgDialog((s) => ({ ...s, open: o }))}
+        mode={igDialog.mode}
+        videoId={igDialog.videoId}
+        defaultCaption={igDialog.caption ?? ""}
+        defaultHashtags={igDialog.hashtags ?? ""}
+        onDone={() => load()}
+      />
+      <InstagramBatchDialog
+        open={igBatchOpen}
+        onOpenChange={setIgBatchOpen}
+        videoIds={Array.from(selected)}
+        onDone={() => { setSelected(new Set()); load(); }}
+      />
     </div>
   );
 }

@@ -172,6 +172,71 @@ export type Database = {
           },
         ]
       }
+      instagram_posts: {
+        Row: {
+          account: string
+          caption: string
+          container_id: string | null
+          created_at: string
+          error_message: string | null
+          hashtags: string
+          id: string
+          logs: Json
+          publish_id: string | null
+          published_at: string | null
+          scheduled_at: string | null
+          status: string
+          thumbnail_url: string | null
+          updated_at: string
+          video_id: string | null
+          video_url: string | null
+        }
+        Insert: {
+          account: string
+          caption?: string
+          container_id?: string | null
+          created_at?: string
+          error_message?: string | null
+          hashtags?: string
+          id?: string
+          logs?: Json
+          publish_id?: string | null
+          published_at?: string | null
+          scheduled_at?: string | null
+          status?: string
+          thumbnail_url?: string | null
+          updated_at?: string
+          video_id?: string | null
+          video_url?: string | null
+        }
+        Update: {
+          account?: string
+          caption?: string
+          container_id?: string | null
+          created_at?: string
+          error_message?: string | null
+          hashtags?: string
+          id?: string
+          logs?: Json
+          publish_id?: string | null
+          published_at?: string | null
+          scheduled_at?: string | null
+          status?: string
+          thumbnail_url?: string | null
+          updated_at?: string
+          video_id?: string | null
+          video_url?: string | null
+        }
+        Relationships: [
+          {
+            foreignKeyName: "instagram_posts_video_id_fkey"
+            columns: ["video_id"]
+            isOneToOne: false
+            referencedRelation: "videos"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
       processing_queue: {
         Row: {
           brand_id: string | null
