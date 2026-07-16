@@ -52,6 +52,7 @@ const emptyEdit: EditState = { name: "", description: "", category: "Geral" };
 
 export default function Templates() {
   const navigate = useNavigate();
+  const { activeProject } = useActiveProject();
   const fileInputRef = useRef<HTMLInputElement>(null);
   const [templates, setTemplates] = useState<Template[] | null>(null);
   const [q, setQ] = useState("");
@@ -64,9 +65,11 @@ export default function Templates() {
   const [previewing, setPreviewing] = useState<Template | null>(null);
 
   const load = async () => {
+    if (!activeProject) { setTemplates([]); return; }
     const { data, error } = await supabase
       .from("templates")
       .select("*")
+      .eq("project_id", activeProject.id)
       .order("created_at", { ascending: false });
     if (error) toast.error(error.message);
     setTemplates((data ?? []) as Template[]);
@@ -74,7 +77,7 @@ export default function Templates() {
 
   useEffect(() => {
     load();
-  }, []);
+  }, [activeProject?.id]);
 
   // ---------- Upload ----------
   const openFileDialog = () => fileInputRef.current?.click();
