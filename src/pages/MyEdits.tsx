@@ -313,31 +313,48 @@ export default function MyEdits() {
         </div>
       )}
 
-      <AlertDialog open={confirmMode !== null} onOpenChange={(open) => !open && setConfirmMode(null)}>
+      <AlertDialog open={confirmMode !== null} onOpenChange={(open) => { if (!open) { setConfirmMode(null); setPendingRow(null); } }}>
         <AlertDialogContent>
           <AlertDialogHeader>
             <AlertDialogTitle>
-              {confirmMode === "all" ? "Excluir todos os projetos?" : "Excluir projetos selecionados?"}
+              {confirmMode === "all" && "Excluir todos os projetos?"}
+              {confirmMode === "selection" && "Excluir projetos selecionados?"}
+              {confirmMode === "one" && "Tem certeza que deseja excluir este projeto?"}
+              {confirmMode === "return" && "Retornar vídeo para a Biblioteca?"}
             </AlertDialogTitle>
             <AlertDialogDescription>
-              {confirmMode === "all"
-                ? "Tem certeza que deseja excluir todos os projetos de edição? Essa ação não poderá ser desfeita."
-                : `Tem certeza que deseja excluir ${selected.size} projeto(s) selecionado(s)? Essa ação não poderá ser desfeita.`}
+              {confirmMode === "all" && "Tem certeza que deseja excluir todos os projetos de edição? Essa ação não poderá ser desfeita."}
+              {confirmMode === "selection" && `Tem certeza que deseja excluir ${selected.size} projeto(s) selecionado(s)? Essa ação não poderá ser desfeita.`}
+              {confirmMode === "one" && "O projeto de edição será removido. O vídeo original volta para a Biblioteca."}
+              {confirmMode === "return" && "O projeto de edição será removido e o vídeo voltará a aparecer na Biblioteca."}
             </AlertDialogDescription>
           </AlertDialogHeader>
           <AlertDialogFooter>
             <AlertDialogCancel disabled={deleting}>Cancelar</AlertDialogCancel>
             <AlertDialogAction
-              onClick={(e) => { e.preventDefault(); runBulkDelete(); }}
+              onClick={(e) => {
+                e.preventDefault();
+                if (confirmMode === "one") doRemoveOne();
+                else if (confirmMode === "return") doReturnToLibrary();
+                else runBulkDelete();
+              }}
               disabled={deleting}
-              className="bg-destructive text-destructive-foreground hover:bg-destructive/90"
+              className={cn(
+                confirmMode === "return"
+                  ? "bg-gold text-black hover:bg-gold/90"
+                  : "bg-destructive text-destructive-foreground hover:bg-destructive/90",
+              )}
             >
-              {deleting ? <Loader2 size={14} className="mr-1.5 animate-spin" /> : <Trash2 size={14} className="mr-1.5" />}
-              {confirmMode === "all" ? "Excluir todos" : "Excluir selecionados"}
+              {deleting ? <Loader2 size={14} className="mr-1.5 animate-spin" /> : (confirmMode === "return" ? <Undo2 size={14} className="mr-1.5" /> : <Trash2 size={14} className="mr-1.5" />)}
+              {confirmMode === "all" && "Excluir todos"}
+              {confirmMode === "selection" && "Excluir selecionados"}
+              {confirmMode === "one" && "Excluir"}
+              {confirmMode === "return" && "Retornar"}
             </AlertDialogAction>
           </AlertDialogFooter>
         </AlertDialogContent>
       </AlertDialog>
+
     </div>
   );
 }
