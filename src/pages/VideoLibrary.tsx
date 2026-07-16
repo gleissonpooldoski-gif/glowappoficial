@@ -129,7 +129,19 @@ export default function VideoLibrary() {
       supabase.from("projects").select("id, name").order("created_at", { ascending: false }),
       supabase.from("templates").select("id, name, preview_url, file_path, file_type").order("created_at", { ascending: false }),
     ]);
-    const list = (v.data ?? []) as Video[];
+    const raw = (v.data ?? []) as Video[];
+    // Deduplicate for display: only the most recent AVAILABLE record per file_hash is shown.
+    // Records without a hash are always kept. The other duplicates permanecem no banco
+    // e continuam disponíveis para virar projetos independentes quando o visível sair para edição.
+    const seen = new Set<string>();
+    const list: Video[] = [];
+    for (const item of raw) {
+      const h = item.file_hash;
+      if (!h) { list.push(item); continue; }
+      if (seen.has(h)) continue;
+      seen.add(h);
+      list.push(item);
+    }
     setVideos(list);
     setProjects((p.data ?? []) as any);
     setTemplates((t.data ?? []) as any);
