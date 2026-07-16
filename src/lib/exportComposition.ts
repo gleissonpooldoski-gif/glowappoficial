@@ -446,7 +446,6 @@ export async function renderComposition(input: CompositionInput): Promise<Compos
   };
 
   await conversion.execute();
-  await output.finalize();
   onProgress?.(95, "Validando MP4");
 
   if (!target.buffer || target.buffer.byteLength === 0) throw new Error("Renderização produziu arquivo MP4 vazio.");
