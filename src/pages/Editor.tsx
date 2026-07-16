@@ -1,7 +1,7 @@
 import { useEffect, useMemo, useRef, useState } from "react";
 import { useNavigate, useParams } from "react-router-dom";
 import {
-  ArrowLeft, Save, Rocket, Type, Plus, Trash2, Loader2, Layers,
+  ArrowLeft, Save, Rocket, Type, Plus, Trash2, Loader2, Layers, Copy,
   Palette, Image as ImageIcon, ZoomIn, ZoomOut, Move, Play, Pause, Volume2, VolumeX, Maximize2,
 } from "lucide-react";
 import { supabase } from "@/integrations/supabase/client";
