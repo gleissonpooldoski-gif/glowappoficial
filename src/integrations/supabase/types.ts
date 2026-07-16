@@ -225,10 +225,13 @@ export type Database = {
           original_url: string | null
           processed_path: string | null
           processed_url: string | null
+          progress: number
           project_id: string | null
           size_bytes: number | null
           status: Database["public"]["Enums"]["video_status"]
           template_id: string | null
+          thumbnail_path: string | null
+          thumbnail_url: string | null
           updated_at: string
         }
         Insert: {
@@ -241,10 +244,13 @@ export type Database = {
           original_url?: string | null
           processed_path?: string | null
           processed_url?: string | null
+          progress?: number
           project_id?: string | null
           size_bytes?: number | null
           status?: Database["public"]["Enums"]["video_status"]
           template_id?: string | null
+          thumbnail_path?: string | null
+          thumbnail_url?: string | null
           updated_at?: string
         }
         Update: {
@@ -257,10 +263,13 @@ export type Database = {
           original_url?: string | null
           processed_path?: string | null
           processed_url?: string | null
+          progress?: number
           project_id?: string | null
           size_bytes?: number | null
           status?: Database["public"]["Enums"]["video_status"]
           template_id?: string | null
+          thumbnail_path?: string | null
+          thumbnail_url?: string | null
           updated_at?: string
         }
         Relationships: [
@@ -292,7 +301,16 @@ export type Database = {
         | "celebridades"
         | "outro"
       queue_status: "pending" | "processing" | "done" | "error"
-      video_status: "uploaded" | "queued" | "processing" | "finished" | "error"
+      video_status:
+        | "uploaded"
+        | "queued"
+        | "processing"
+        | "finished"
+        | "error"
+        | "pending"
+        | "uploading"
+        | "completed"
+        | "failed"
       watermark_position:
         | "top-left"
         | "top-right"
@@ -437,7 +455,17 @@ export const Constants = {
         "outro",
       ],
       queue_status: ["pending", "processing", "done", "error"],
-      video_status: ["uploaded", "queued", "processing", "finished", "error"],
+      video_status: [
+        "uploaded",
+        "queued",
+        "processing",
+        "finished",
+        "error",
+        "pending",
+        "uploading",
+        "completed",
+        "failed",
+      ],
       watermark_position: [
         "top-left",
         "top-right",
