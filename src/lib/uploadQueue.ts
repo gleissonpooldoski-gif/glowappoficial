@@ -226,14 +226,14 @@ export async function processItem(
           thumbnail_path: thumbnailPath,
           thumbnail_url: thumbnailUrl,
           duration_seconds: duration ?? null,
-          status: "available" as any,
+          status: "uploaded" as any,
         } as any)
         .eq("id", videoId);
     } catch (err) {
       console.error("[uploadQueue] background finalize failed", err);
       await supabase
         .from("videos")
-        .update({ status: "available" as any } as any)
+        .update({ status: "uploaded" as any } as any)
         .eq("id", videoId);
     } finally {
       onFinalized?.(videoId);
