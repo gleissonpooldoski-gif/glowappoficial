@@ -90,6 +90,7 @@ export type Database = {
           doc: Json
           id: string
           name: string | null
+          owner_user_id: string
           project_id: string | null
           queue_id: string | null
           status: Database["public"]["Enums"]["edit_status"]
@@ -97,7 +98,9 @@ export type Database = {
           template_url: string | null
           updated_at: string
           user_id: string
+          video_filename: string | null
           video_id: string | null
+          video_storage_path: string | null
           video_url: string | null
         }
         Insert: {
@@ -106,6 +109,7 @@ export type Database = {
           doc?: Json
           id?: string
           name?: string | null
+          owner_user_id?: string
           project_id?: string | null
           queue_id?: string | null
           status?: Database["public"]["Enums"]["edit_status"]
@@ -113,7 +117,9 @@ export type Database = {
           template_url?: string | null
           updated_at?: string
           user_id?: string
+          video_filename?: string | null
           video_id?: string | null
+          video_storage_path?: string | null
           video_url?: string | null
         }
         Update: {
@@ -122,6 +128,7 @@ export type Database = {
           doc?: Json
           id?: string
           name?: string | null
+          owner_user_id?: string
           project_id?: string | null
           queue_id?: string | null
           status?: Database["public"]["Enums"]["edit_status"]
@@ -129,7 +136,9 @@ export type Database = {
           template_url?: string | null
           updated_at?: string
           user_id?: string
+          video_filename?: string | null
           video_id?: string | null
+          video_storage_path?: string | null
           video_url?: string | null
         }
         Relationships: [
