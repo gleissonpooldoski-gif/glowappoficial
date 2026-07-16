@@ -39,6 +39,10 @@ const PREVIEWS: Record<string, { bg: string; accent: string; label: string }> = 
 export default function Templates() {
   const [templates, setTemplates] = useState<Template[] | null>(null);
   const [toDelete, setToDelete] = useState<Template | null>(null);
+  const [aiOpen, setAiOpen] = useState(false);
+  const [niche, setNiche] = useState("");
+  const [style, setStyle] = useState("");
+  const [generating, setGenerating] = useState(false);
   const navigate = useNavigate();
 
   const load = async () => {
@@ -72,6 +76,38 @@ export default function Templates() {
     load();
   };
 
+  const generateWithAi = async () => {
+    if (!niche.trim()) return toast.error("Informe o nicho");
+    setGenerating(true);
+    try {
+      const { data, error } = await supabase.functions.invoke("generate-template", {
+        body: { niche: niche.trim(), stylePrompt: style.trim() || undefined },
+      });
+      if (error) throw error;
+      if (data?.error) throw new Error(data.error);
+      const { name, description, canvas, elements } = data;
+      const { data: inserted, error: insErr } = await supabase
+        .from("templates")
+        .insert({
+          name: name || `Template ${niche}`,
+          description: description || `Gerado por IA para ${niche}`,
+          settings: { canvas, elements } as any,
+          is_builtin: false,
+        })
+        .select("id")
+        .single();
+      if (insErr) throw insErr;
+      toast.success("Template gerado pela IA!");
+      setAiOpen(false);
+      setNiche(""); setStyle("");
+      navigate(`/templates/editor/${inserted.id}`);
+    } catch (e: any) {
+      toast.error(e.message || "Falha ao gerar template");
+    } finally {
+      setGenerating(false);
+    }
+  };
+
   return (
     <div className="space-y-6">
       <header className="flex items-start justify-between gap-4">
@@ -81,12 +117,21 @@ export default function Templates() {
             Crie um modelo visual uma vez e aplique em centenas de vídeos.
           </p>
         </div>
-        <Button
-          onClick={() => navigate("/templates/editor/new")}
-          className="bg-gold-gradient text-black glow-gold"
-        >
-          <Plus size={16} className="mr-1" /> Novo Template
-        </Button>
+        <div className="flex gap-2">
+          <Button
+            onClick={() => setAiOpen(true)}
+            variant="outline"
+            className="border-gold/40 text-gold hover:bg-gold/10"
+          >
+            <Wand2 size={16} className="mr-1" /> Gerador Inteligente
+          </Button>
+          <Button
+            onClick={() => navigate("/templates/editor/new")}
+            className="bg-gold-gradient text-black glow-gold"
+          >
+            <Plus size={16} className="mr-1" /> Novo Template
+          </Button>
+        </div>
       </header>
 
       {!templates ? (
