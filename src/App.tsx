@@ -14,6 +14,8 @@ import NotFound from "./pages/NotFound";
 import Editor from "./pages/Editor";
 import MyEdits from "./pages/MyEdits";
 
+import { ProjectProvider } from "@/context/ProjectContext";
+
 const queryClient = new QueryClient();
 
 const App = () => (
@@ -22,23 +24,24 @@ const App = () => (
       <Toaster />
       <Sonner />
       <BrowserRouter>
-        <Routes>
-          <Route element={<AppLayout />}>
-            <Route path="/" element={<Navigate to="/videos" replace />} />
-            <Route path="/projects" element={<Projects />} />
-            <Route path="/projects/:id" element={<ProjectDetail />} />
-            <Route path="/videos" element={<VideoLibrary />} />
-            <Route path="/templates" element={<Templates />} />
-            <Route path="/finished" element={<Finished />} />
-            <Route path="/settings" element={<Settings />} />
-            <Route path="/edits" element={<MyEdits />} />
-            <Route path="/editor/:id" element={<Editor />} />
-            {/* Módulos legados removidos: redireciona para Vídeos Prontos */}
-            <Route path="/brand" element={<Navigate to="/videos" replace />} />
-            <Route path="/processing" element={<Navigate to="/finished" replace />} />
-          </Route>
-          <Route path="*" element={<NotFound />} />
-        </Routes>
+        <ProjectProvider>
+          <Routes>
+            <Route element={<AppLayout />}>
+              <Route path="/" element={<Navigate to="/videos" replace />} />
+              <Route path="/projects" element={<Projects />} />
+              <Route path="/projects/:id" element={<ProjectDetail />} />
+              <Route path="/videos" element={<VideoLibrary />} />
+              <Route path="/templates" element={<Templates />} />
+              <Route path="/finished" element={<Finished />} />
+              <Route path="/settings" element={<Settings />} />
+              <Route path="/edits" element={<MyEdits />} />
+              <Route path="/editor/:id" element={<Editor />} />
+              <Route path="/brand" element={<Navigate to="/videos" replace />} />
+              <Route path="/processing" element={<Navigate to="/finished" replace />} />
+            </Route>
+            <Route path="*" element={<NotFound />} />
+          </Routes>
+        </ProjectProvider>
       </BrowserRouter>
     </TooltipProvider>
   </QueryClientProvider>

@@ -58,6 +58,7 @@ import {
   processItem,
   validateFile,
 } from "@/lib/uploadQueue";
+import { useActiveProject } from "@/context/ProjectContext";
 
 const TEMPLATE_BUCKET = "media";
 
@@ -83,6 +84,7 @@ type PendingDelete =
 
 export default function VideoLibrary() {
   const navigate = useNavigate();
+  const { activeProject } = useActiveProject();
   const [videos, setVideos] = useState<Video[] | null>(null);
   const [thumbs, setThumbs] = useState<Record<string, string>>({});
   const [projects, setProjects] = useState<{ id: string; name: string }[]>([]);
@@ -120,14 +122,19 @@ export default function VideoLibrary() {
   }, [selectedProject]);
 
   const load = async () => {
+    if (!activeProject) { setVideos([]); setProjects([]); setTemplates([]); return; }
+    const pid = activeProject.id;
     const [v, p, t] = await Promise.all([
       supabase
         .from("videos")
         .select("*")
+        .eq("project_id", pid)
         .not("status", "in", "(in_editing,completed)")
         .order("created_at", { ascending: false }),
       supabase.from("projects").select("id, name").order("created_at", { ascending: false }),
-      supabase.from("templates").select("id, name, preview_url, file_path, file_type").order("created_at", { ascending: false }),
+      supabase.from("templates").select("id, name, preview_url, file_path, file_type")
+        .eq("project_id", pid)
+        .order("created_at", { ascending: false }),
     ]);
     const raw = (v.data ?? []) as Video[];
     // Deduplicate for display: only the most recent AVAILABLE record per file_hash is shown.
@@ -167,7 +174,7 @@ export default function VideoLibrary() {
 
   useEffect(() => {
     load();
-  }, []);
+  }, [activeProject?.id]);
 
   const updateItem = useCallback((id: string, patch: Partial<QueueItem>) => {
     setQueue((q) => q.map((it) => (it.id === id ? { ...it, ...patch } : it)));
@@ -180,7 +187,7 @@ export default function VideoLibrary() {
       activeCount.current++;
       updateItem(next.id, { status: "uploading", progress: 0, error: undefined });
 
-      const projectId = projectRef.current === "none" ? null : projectRef.current;
+      const projectId = activeProject?.id ?? (projectRef.current === "none" ? null : projectRef.current);
       processItem(
         next,
         projectId,
@@ -436,7 +443,7 @@ export default function VideoLibrary() {
           template_url: templateUrl,
           user_id: "single-user",
           owner_user_id: "single-user",
-          project_id: v?.project_id ?? null,
+          project_id: activeProject?.id ?? v?.project_id ?? null,
           name: v?.filename ?? "Rascunho",
           aspect_ratio: "9:16",
           status: "editing" as const,

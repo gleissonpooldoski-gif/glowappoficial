@@ -14,6 +14,7 @@ import {
 import { format } from "date-fns";
 import { ptBR } from "date-fns/locale";
 import { cn } from "@/lib/utils";
+import { useActiveProject } from "@/context/ProjectContext";
 
 type EditRow = {
   id: string;
@@ -38,22 +39,25 @@ const STATUS_META: Record<string, { label: string; icon: any; className: string 
 
 export default function MyEdits() {
   const navigate = useNavigate();
+  const { activeProject } = useActiveProject();
   const [rows, setRows] = useState<EditRow[] | null>(null);
   const [selected, setSelected] = useState<Set<string>>(new Set());
   const [deleting, setDeleting] = useState(false);
   const [confirmMode, setConfirmMode] = useState<null | "all" | "selection">(null);
 
   const load = async () => {
+    if (!activeProject) { setRows([]); return; }
     const { data, error } = await (supabase as any)
       .from("edits")
       .select("*, videos(filename, thumbnail_url), templates(name, preview_url)")
+      .eq("project_id", activeProject.id)
       .order("updated_at", { ascending: false });
     if (error) { toast.error(error.message); setRows([]); return; }
     setRows((data ?? []) as EditRow[]);
     setSelected(new Set());
   };
 
-  useEffect(() => { load(); }, []);
+  useEffect(() => { load(); }, [activeProject?.id]);
 
   const allSelected = useMemo(
     () => !!rows && rows.length > 0 && selected.size === rows.length,
