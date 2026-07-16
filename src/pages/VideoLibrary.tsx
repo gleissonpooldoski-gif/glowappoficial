@@ -348,33 +348,54 @@ export default function VideoLibrary() {
   const deleteVideosByIds = async (ids: string[]) => {
     if (ids.length === 0) return;
     setDeleting(true);
+    const idSet = new Set(ids);
+    const snapshot = videos;
     try {
-      const targets = (videos ?? []).filter((v) => ids.includes(v.id));
-      const paths = targets
-        .flatMap((v) => [v.original_path, v.thumbnail_path])
-        .filter(Boolean) as string[];
-      // Storage cleanup in chunks (API limit friendly)
-      const chunk = 100;
-      for (let i = 0; i < paths.length; i += chunk) {
-        await supabase.storage.from(BUCKET).remove(paths.slice(i, i + chunk));
+      const targets = (videos ?? []).filter((v) => idSet.has(v.id));
+      // 1) Optimistic UI: remove immediately from the list.
+      setVideos((prev) => (prev ? prev.filter((v) => !idSet.has(v.id)) : prev));
+
+      // 2) Clean up related render_jobs (FK is SET NULL, so purge explicitly).
+      try {
+        await (supabase as any).from("render_jobs").delete().in("video_id", ids);
+      } catch (e) {
+        console.warn("[VideoLibrary] render_jobs cleanup failed", e);
       }
-      // DB delete in chunks
+
+      // 3) Delete DB rows first (cascades edits + processing_queue).
+      const chunk = 100;
       for (let i = 0; i < ids.length; i += chunk) {
         const slice = ids.slice(i, i + chunk);
         const { error } = await supabase.from("videos").delete().in("id", slice);
         if (error) throw error;
       }
+
+      // 4) Best-effort storage cleanup (originals + thumbnails).
+      const paths = targets
+        .flatMap((v) => [v.original_path, v.thumbnail_path])
+        .filter(Boolean) as string[];
+      for (let i = 0; i < paths.length; i += chunk) {
+        const { error: sErr } = await supabase.storage
+          .from(BUCKET)
+          .remove(paths.slice(i, i + chunk));
+        if (sErr) console.warn("[VideoLibrary] storage remove failed", sErr);
+      }
+
       targets.forEach((v) => v.file_hash && seenHashes.current.delete(v.file_hash));
-      toast.success(`${ids.length} vídeo(s) excluído(s)`);
+      toast.success(ids.length === 1 ? "Vídeo excluído" : `${ids.length} vídeos excluídos`);
       setSelected(new Set());
-      await load();
+      // Refresh in background to reconcile counts.
+      void load();
     } catch (e: any) {
-      toast.error(e?.message ?? "Falha ao excluir");
+      // Rollback UI on failure.
+      setVideos(snapshot);
+      toast.error(`Falha ao excluir: ${e?.message ?? "erro desconhecido"}`);
     } finally {
       setDeleting(false);
       setPendingDelete(null);
     }
   };
+
 
   const downloadSelected = async () => {
     if (selected.size === 0) return;
@@ -518,6 +539,8 @@ export default function VideoLibrary() {
 
   const confirmDialogTitle = !pendingDelete
     ? ""
+    : pendingDelete.kind === "selected" && pendingDelete.ids.length === 1
+    ? "Tem certeza que deseja excluir este vídeo?"
     : pendingDelete.kind === "selected"
     ? "Apagar vídeos selecionados?"
     : pendingDelete.kind === "project"
@@ -530,7 +553,10 @@ export default function VideoLibrary() {
     ? ""
     : pendingDelete.kind === "all" && pendingDelete.step === 2
     ? "Esta ação não pode ser desfeita. Todos os vídeos serão removidos permanentemente do banco e do armazenamento."
+    : pendingDelete.kind === "selected" && pendingDelete.ids.length === 1
+    ? "O vídeo, a miniatura e os dados de renderização relacionados serão removidos permanentemente."
     : `Tem certeza que deseja apagar ${pendingDelete.ids.length} vídeo(s)? Os arquivos e miniaturas serão removidos do armazenamento.`;
+
 
   const stats = useMemo(() => {
     const pending = queue.filter((i) => i.status === "pending").length;
