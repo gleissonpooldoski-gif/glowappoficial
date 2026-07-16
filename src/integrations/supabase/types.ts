@@ -14,7 +14,239 @@ export type Database = {
   }
   public: {
     Tables: {
-      [_ in never]: never
+      media: {
+        Row: {
+          created_at: string
+          id: string
+          mime_type: string | null
+          name: string
+          size_bytes: number | null
+          storage_path: string
+          tags: string[] | null
+          type: Database["public"]["Enums"]["media_type"]
+          updated_at: string
+          user_id: string
+        }
+        Insert: {
+          created_at?: string
+          id?: string
+          mime_type?: string | null
+          name: string
+          size_bytes?: number | null
+          storage_path: string
+          tags?: string[] | null
+          type: Database["public"]["Enums"]["media_type"]
+          updated_at?: string
+          user_id: string
+        }
+        Update: {
+          created_at?: string
+          id?: string
+          mime_type?: string | null
+          name?: string
+          size_bytes?: number | null
+          storage_path?: string
+          tags?: string[] | null
+          type?: Database["public"]["Enums"]["media_type"]
+          updated_at?: string
+          user_id?: string
+        }
+        Relationships: []
+      }
+      posts: {
+        Row: {
+          caption: string | null
+          created_at: string
+          hashtags: string | null
+          id: string
+          media_ids: string[] | null
+          networks: Database["public"]["Enums"]["social_network"][] | null
+          status: Database["public"]["Enums"]["post_status"]
+          updated_at: string
+          user_id: string
+        }
+        Insert: {
+          caption?: string | null
+          created_at?: string
+          hashtags?: string | null
+          id?: string
+          media_ids?: string[] | null
+          networks?: Database["public"]["Enums"]["social_network"][] | null
+          status?: Database["public"]["Enums"]["post_status"]
+          updated_at?: string
+          user_id: string
+        }
+        Update: {
+          caption?: string | null
+          created_at?: string
+          hashtags?: string | null
+          id?: string
+          media_ids?: string[] | null
+          networks?: Database["public"]["Enums"]["social_network"][] | null
+          status?: Database["public"]["Enums"]["post_status"]
+          updated_at?: string
+          user_id?: string
+        }
+        Relationships: []
+      }
+      publication_logs: {
+        Row: {
+          caption: string | null
+          error: string | null
+          id: string
+          network: Database["public"]["Enums"]["social_network"]
+          post_id: string | null
+          published_at: string
+          result: Json | null
+          scheduled_post_id: string | null
+          status: Database["public"]["Enums"]["post_status"]
+          user_id: string
+        }
+        Insert: {
+          caption?: string | null
+          error?: string | null
+          id?: string
+          network: Database["public"]["Enums"]["social_network"]
+          post_id?: string | null
+          published_at?: string
+          result?: Json | null
+          scheduled_post_id?: string | null
+          status: Database["public"]["Enums"]["post_status"]
+          user_id: string
+        }
+        Update: {
+          caption?: string | null
+          error?: string | null
+          id?: string
+          network?: Database["public"]["Enums"]["social_network"]
+          post_id?: string | null
+          published_at?: string
+          result?: Json | null
+          scheduled_post_id?: string | null
+          status?: Database["public"]["Enums"]["post_status"]
+          user_id?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "publication_logs_post_id_fkey"
+            columns: ["post_id"]
+            isOneToOne: false
+            referencedRelation: "posts"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "publication_logs_scheduled_post_id_fkey"
+            columns: ["scheduled_post_id"]
+            isOneToOne: false
+            referencedRelation: "scheduled_posts"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
+      scheduled_posts: {
+        Row: {
+          created_at: string
+          id: string
+          networks: Database["public"]["Enums"]["social_network"][]
+          post_id: string
+          scheduled_at: string
+          status: Database["public"]["Enums"]["post_status"]
+          updated_at: string
+          user_id: string
+        }
+        Insert: {
+          created_at?: string
+          id?: string
+          networks?: Database["public"]["Enums"]["social_network"][]
+          post_id: string
+          scheduled_at: string
+          status?: Database["public"]["Enums"]["post_status"]
+          updated_at?: string
+          user_id: string
+        }
+        Update: {
+          created_at?: string
+          id?: string
+          networks?: Database["public"]["Enums"]["social_network"][]
+          post_id?: string
+          scheduled_at?: string
+          status?: Database["public"]["Enums"]["post_status"]
+          updated_at?: string
+          user_id?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "scheduled_posts_post_id_fkey"
+            columns: ["post_id"]
+            isOneToOne: false
+            referencedRelation: "posts"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
+      settings: {
+        Row: {
+          created_at: string
+          preferences: Json | null
+          theme: string | null
+          timezone: string | null
+          updated_at: string
+          user_id: string
+        }
+        Insert: {
+          created_at?: string
+          preferences?: Json | null
+          theme?: string | null
+          timezone?: string | null
+          updated_at?: string
+          user_id: string
+        }
+        Update: {
+          created_at?: string
+          preferences?: Json | null
+          theme?: string | null
+          timezone?: string | null
+          updated_at?: string
+          user_id?: string
+        }
+        Relationships: []
+      }
+      social_accounts: {
+        Row: {
+          account_name: string | null
+          connected_at: string | null
+          created_at: string
+          id: string
+          metadata: Json | null
+          network: Database["public"]["Enums"]["social_network"]
+          status: Database["public"]["Enums"]["account_status"]
+          updated_at: string
+          user_id: string
+        }
+        Insert: {
+          account_name?: string | null
+          connected_at?: string | null
+          created_at?: string
+          id?: string
+          metadata?: Json | null
+          network: Database["public"]["Enums"]["social_network"]
+          status?: Database["public"]["Enums"]["account_status"]
+          updated_at?: string
+          user_id: string
+        }
+        Update: {
+          account_name?: string | null
+          connected_at?: string | null
+          created_at?: string
+          id?: string
+          metadata?: Json | null
+          network?: Database["public"]["Enums"]["social_network"]
+          status?: Database["public"]["Enums"]["account_status"]
+          updated_at?: string
+          user_id?: string
+        }
+        Relationships: []
+      }
     }
     Views: {
       [_ in never]: never
@@ -23,7 +255,10 @@ export type Database = {
       [_ in never]: never
     }
     Enums: {
-      [_ in never]: never
+      account_status: "connected" | "disconnected" | "error"
+      media_type: "image" | "video"
+      post_status: "draft" | "scheduled" | "published" | "failed"
+      social_network: "instagram" | "tiktok"
     }
     CompositeTypes: {
       [_ in never]: never
@@ -150,6 +385,11 @@ export type CompositeTypes<
 
 export const Constants = {
   public: {
-    Enums: {},
+    Enums: {
+      account_status: ["connected", "disconnected", "error"],
+      media_type: ["image", "video"],
+      post_status: ["draft", "scheduled", "published", "failed"],
+      social_network: ["instagram", "tiktok"],
+    },
   },
 } as const
