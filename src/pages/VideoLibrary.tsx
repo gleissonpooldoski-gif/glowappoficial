@@ -129,7 +129,7 @@ export default function VideoLibrary() {
         .from("videos")
         .select("*")
         .eq("project_id", pid)
-        .not("status", "in", "(in_editing,completed)")
+        .in("status", ["processing", "available", "uploaded"])
         .order("created_at", { ascending: false }),
       supabase.from("projects").select("id, name").order("created_at", { ascending: false }),
       supabase.from("templates").select("id, name, preview_url, file_path, file_type")
