@@ -112,6 +112,17 @@ export default function MyEdits() {
     const ids = confirmMode === "all" ? rows.map((r) => r.id) : Array.from(selected);
     if (ids.length === 0) { setConfirmMode(null); return; }
     setDeleting(true);
+    // Free videos of non-completed edits back to the library.
+    const videoIds = rows
+      .filter((r) => ids.includes(r.id) && r.status !== "completed" && r.video_id)
+      .map((r) => r.video_id as string);
+    if (videoIds.length) {
+      await (supabase as any)
+        .from("videos")
+        .update({ status: "uploaded" })
+        .in("id", videoIds)
+        .neq("status", "completed");
+    }
     // RLS garante que o usuário só apaga os próprios projetos.
     const { error } = await (supabase as any).from("edits").delete().in("id", ids);
     setDeleting(false);
