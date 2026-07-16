@@ -66,12 +66,14 @@ export default function Editor() {
   const stageRef = useRef<HTMLDivElement>(null);
   const dragRef = useRef<{ id: string; sx: number; sy: number; px: number; py: number } | null>(null);
 
+  const [videoUrl, setVideoUrl] = useState<string | null>(null);
+
   useEffect(() => {
     if (!id) return;
     (async () => {
       const { data, error } = await (supabase as any)
         .from("edits").select("*").eq("id", id).maybeSingle();
-      if (error || !data) { toast.error("Rascunho não encontrado"); navigate("/videos"); return; }
+      if (error || !data) { toast.error("Projeto de edição não encontrado"); navigate("/edits"); return; }
       setEdit(data);
       setRatio(data.aspect_ratio ?? "9:16");
       setDoc({ ...defaultDoc, ...(data.doc ?? {}) });
@@ -81,6 +83,15 @@ export default function Editor() {
       ]);
       setVideo(v);
       setTemplate(t);
+      // Sign the original video path so <video> can play it inside the editor
+      if (v?.original_path) {
+        const { data: signed } = await supabase.storage
+          .from("videos")
+          .createSignedUrl(v.original_path, 60 * 60 * 6);
+        setVideoUrl(signed?.signedUrl ?? v.original_url ?? v.processed_url ?? null);
+      } else {
+        setVideoUrl(v?.processed_url ?? v?.original_url ?? null);
+      }
       // mark as editing
       await (supabase as any).from("edits").update({ status: "editing" }).eq("id", id);
       setLoading(false);
