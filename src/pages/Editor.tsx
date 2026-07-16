@@ -1097,6 +1097,24 @@ export default function Editor() {
               <TabsContent value="text" className="mt-3 space-y-3">
                 {selectedText ? (
                   <>
+                    <div className="flex items-center gap-2">
+                      <Button
+                        size="sm"
+                        variant="outline"
+                        className="h-8 flex-1 text-xs"
+                        onClick={() => duplicateText(selectedText.id)}
+                      >
+                        <Copy size={12} className="mr-1" /> Duplicar
+                      </Button>
+                      <Button
+                        size="sm"
+                        variant="outline"
+                        className="h-8 flex-1 border-destructive/40 text-xs text-destructive hover:bg-destructive/10"
+                        onClick={() => removeText(selectedText.id)}
+                      >
+                        <Trash2 size={12} className="mr-1" /> Excluir texto
+                      </Button>
+                    </div>
                     <div className="space-y-1.5">
                       <Label className="text-xs">Conteúdo</Label>
                       <Input value={selectedText.text}
