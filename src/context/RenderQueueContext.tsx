@@ -1,7 +1,7 @@
 import { createContext, useCallback, useContext, useRef, useState, ReactNode } from "react";
 import { supabase } from "@/integrations/supabase/client";
 import { toast } from "sonner";
-import type { CompositionInput } from "@/lib/exportComposition";
+import { renderComposition, type CompositionInput } from "@/lib/exportComposition";
 
 export type RenderJob = {
   id: string; // local job id
@@ -54,7 +54,6 @@ export function RenderQueueProvider({ children }: { children: ReactNode }) {
 
       update(jobId, { phase: "rendering", progress: 2 });
 
-      const { renderComposition } = await import("@/lib/exportComposition");
       const result = await renderComposition({
         ...composition,
         onProgress: (pct) => {
