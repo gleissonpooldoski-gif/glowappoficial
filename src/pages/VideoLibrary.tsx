@@ -12,6 +12,7 @@ import {
   X,
   Play,
   Ban,
+  Download,
 } from "lucide-react";
 import { supabase } from "@/integrations/supabase/client";
 import { toast } from "sonner";
@@ -21,12 +22,23 @@ import { Input } from "@/components/ui/input";
 import { Badge } from "@/components/ui/badge";
 import { Progress } from "@/components/ui/progress";
 import { Skeleton } from "@/components/ui/skeleton";
+import { Checkbox } from "@/components/ui/checkbox";
 import {
   Dialog,
   DialogContent,
   DialogHeader,
   DialogTitle,
 } from "@/components/ui/dialog";
+import {
+  AlertDialog,
+  AlertDialogAction,
+  AlertDialogCancel,
+  AlertDialogContent,
+  AlertDialogDescription,
+  AlertDialogFooter,
+  AlertDialogHeader,
+  AlertDialogTitle,
+} from "@/components/ui/alert-dialog";
 import {
   Select,
   SelectContent,
@@ -61,15 +73,25 @@ type Video = {
   created_at: string;
 };
 
+type PendingDelete =
+  | { kind: "selected"; ids: string[]; step: 1 }
+  | { kind: "all"; ids: string[]; step: 1 | 2 }
+  | { kind: "project"; ids: string[]; projectName: string; step: 1 };
+
 export default function VideoLibrary() {
   const [videos, setVideos] = useState<Video[] | null>(null);
   const [thumbs, setThumbs] = useState<Record<string, string>>({});
   const [projects, setProjects] = useState<{ id: string; name: string }[]>([]);
   const [selectedProject, setSelectedProject] = useState<string>("none");
+  const [filterProject, setFilterProject] = useState<string>("all");
   const [queue, setQueue] = useState<QueueItem[]>([]);
   const [query, setQuery] = useState("");
   const [drag, setDrag] = useState(false);
   const [playing, setPlaying] = useState<{ video: Video; url: string } | null>(null);
+  const [selected, setSelected] = useState<Set<string>>(new Set());
+  const [pendingDelete, setPendingDelete] = useState<PendingDelete | null>(null);
+  const [deleting, setDeleting] = useState(false);
+  const [downloading, setDownloading] = useState(false);
   const inputRef = useRef<HTMLInputElement>(null);
   const queueRef = useRef<QueueItem[]>([]);
   const activeCount = useRef(0);
@@ -91,8 +113,6 @@ export default function VideoLibrary() {
     const list = (v.data ?? []) as Video[];
     setVideos(list);
     setProjects((p.data ?? []) as any);
-
-    // Track existing hashes so duplicate detection also works purely client-side
     seenHashes.current = new Set(list.map((x) => x.file_hash).filter(Boolean) as string[]);
 
     const toSign = list.filter((x) => x.thumbnail_path).map((x) => x.thumbnail_path!) as string[];
@@ -104,6 +124,13 @@ export default function VideoLibrary() {
       });
       setThumbs(map);
     }
+    // Drop selection for videos that no longer exist
+    setSelected((prev) => {
+      const alive = new Set(list.map((x) => x.id));
+      const next = new Set<string>();
+      prev.forEach((id) => alive.has(id) && next.add(id));
+      return next;
+    });
   };
 
   useEffect(() => {
@@ -177,7 +204,6 @@ export default function VideoLibrary() {
           });
           continue;
         }
-        // Compute hash upfront to dedupe within batch and against library
         let hash: string | undefined;
         try {
           hash = await computeFileHash(file);
@@ -237,17 +263,6 @@ export default function VideoLibrary() {
   const clearFinished = () =>
     setQueue((q) => q.filter((it) => it.status === "pending" || it.status === "uploading"));
 
-  const remove = async (v: Video) => {
-    if (!confirm(`Excluir "${v.filename}"?`)) return;
-    const paths = [v.original_path, v.thumbnail_path].filter(Boolean) as string[];
-    if (paths.length) await supabase.storage.from(BUCKET).remove(paths);
-    const { error } = await supabase.from("videos").delete().eq("id", v.id);
-    if (error) return toast.error(error.message);
-    if (v.file_hash) seenHashes.current.delete(v.file_hash);
-    toast.success("Vídeo excluído");
-    load();
-  };
-
   const openPlayer = async (v: Video) => {
     if (!v.original_path) {
       toast.error("Arquivo original não disponível");
@@ -263,9 +278,134 @@ export default function VideoLibrary() {
     setPlaying({ video: v, url: data.signedUrl });
   };
 
-  const filtered = (videos ?? []).filter((v) =>
-    v.filename.toLowerCase().includes(query.toLowerCase())
-  );
+  const filtered = useMemo(() => {
+    const all = videos ?? [];
+    return all.filter((v) => {
+      if (filterProject === "all") {
+      } else if (filterProject === "none") {
+        if (v.project_id) return false;
+      } else if (v.project_id !== filterProject) return false;
+      if (query && !v.filename.toLowerCase().includes(query.toLowerCase())) return false;
+      return true;
+    });
+  }, [videos, query, filterProject]);
+
+  const allVisibleSelected = filtered.length > 0 && filtered.every((v) => selected.has(v.id));
+  const someVisibleSelected = filtered.some((v) => selected.has(v.id));
+
+  const toggleOne = (id: string) => {
+    setSelected((prev) => {
+      const next = new Set(prev);
+      if (next.has(id)) next.delete(id);
+      else next.add(id);
+      return next;
+    });
+  };
+  const toggleAllVisible = () => {
+    setSelected((prev) => {
+      const next = new Set(prev);
+      if (allVisibleSelected) filtered.forEach((v) => next.delete(v.id));
+      else filtered.forEach((v) => next.add(v.id));
+      return next;
+    });
+  };
+  const clearSelection = () => setSelected(new Set());
+
+  const deleteVideosByIds = async (ids: string[]) => {
+    if (ids.length === 0) return;
+    setDeleting(true);
+    try {
+      const targets = (videos ?? []).filter((v) => ids.includes(v.id));
+      const paths = targets
+        .flatMap((v) => [v.original_path, v.thumbnail_path])
+        .filter(Boolean) as string[];
+      // Storage cleanup in chunks (API limit friendly)
+      const chunk = 100;
+      for (let i = 0; i < paths.length; i += chunk) {
+        await supabase.storage.from(BUCKET).remove(paths.slice(i, i + chunk));
+      }
+      // DB delete in chunks
+      for (let i = 0; i < ids.length; i += chunk) {
+        const slice = ids.slice(i, i + chunk);
+        const { error } = await supabase.from("videos").delete().in("id", slice);
+        if (error) throw error;
+      }
+      targets.forEach((v) => v.file_hash && seenHashes.current.delete(v.file_hash));
+      toast.success(`${ids.length} vídeo(s) excluído(s)`);
+      setSelected(new Set());
+      await load();
+    } catch (e: any) {
+      toast.error(e?.message ?? "Falha ao excluir");
+    } finally {
+      setDeleting(false);
+      setPendingDelete(null);
+    }
+  };
+
+  const downloadSelected = async () => {
+    if (selected.size === 0) return;
+    setDownloading(true);
+    try {
+      const targets = (videos ?? []).filter((v) => selected.has(v.id) && v.original_path);
+      for (const v of targets) {
+        const { data } = await supabase.storage
+          .from(BUCKET)
+          .createSignedUrl(v.original_path!, 60 * 30, { download: v.filename });
+        if (data?.signedUrl) {
+          const a = document.createElement("a");
+          a.href = data.signedUrl;
+          a.download = v.filename;
+          document.body.appendChild(a);
+          a.click();
+          a.remove();
+          await new Promise((r) => setTimeout(r, 250));
+        }
+      }
+      toast.success(`${targets.length} download(s) iniciado(s)`);
+    } finally {
+      setDownloading(false);
+    }
+  };
+
+  const requestDeleteSelected = () => {
+    if (selected.size === 0) return;
+    setPendingDelete({ kind: "selected", ids: Array.from(selected), step: 1 });
+  };
+  const requestDeleteAll = () => {
+    const ids = (videos ?? []).map((v) => v.id);
+    if (ids.length === 0) return;
+    setPendingDelete({ kind: "all", ids, step: 1 });
+  };
+  const requestDeleteProject = () => {
+    if (filterProject === "all") return;
+    const ids = (videos ?? [])
+      .filter((v) =>
+        filterProject === "none" ? !v.project_id : v.project_id === filterProject
+      )
+      .map((v) => v.id);
+    if (ids.length === 0) return;
+    const name =
+      filterProject === "none"
+        ? "Sem projeto"
+        : projects.find((p) => p.id === filterProject)?.name ?? "projeto";
+    setPendingDelete({ kind: "project", ids, projectName: name, step: 1 });
+  };
+
+  const confirmDialogTitle = !pendingDelete
+    ? ""
+    : pendingDelete.kind === "selected"
+    ? "Apagar vídeos selecionados?"
+    : pendingDelete.kind === "project"
+    ? `Apagar todos os vídeos de "${pendingDelete.projectName}"?`
+    : pendingDelete.step === 1
+    ? "Apagar TODOS os vídeos?"
+    : "Confirmação final";
+
+  const confirmDialogDesc = !pendingDelete
+    ? ""
+    : pendingDelete.kind === "all" && pendingDelete.step === 2
+    ? "Esta ação não pode ser desfeita. Todos os vídeos serão removidos permanentemente do banco e do armazenamento."
+    : `Tem certeza que deseja apagar ${pendingDelete.ids.length} vídeo(s)? Os arquivos e miniaturas serão removidos do armazenamento.`;
 
   const stats = useMemo(() => {
     const pending = queue.filter((i) => i.status === "pending").length;
@@ -281,7 +421,7 @@ export default function VideoLibrary() {
       <header className="space-y-1.5">
         <h1 className="text-2xl font-semibold tracking-tight">Biblioteca de Vídeos</h1>
         <p className="text-sm text-muted-foreground">
-          Envio em massa com fila inteligente · MP4, MOV, WEBM · até 2GB · deduplicação por hash
+          Envio em massa · seleção múltipla · exclusão em lote · até 2GB por arquivo
         </p>
       </header>
 
@@ -360,17 +500,13 @@ export default function VideoLibrary() {
                     <Loader2 size={10} className="mr-1 animate-spin" /> {stats.uploading} enviando
                   </Badge>
                 )}
-                {stats.pending > 0 && (
-                  <Badge variant="outline">{stats.pending} aguardando</Badge>
-                )}
+                {stats.pending > 0 && <Badge variant="outline">{stats.pending} aguardando</Badge>}
                 {stats.duplicate > 0 && (
                   <Badge variant="outline" className="border-amber-500/40 text-amber-500">
                     {stats.duplicate} duplicado(s)
                   </Badge>
                 )}
-                {stats.failed > 0 && (
-                  <Badge variant="destructive">{stats.failed} com erro</Badge>
-                )}
+                {stats.failed > 0 && <Badge variant="destructive">{stats.failed} com erro</Badge>}
               </div>
               <Button size="sm" variant="ghost" onClick={clearFinished}>
                 Limpar concluídos
@@ -436,7 +572,8 @@ export default function VideoLibrary() {
         </Card>
       )}
 
-      <div className="flex items-center justify-between">
+      {/* Toolbar */}
+      <div className="flex flex-wrap items-center gap-2">
         <div className="relative">
           <Search size={14} className="absolute left-2.5 top-1/2 -translate-y-1/2 text-muted-foreground" />
           <Input
@@ -446,8 +583,85 @@ export default function VideoLibrary() {
             className="h-9 w-64 pl-8"
           />
         </div>
-        <p className="text-xs text-muted-foreground">{filtered.length} vídeo(s)</p>
+        <Select value={filterProject} onValueChange={setFilterProject}>
+          <SelectTrigger className="h-9 w-48">
+            <SelectValue placeholder="Filtrar por projeto" />
+          </SelectTrigger>
+          <SelectContent>
+            <SelectItem value="all">Todos os projetos</SelectItem>
+            <SelectItem value="none">Sem projeto</SelectItem>
+            {projects.map((p) => (
+              <SelectItem key={p.id} value={p.id}>
+                {p.name}
+              </SelectItem>
+            ))}
+          </SelectContent>
+        </Select>
+        <label className="flex h-9 cursor-pointer items-center gap-2 rounded-md border border-border/50 px-3 text-xs">
+          <Checkbox
+            checked={allVisibleSelected ? true : someVisibleSelected ? "indeterminate" : false}
+            onCheckedChange={toggleAllVisible}
+          />
+          Selecionar todos
+        </label>
+        <div className="ml-auto flex items-center gap-2">
+          {filterProject !== "all" && (
+            <Button
+              variant="outline"
+              size="sm"
+              className="border-destructive/40 text-destructive hover:text-destructive"
+              onClick={requestDeleteProject}
+            >
+              <Trash2 size={13} className="mr-1" /> Apagar do projeto
+            </Button>
+          )}
+          <Button
+            variant="outline"
+            size="sm"
+            className="border-destructive/40 text-destructive hover:text-destructive"
+            onClick={requestDeleteAll}
+            disabled={(videos ?? []).length === 0}
+          >
+            <Trash2 size={13} className="mr-1" /> Apagar todos
+          </Button>
+          <p className="text-xs text-muted-foreground">{filtered.length} vídeo(s)</p>
+        </div>
       </div>
+
+      {/* Bulk actions bar */}
+      {selected.size > 0 && (
+        <div className="sticky top-2 z-10 flex flex-wrap items-center justify-between gap-3 rounded-lg border border-gold/30 bg-background/95 px-4 py-2 backdrop-blur">
+          <span className="text-xs font-medium">
+            <span className="text-gold">{selected.size}</span> vídeo(s) selecionado(s)
+          </span>
+          <div className="flex items-center gap-2">
+            <Button
+              size="sm"
+              variant="outline"
+              onClick={downloadSelected}
+              disabled={downloading}
+            >
+              {downloading ? (
+                <Loader2 size={13} className="mr-1 animate-spin" />
+              ) : (
+                <Download size={13} className="mr-1" />
+              )}
+              Baixar selecionados
+            </Button>
+            <Button
+              size="sm"
+              variant="destructive"
+              onClick={requestDeleteSelected}
+              disabled={deleting}
+            >
+              <Trash2 size={13} className="mr-1" /> Apagar selecionados
+            </Button>
+            <Button size="sm" variant="ghost" onClick={clearSelection}>
+              Cancelar seleção
+            </Button>
+          </div>
+        </div>
+      )}
 
       {!videos ? (
         <div className="grid gap-3 sm:grid-cols-2 md:grid-cols-3 lg:grid-cols-4">
@@ -465,45 +679,61 @@ export default function VideoLibrary() {
         <div className="grid gap-3 sm:grid-cols-2 md:grid-cols-3 lg:grid-cols-4">
           {filtered.map((v) => {
             const thumb = v.thumbnail_path ? thumbs[v.thumbnail_path] : v.thumbnail_url;
+            const isSelected = selected.has(v.id);
             return (
-              <Card key={v.id} className="glass border-border/50 group overflow-hidden">
-                <button
-                  type="button"
-                  onClick={() => openPlayer(v)}
-                  className="relative aspect-[9/16] w-full flex items-center justify-center bg-black"
-                >
-                  {thumb ? (
-                    <img
-                      src={thumb}
-                      alt={v.filename}
-                      className="h-full w-full object-cover"
-                      loading="lazy"
-                    />
-                  ) : (
-                    <Film className="text-gold/40" size={32} />
-                  )}
-                  <span className="absolute inset-0 flex items-center justify-center bg-black/40 opacity-0 transition group-hover:opacity-100">
-                    <span className="flex items-center gap-1 rounded-full bg-gold px-3 py-1.5 text-xs font-medium text-black">
-                      <Play size={12} /> Assistir
+              <Card
+                key={v.id}
+                className={cn(
+                  "glass group overflow-hidden transition",
+                  isSelected ? "border-gold ring-1 ring-gold/40" : "border-border/50"
+                )}
+              >
+                <div className="relative aspect-[9/16] w-full bg-black">
+                  <button
+                    type="button"
+                    onClick={() => openPlayer(v)}
+                    className="absolute inset-0 flex items-center justify-center"
+                  >
+                    {thumb ? (
+                      <img
+                        src={thumb}
+                        alt={v.filename}
+                        className="h-full w-full object-cover"
+                        loading="lazy"
+                      />
+                    ) : (
+                      <Film className="text-gold/40" size={32} />
+                    )}
+                    <span className="absolute inset-0 flex items-center justify-center bg-black/40 opacity-0 transition group-hover:opacity-100">
+                      <span className="flex items-center gap-1 rounded-full bg-gold px-3 py-1.5 text-xs font-medium text-black">
+                        <Play size={12} /> Assistir
+                      </span>
                     </span>
-                  </span>
-                  <span
+                  </button>
+                  <div
                     onClick={(e) => {
                       e.stopPropagation();
-                      remove(v);
+                      toggleOne(v.id);
                     }}
-                    role="button"
+                    className={cn(
+                      "absolute left-2 top-2 flex h-6 w-6 cursor-pointer items-center justify-center rounded-md border transition",
+                      isSelected
+                        ? "border-gold bg-gold text-black"
+                        : "border-border/60 bg-black/70 text-transparent opacity-0 group-hover:opacity-100"
+                    )}
+                  >
+                    <CheckCircle2 size={14} />
+                  </div>
+                  <button
+                    onClick={(e) => {
+                      e.stopPropagation();
+                      setPendingDelete({ kind: "selected", ids: [v.id], step: 1 });
+                    }}
                     className="absolute right-2 top-2 rounded-md bg-black/70 p-1.5 text-muted-foreground opacity-0 transition hover:text-destructive group-hover:opacity-100"
                   >
                     <Trash2 size={14} />
-                  </span>
-                  <Badge
-                    variant="outline"
-                    className="absolute left-2 top-2 border-gold/30 bg-black/60 text-[10px] text-gold"
-                  >
-                    {v.status}
-                  </Badge>
-                </button>
+                  </button>
+                </div>
                 <CardContent className="p-3">
                   <p className="truncate text-xs font-medium">{v.filename}</p>
                   <div className="mt-1 flex items-center justify-between text-[10px] text-muted-foreground">
@@ -517,6 +747,7 @@ export default function VideoLibrary() {
         </div>
       )}
 
+      {/* Player modal */}
       <Dialog open={!!playing} onOpenChange={(o) => !o && setPlaying(null)}>
         <DialogContent className="max-w-3xl bg-black p-0 border-border/50">
           <DialogHeader className="px-4 pt-4">
@@ -543,6 +774,45 @@ export default function VideoLibrary() {
           )}
         </DialogContent>
       </Dialog>
+
+      {/* Delete confirmation */}
+      <AlertDialog
+        open={!!pendingDelete}
+        onOpenChange={(o) => !o && !deleting && setPendingDelete(null)}
+      >
+        <AlertDialogContent>
+          <AlertDialogHeader>
+            <AlertDialogTitle>{confirmDialogTitle}</AlertDialogTitle>
+            <AlertDialogDescription>{confirmDialogDesc}</AlertDialogDescription>
+          </AlertDialogHeader>
+          <AlertDialogFooter>
+            <AlertDialogCancel disabled={deleting}>Cancelar</AlertDialogCancel>
+            <AlertDialogAction
+              disabled={deleting}
+              className="bg-destructive text-destructive-foreground hover:bg-destructive/90"
+              onClick={(e) => {
+                e.preventDefault();
+                if (!pendingDelete) return;
+                if (pendingDelete.kind === "all" && pendingDelete.step === 1) {
+                  setPendingDelete({ ...pendingDelete, step: 2 });
+                  return;
+                }
+                deleteVideosByIds(pendingDelete.ids);
+              }}
+            >
+              {deleting ? (
+                <>
+                  <Loader2 size={13} className="mr-1 animate-spin" /> Excluindo...
+                </>
+              ) : pendingDelete?.kind === "all" && pendingDelete.step === 1 ? (
+                "Continuar"
+              ) : (
+                "Excluir"
+              )}
+            </AlertDialogAction>
+          </AlertDialogFooter>
+        </AlertDialogContent>
+      </AlertDialog>
     </div>
   );
 }
