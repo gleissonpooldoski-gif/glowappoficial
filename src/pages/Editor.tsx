@@ -24,6 +24,9 @@ import { Sparkles, MessageSquareText } from "lucide-react";
 import { TEXT_CATEGORIES, TEXT_PRESETS, type TextPreset, type TextPresetCategory } from "@/lib/text-library";
 import { cn } from "@/lib/utils";
 
+type TextTransform = "none" | "uppercase" | "lowercase" | "capitalize";
+type TextAlign = "left" | "center" | "right";
+
 type TextEl = {
   id: string;
   text: string;
@@ -34,6 +37,14 @@ type TextEl = {
   font: string;
   weight: number;
   animation: "none" | "fade" | "slide-up" | "pulse";
+  transform?: TextTransform;
+  letterSpacing?: number; // px
+  lineHeight?: number; // unitless
+  align?: TextAlign;
+  shadow?: boolean;
+  strokeWidth?: number; // px
+  strokeColor?: string;
+  bgColor?: string | null; // background chip; null = transparent
 };
 
 type BlendMode =
