@@ -1,5 +1,7 @@
 import { useEffect, useMemo, useState } from "react";
-import { Download, Trash2, Film, Package, Play, Calendar, Clock, LayoutTemplate, CheckCircle2, Loader2, AlertCircle, Sparkles, Copy, ChevronDown, ChevronUp, CheckSquare, Square } from "lucide-react";
+import { Download, Trash2, Film, Package, Play, Calendar, Clock, LayoutTemplate, CheckCircle2, Loader2, AlertCircle, Sparkles, Copy, ChevronDown, ChevronUp, CheckSquare, Square, Instagram, CalendarClock, Layers } from "lucide-react";
+import InstagramPublishDialog from "@/components/InstagramPublishDialog";
+import InstagramBatchDialog from "@/components/InstagramBatchDialog";
 import { supabase } from "@/integrations/supabase/client";
 import { toast } from "sonner";
 import { Card, CardContent } from "@/components/ui/card";
@@ -71,6 +73,8 @@ export default function Finished() {
   const [pendingRemoveId, setPendingRemoveId] = useState<string | null>(null);
   const [bulkBusy, setBulkBusy] = useState(false);
   const [zipBusy, setZipBusy] = useState(false);
+  const [igDialog, setIgDialog] = useState<{ open: boolean; mode: "now" | "schedule"; videoId: string | null; caption?: string; hashtags?: string }>({ open: false, mode: "now", videoId: null });
+  const [igBatchOpen, setIgBatchOpen] = useState(false);
 
   const load = async () => {
     if (!activeProject) { setVideos([]); setJobs([]); return; }
