@@ -9,7 +9,6 @@ import Projects from "./pages/Projects";
 import ProjectDetail from "./pages/ProjectDetail";
 import VideoLibrary from "./pages/VideoLibrary";
 import Templates from "./pages/Templates";
-import TemplateEditor from "./pages/TemplateEditor";
 import Brand from "./pages/Brand";
 import Processing from "./pages/Processing";
 import Finished from "./pages/Finished";
