@@ -105,6 +105,11 @@ Deno.serve(async (req) => {
 
   const failPost = async (postId: string | null, message: string, details?: any) => {
     if (!postId) return;
+    const { data: current } = await supabase.from("instagram_posts").select("status, publish_id").eq("id", postId).maybeSingle();
+    if (current?.status === "PUBLICADO" || current?.publish_id) {
+      await appendLog(postId, { event: "error_ignored_already_published", message, details: details ?? null });
+      return;
+    }
     const fullMessage = details ? `${message}\n${safeJson(details)}` : message;
     await supabase.from("instagram_posts").update({
       status: "ERRO",
@@ -135,6 +140,12 @@ Deno.serve(async (req) => {
         throw new Error(`Timeout de 5 minutos aguardando FINISHED. Último status Meta: ${safeJson(lastStatus)}`);
       }
       await appendLog(postId, { event: "container_finished", creation_id: containerId, response: lastStatus });
+
+      const { data: current } = await supabase.from("instagram_posts").select("status, publish_id").eq("id", postId).maybeSingle();
+      if (current?.status === "PUBLICADO" || current?.publish_id) {
+        await appendLog(postId, { event: "publish_skipped_already_published", publish_id: current.publish_id });
+        return;
+      }
 
       const publishUrl = `https://graph.facebook.com/${GRAPH_VERSION}/${igId}/media_publish`;
       const publishRes = await metaPost(publishUrl, {
