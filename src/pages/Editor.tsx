@@ -383,18 +383,35 @@ export default function Editor() {
           >
             {/* Layer 1 — Vídeo original (fundo, opacidade total, sem blend) */}
             {videoSrc ? (
-              <video
-                src={videoSrc}
-                className="absolute inset-0 h-full w-full object-cover"
-                style={{
-                  zIndex: 1,
-                  opacity: 1,
-                  mixBlendMode: "normal",
-                  transform: `translate(${doc.video.x}%, ${doc.video.y}%) scale(${doc.video.zoom})`,
-                  transformOrigin: "center",
-                }}
-                autoPlay muted loop playsInline
-              />
+              <>
+                <video
+                  src={videoSrc}
+                  crossOrigin="anonymous"
+                  className="absolute inset-0 h-full w-full object-cover"
+                  style={{
+                    zIndex: 1,
+                    opacity: 1,
+                    mixBlendMode: "normal",
+                    transform: `translate(${doc.video.x}%, ${doc.video.y}%) scale(${doc.video.zoom})`,
+                    transformOrigin: "center",
+                  }}
+                  autoPlay muted loop playsInline
+                  onLoadedData={() => {
+                    console.log("[Editor] <video> loaded data");
+                    setVideoReady(true);
+                  }}
+                  onError={(e) => {
+                    console.error("[Editor] <video> error", e);
+                    setLoadError("Falha ao reproduzir o vídeo (arquivo corrompido ou inacessível).");
+                  }}
+                />
+                {!videoReady && (
+                  <div className="absolute inset-0 z-10 flex items-center justify-center bg-black/60 text-xs text-muted-foreground">
+                    <Loader2 className="mr-2 h-4 w-4 animate-spin text-gold" />
+                    Carregando vídeo…
+                  </div>
+                )}
+              </>
             ) : (
               <div className="absolute inset-0 flex items-center justify-center text-xs text-muted-foreground" style={{ zIndex: 1 }}>
                 Vídeo indisponível
