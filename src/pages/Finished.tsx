@@ -16,6 +16,7 @@ const BUCKET = "videos-processed";
 type FinishedVideo = {
   id: string;
   filename: string;
+  mime_type: string | null;
   processed_path: string | null;
   processed_url: string | null;
   duration_seconds: number | null;
@@ -48,12 +49,11 @@ export default function Finished() {
   const [urls, setUrls] = useState<Record<string, string>>({});
 
   const load = async () => {
-    // Accept both "finished" (new export flow) and legacy "completed"
     const [{ data: vids, error: vidsErr }, { data: jbs, error: jbsErr }] = await Promise.all([
       supabase
         .from("videos")
-        .select("id, filename, processed_path, processed_url, duration_seconds, size_bytes, template_id, created_at, updated_at, status")
-        .in("status", ["finished", "completed"])
+        .select("id, filename, mime_type, processed_path, processed_url, duration_seconds, size_bytes, template_id, created_at, updated_at, status")
+        .eq("status", "completed")
         .order("updated_at", { ascending: false }),
       (supabase as any)
         .from("render_jobs")
@@ -64,7 +64,11 @@ export default function Finished() {
     ]);
     if (vidsErr) console.error("[Finished] load videos error", vidsErr);
     if (jbsErr) console.error("[Finished] load jobs error", jbsErr);
-    const list = ((vids ?? []) as any[]) as FinishedVideo[];
+    const list = (((vids ?? []) as any[]) as FinishedVideo[]).filter((v) =>
+      v.processed_path?.toLowerCase().endsWith(".mp4") &&
+      v.filename.toLowerCase().endsWith(".mp4") &&
+      (v.mime_type ?? "video/mp4").startsWith("video/mp4"),
+    );
     console.log("[Finished] loaded videos ->", list.length, list);
 
     // Enrich with template names (no FK, so no PostgREST join possible)
@@ -102,6 +106,10 @@ export default function Finished() {
   const download = async (v: FinishedVideo) => {
     if (!v.processed_path) {
       toast.info("Arquivo ainda não disponível.");
+      return;
+    }
+    if (!v.processed_path.toLowerCase().endsWith(".mp4") || !v.filename.toLowerCase().endsWith(".mp4")) {
+      toast.error("Arquivo final MP4 não encontrado para este vídeo.");
       return;
     }
     const { data, error } = await supabase.storage.from(BUCKET).createSignedUrl(v.processed_path, 60, {
