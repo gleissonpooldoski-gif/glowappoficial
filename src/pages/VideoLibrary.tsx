@@ -190,12 +190,7 @@ export default function VideoLibrary() {
           });
         })
         .catch((err: Error) => {
-          if (err instanceof DuplicateVideoError) {
-            toast.warning(`${next.file.name}: já foi enviado`);
-            updateItem(next.id, { status: "duplicate", error: err.message });
-          } else {
-            updateItem(next.id, { status: "failed", error: err.message });
-          }
+          updateItem(next.id, { status: "failed", error: err.message });
         })
         .finally(() => {
           activeCount.current--;
