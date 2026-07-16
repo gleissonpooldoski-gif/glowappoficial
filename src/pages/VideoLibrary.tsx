@@ -1,4 +1,5 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import { useNavigate } from "react-router-dom";
 import {
   Film,
   Upload,
@@ -13,6 +14,8 @@ import {
   Play,
   Ban,
   Download,
+  Wand2,
+  Rocket,
 } from "lucide-react";
 import { supabase } from "@/integrations/supabase/client";
 import { toast } from "sonner";
@@ -79,9 +82,11 @@ type PendingDelete =
   | { kind: "project"; ids: string[]; projectName: string; step: 1 };
 
 export default function VideoLibrary() {
+  const navigate = useNavigate();
   const [videos, setVideos] = useState<Video[] | null>(null);
   const [thumbs, setThumbs] = useState<Record<string, string>>({});
   const [projects, setProjects] = useState<{ id: string; name: string }[]>([]);
+  const [templates, setTemplates] = useState<{ id: string; name: string; preview_url: string | null }[]>([]);
   const [selectedProject, setSelectedProject] = useState<string>("none");
   const [filterProject, setFilterProject] = useState<string>("all");
   const [queue, setQueue] = useState<QueueItem[]>([]);
@@ -92,6 +97,9 @@ export default function VideoLibrary() {
   const [pendingDelete, setPendingDelete] = useState<PendingDelete | null>(null);
   const [deleting, setDeleting] = useState(false);
   const [downloading, setDownloading] = useState(false);
+  const [applyOpen, setApplyOpen] = useState(false);
+  const [chosenTemplate, setChosenTemplate] = useState<string>("");
+  const [applying, setApplying] = useState(false);
   const inputRef = useRef<HTMLInputElement>(null);
   const queueRef = useRef<QueueItem[]>([]);
   const activeCount = useRef(0);
@@ -106,13 +114,15 @@ export default function VideoLibrary() {
   }, [selectedProject]);
 
   const load = async () => {
-    const [v, p] = await Promise.all([
+    const [v, p, t] = await Promise.all([
       supabase.from("videos").select("*").order("created_at", { ascending: false }),
       supabase.from("projects").select("id, name").order("created_at", { ascending: false }),
+      supabase.from("templates").select("id, name, preview_url").order("created_at", { ascending: false }),
     ]);
     const list = (v.data ?? []) as Video[];
     setVideos(list);
     setProjects((p.data ?? []) as any);
+    setTemplates((t.data ?? []) as any);
     seenHashes.current = new Set(list.map((x) => x.file_hash).filter(Boolean) as string[]);
 
     const toSign = list.filter((x) => x.thumbnail_path).map((x) => x.thumbnail_path!) as string[];
@@ -366,6 +376,49 @@ export default function VideoLibrary() {
       setDownloading(false);
     }
   };
+
+  const applyTemplate = async () => {
+    if (!chosenTemplate || selected.size === 0) return;
+    setApplying(true);
+    try {
+      const ids = Array.from(selected);
+      const byId = new Map((videos ?? []).map((v) => [v.id, v] as const));
+      const rows = ids.map((vid) => {
+        const v = byId.get(vid);
+        return {
+          video_id: vid,
+          template_id: chosenTemplate,
+          project_id: v?.project_id ?? null,
+          status: "pending" as const,
+          progress: 0,
+          options: { captions: true, logo: true, music: false, effects: true },
+        };
+      });
+      const chunk = 200;
+      for (let i = 0; i < rows.length; i += chunk) {
+        const { error } = await supabase
+          .from("processing_queue")
+          .insert(rows.slice(i, i + chunk));
+        if (error) throw error;
+      }
+      for (let i = 0; i < ids.length; i += chunk) {
+        await supabase
+          .from("videos")
+          .update({ status: "queued" as const })
+          .in("id", ids.slice(i, i + chunk));
+      }
+      toast.success(`${rows.length} vídeo(s) enviados para a fila`);
+      setApplyOpen(false);
+      setChosenTemplate("");
+      setSelected(new Set());
+      navigate("/processing");
+    } catch (e: any) {
+      toast.error(e?.message ?? "Falha ao aplicar template");
+    } finally {
+      setApplying(false);
+    }
+  };
+
 
   const requestDeleteSelected = () => {
     if (selected.size === 0) return;
@@ -637,6 +690,13 @@ export default function VideoLibrary() {
           <div className="flex items-center gap-2">
             <Button
               size="sm"
+              onClick={() => setApplyOpen(true)}
+              className="bg-gold-gradient text-black glow-gold"
+            >
+              <Wand2 size={13} className="mr-1" /> Aplicar template
+            </Button>
+            <Button
+              size="sm"
               variant="outline"
               onClick={downloadSelected}
               disabled={downloading}
@@ -774,6 +834,89 @@ export default function VideoLibrary() {
           )}
         </DialogContent>
       </Dialog>
+
+      {/* Apply template dialog */}
+      <Dialog open={applyOpen} onOpenChange={(o) => !applying && setApplyOpen(o)}>
+        <DialogContent className="max-w-2xl">
+          <DialogHeader>
+            <DialogTitle>
+              Aplicar template a {selected.size} vídeo(s)
+            </DialogTitle>
+          </DialogHeader>
+          <div className="space-y-3">
+            <p className="text-xs text-muted-foreground">
+              Cada vídeo selecionado gera uma renderização independente usando o
+              mesmo template.
+            </p>
+            {templates.length === 0 ? (
+              <div className="rounded-md border border-dashed border-border/50 p-6 text-center text-xs text-muted-foreground">
+                Nenhum template criado ainda.{" "}
+                <button
+                  className="text-gold underline"
+                  onClick={() => navigate("/templates")}
+                >
+                  Criar template
+                </button>
+              </div>
+            ) : (
+              <div className="grid max-h-80 grid-cols-2 gap-2 overflow-y-auto sm:grid-cols-3">
+                {templates.map((t) => {
+                  const active = chosenTemplate === t.id;
+                  return (
+                    <button
+                      key={t.id}
+                      onClick={() => setChosenTemplate(t.id)}
+                      className={cn(
+                        "flex flex-col overflow-hidden rounded-md border text-left transition",
+                        active
+                          ? "border-gold ring-1 ring-gold/40"
+                          : "border-border/50 hover:border-gold/40"
+                      )}
+                    >
+                      <div className="aspect-[9/16] w-full bg-black">
+                        {t.preview_url ? (
+                          <img
+                            src={t.preview_url}
+                            alt={t.name}
+                            className="h-full w-full object-cover"
+                          />
+                        ) : (
+                          <div className="flex h-full w-full items-center justify-center text-gold/30">
+                            <Film size={28} />
+                          </div>
+                        )}
+                      </div>
+                      <div className="truncate px-2 py-1.5 text-xs">{t.name}</div>
+                    </button>
+                  );
+                })}
+              </div>
+            )}
+          </div>
+          <div className="flex justify-end gap-2">
+            <Button
+              variant="ghost"
+              onClick={() => setApplyOpen(false)}
+              disabled={applying}
+            >
+              Cancelar
+            </Button>
+            <Button
+              onClick={applyTemplate}
+              disabled={!chosenTemplate || applying}
+              className="bg-gold-gradient text-black"
+            >
+              {applying ? (
+                <Loader2 size={14} className="mr-1 animate-spin" />
+              ) : (
+                <Rocket size={14} className="mr-1" />
+              )}
+              Gerar {selected.size} vídeo(s)
+            </Button>
+          </div>
+        </DialogContent>
+      </Dialog>
+
 
       {/* Delete confirmation */}
       <AlertDialog
