@@ -368,8 +368,12 @@ export default function Finished() {
             const cap = captions[v.id];
             const loading = !!captionLoading[v.id];
             const open = !!captionOpen[v.id];
+            const isSelected = selected.has(v.id);
             return (
-              <Card key={v.id} className="glass border-border/50 group overflow-hidden">
+              <Card key={v.id} className={cn(
+                "glass group overflow-hidden",
+                isSelected ? "border-gold ring-1 ring-gold/60" : "border-border/50",
+              )}>
                 <div className="relative aspect-[9/16] bg-black">
                   {src ? (
                     <video src={src} controls preload="metadata" className="h-full w-full object-contain" />
@@ -381,6 +385,17 @@ export default function Finished() {
                   <Badge className="absolute left-2 top-2 border-emerald-400/40 bg-black/70 text-[10px] text-emerald-300" variant="outline">
                     <CheckCircle2 size={10} className="mr-1" /> Concluído
                   </Badge>
+                  <button
+                    type="button"
+                    onClick={() => toggleOne(v.id)}
+                    className={cn(
+                      "absolute right-2 top-2 z-10 flex h-7 w-7 items-center justify-center rounded-md border bg-black/70 backdrop-blur",
+                      isSelected ? "border-gold text-gold" : "border-white/30 text-white/70 hover:text-white",
+                    )}
+                    title={isSelected ? "Remover da seleção" : "Selecionar"}
+                  >
+                    {isSelected ? <CheckSquare size={14} /> : <Square size={14} />}
+                  </button>
                 </div>
                 <CardContent className="p-3">
                   <p className="truncate text-xs font-medium" title={v.filename}>{v.filename}</p>
@@ -405,10 +420,11 @@ export default function Finished() {
                     <Button size="sm" className="h-7 flex-1 bg-gold-gradient text-[11px] text-black" onClick={() => download(v)}>
                       <Download size={12} className="mr-1" /> Baixar
                     </Button>
-                    <Button size="sm" variant="ghost" className="h-7 w-7 p-0 text-muted-foreground hover:text-destructive" onClick={() => remove(v)}>
+                    <Button size="sm" variant="ghost" className="h-7 w-7 p-0 text-muted-foreground hover:text-destructive" onClick={() => askRemoveOne(v.id)}>
                       <Trash2 size={12} />
                     </Button>
                   </div>
+
 
                   {/* Legenda e Hashtags */}
                   <div className="mt-3 border-t border-border/50 pt-2">
