@@ -16,6 +16,12 @@ import {
 } from "@/components/ui/select";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { Separator } from "@/components/ui/separator";
+import {
+  Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle,
+} from "@/components/ui/dialog";
+import { ScrollArea } from "@/components/ui/scroll-area";
+import { Sparkles, MessageSquareText } from "lucide-react";
+import { TEXT_CATEGORIES, TEXT_PRESETS, type TextPreset, type TextPresetCategory } from "@/lib/text-library";
 import { cn } from "@/lib/utils";
 
 type TextEl = {
@@ -157,6 +163,8 @@ export default function Editor() {
   const [template, setTemplate] = useState<any>(null);
   const [doc, setDoc] = useState<EditDoc>(defaultDoc);
   const [ratio, setRatio] = useState<string>("9:16");
+  const [libraryOpen, setLibraryOpen] = useState(false);
+  const [libraryCategory, setLibraryCategory] = useState<TextPresetCategory>("cta_comment");
   const [selectedTextId, setSelectedTextId] = useState<string | null>(null);
   const stageRef = useRef<HTMLDivElement>(null);
   const dragRef = useRef<{ id: string; sx: number; sy: number; px: number; py: number } | null>(null);
@@ -426,6 +434,23 @@ export default function Editor() {
     setSelectedTextId(t.id);
   };
 
+  const addPreset = (p: TextPreset) => {
+    const t: TextEl = {
+      id: crypto.randomUUID(),
+      text: p.text,
+      x: 50, y: 80,
+      size: p.size ?? 44,
+      color: doc.colors.secondary,
+      font: "Montserrat",
+      weight: p.weight ?? 800,
+      animation: p.animation ?? "fade",
+    };
+    setDoc((d) => ({ ...d, texts: [...d.texts, t] }));
+    setSelectedTextId(t.id);
+    toast.success("Texto adicionado ao vídeo");
+  };
+
+
   const removeText = (tid: string) => {
     setDoc((d) => ({ ...d, texts: d.texts.filter((t) => t.id !== tid) }));
     if (selectedTextId === tid) setSelectedTextId(null);
@@ -594,6 +619,15 @@ export default function Editor() {
                 <Plus size={12} className="mr-1" /> Texto
               </Button>
             </div>
+            <Button
+              size="sm"
+              variant="outline"
+              className="h-8 w-full justify-start border-gold/40 bg-gold/5 text-xs text-gold hover:bg-gold/10"
+              onClick={() => setLibraryOpen(true)}
+            >
+              <MessageSquareText size={12} className="mr-2" />
+              Textos e CTAs prontos
+            </Button>
             <div className="space-y-1">
               <div className="rounded border border-border/40 bg-black/30 p-2 text-xs">
                 🎬 Vídeo base
@@ -1014,6 +1048,76 @@ export default function Editor() {
           </span>
         </CardContent>
       </Card>
+
+      {/* Biblioteca de textos e CTAs prontos */}
+      <Dialog open={libraryOpen} onOpenChange={setLibraryOpen}>
+        <DialogContent className="max-w-3xl">
+          <DialogHeader>
+            <DialogTitle className="flex items-center gap-2">
+              <MessageSquareText size={18} className="text-gold" />
+              Textos e CTAs
+            </DialogTitle>
+            <DialogDescription>
+              Adicione frases prontas de engajamento ao seu vídeo. Cada texto vira uma camada editável.
+            </DialogDescription>
+          </DialogHeader>
+
+          <div className="grid gap-3 md:grid-cols-[200px_1fr]">
+            <div className="flex flex-row gap-1 overflow-x-auto md:flex-col md:overflow-visible">
+              {TEXT_CATEGORIES.map((c) => (
+                <button
+                  key={c.value}
+                  onClick={() => setLibraryCategory(c.value)}
+                  className={cn(
+                    "whitespace-nowrap rounded border px-3 py-2 text-left text-xs transition md:whitespace-normal",
+                    libraryCategory === c.value
+                      ? "border-gold/60 bg-gold/10 text-gold"
+                      : "border-border/40 bg-black/30 hover:border-gold/30",
+                  )}
+                >
+                  <div className="font-medium">{c.label}</div>
+                  <div className="mt-0.5 hidden text-[10px] text-muted-foreground md:block">{c.hint}</div>
+                </button>
+              ))}
+            </div>
+
+            <ScrollArea className="h-[420px] rounded border border-border/40 bg-black/20 p-2">
+              <div className="grid gap-2">
+                {TEXT_PRESETS[libraryCategory].map((p) => (
+                  <div
+                    key={p.id}
+                    className="flex items-center gap-3 rounded-md border border-border/40 bg-black/40 p-2"
+                  >
+                    <div
+                      className="flex-1 truncate text-sm"
+                      style={{ fontWeight: p.weight ?? 700 }}
+                      title={p.text}
+                    >
+                      {p.text}
+                    </div>
+                    <Button
+                      size="sm"
+                      className="h-8 bg-gold-gradient text-black"
+                      onClick={() => { addPreset(p); setLibraryOpen(false); }}
+                    >
+                      <Plus size={12} className="mr-1" /> Adicionar
+                    </Button>
+                  </div>
+                ))}
+                <Button
+                  variant="outline"
+                  size="sm"
+                  className="mt-2 border-dashed"
+                  onClick={() => toast.info("Geração por IA em breve — estrutura já preparada.")}
+                >
+                  <Sparkles size={12} className="mr-1.5" />
+                  Gerar mais frases com IA
+                </Button>
+              </div>
+            </ScrollArea>
+          </div>
+        </DialogContent>
+      </Dialog>
     </div>
   );
 }
