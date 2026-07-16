@@ -630,6 +630,7 @@ export default function Editor() {
             {videoSrc ? (
               <>
                 <video
+                  ref={videoRef}
                   src={videoSrc}
                   className="absolute inset-0 h-full w-full object-cover"
                   style={{
@@ -639,7 +640,9 @@ export default function Editor() {
                     transform: `translate(${doc.video.x}%, ${doc.video.y}%) scale(${doc.video.zoom})`,
                     transformOrigin: "center",
                   }}
-                  autoPlay muted loop playsInline
+                  loop
+                  playsInline
+                  preload="auto"
                   onLoadedData={() => {
                     console.log("[Editor] <video> loaded data");
                     setVideoReady(true);
