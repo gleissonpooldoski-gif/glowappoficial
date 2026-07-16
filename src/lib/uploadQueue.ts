@@ -149,18 +149,24 @@ export async function processItem(
   projectId: string | null,
   onProgress: (pct: number) => void,
   registerXhr: (xhr: XMLHttpRequest) => void,
-  onHash?: (hash: string) => void
+  onHash?: (hash: string) => void,
+  onCreated?: (videoId: string) => void,
+  onFinalized?: (videoId: string) => void
 ): Promise<{ videoId: string; thumbnailUrl?: string; duration: number | null; fileHash: string }> {
-  const fileHash = item.fileHash ?? (await computeFileHash(item.file));
-  onHash?.(fileHash);
-  // Uploads duplicados são permitidos — cada envio é uma nova utilização.
+  // Hash em paralelo (não bloqueia upload). Usado só para identificação/dedupe visual.
+  const hashPromise = (item.fileHash
+    ? Promise.resolve(item.fileHash)
+    : computeFileHash(item.file).catch(() => "")
+  ).then((h) => {
+    if (h) onHash?.(h);
+    return h;
+  });
 
   const safeName = item.file.name.replace(/[^\w.\-]+/g, "_");
   const key = `${crypto.randomUUID()}-${safeName}`;
   const originalPath = `originals/${key}`;
 
-  const { duration, thumbnail } = await probeDurationAndThumbnail(item.file);
-
+  // 1) Upload do arquivo original.
   const { promise, xhr } = uploadWithProgress(
     originalPath,
     item.file,
@@ -170,33 +176,19 @@ export async function processItem(
   registerXhr(xhr);
   await promise;
 
-  let thumbnailPath: string | null = null;
-  let thumbnailUrl: string | undefined;
-  if (thumbnail) {
-    thumbnailPath = `thumbnails/${key}.jpg`;
-    try {
-      const { promise: tp } = uploadWithProgress(thumbnailPath, thumbnail, "image/jpeg", () => {});
-      await tp;
-      const { data } = await supabase.storage.from(BUCKET).createSignedUrl(thumbnailPath, 60 * 60 * 24 * 7);
-      thumbnailUrl = data?.signedUrl;
-    } catch {
-      thumbnailPath = null;
-    }
-  }
+  const fileHash = await hashPromise;
 
+  // 2) Criar imediatamente o registro do vídeo como "processing" para aparecer na Biblioteca.
   const { data: inserted, error: insertErr } = await supabase
     .from("videos")
     .insert({
       project_id: projectId,
       filename: item.file.name,
       original_path: originalPath,
-      thumbnail_path: thumbnailPath,
-      thumbnail_url: thumbnailUrl,
-      duration_seconds: duration ?? undefined,
       size_bytes: item.file.size,
       mime_type: item.file.type,
-      file_hash: fileHash,
-      status: "uploaded" as any,
+      file_hash: fileHash || null,
+      status: "processing" as any,
       progress: 100,
     } as any)
     .select("id")
