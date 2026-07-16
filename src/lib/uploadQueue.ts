@@ -196,16 +196,15 @@ export async function processItem(
       size_bytes: item.file.size,
       mime_type: item.file.type,
       file_hash: fileHash,
-      status: "completed" as any,
+      status: "uploaded" as any,
       progress: 100,
     } as any)
     .select("id")
     .single();
   if (insertErr) {
-    // Cleanup uploaded files if DB insert fails (e.g. race on unique hash)
+    // Cleanup uploaded files if DB insert fails
     const paths = [originalPath, thumbnailPath].filter(Boolean) as string[];
     if (paths.length) await supabase.storage.from(BUCKET).remove(paths);
-    if ((insertErr as any).code === "23505") throw new DuplicateVideoError();
     throw insertErr;
   }
 
