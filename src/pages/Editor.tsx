@@ -808,6 +808,7 @@ export default function Editor() {
                 )}
               </TabsContent>
 
+              <TabsContent value="assets" className="mt-3 space-y-3">
                 <div className="space-y-1.5">
                   <Label className="text-xs">URL do logo</Label>
                   <Input value={doc.logo_url ?? ""} placeholder="https://..."
