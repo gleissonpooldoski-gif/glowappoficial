@@ -227,7 +227,6 @@ export default function Editor() {
       }
 
       setVideo(v);
-      setTemplate(null);
 
       let nextVideoUrl = data.video_url ?? v.original_url ?? null;
       if (v.original_path) {
@@ -236,7 +235,6 @@ export default function Editor() {
           .createSignedUrl(v.original_path, 60 * 60 * 6);
         if (signErr || !signed?.signedUrl) {
           console.error("[Editor] createSignedUrl failed", signErr, "path:", v.original_path);
-          console.error("Erro ao buscar vídeo", signErr);
           setLoadError({
             title: "Erro ao carregar vídeo",
             reason: `Não foi possível gerar URL assinada do vídeo (${signErr?.message ?? "sem permissão"}).`,
@@ -248,7 +246,6 @@ export default function Editor() {
         nextVideoUrl = signed.signedUrl;
       }
       if (!nextVideoUrl) {
-        console.error("Erro ao buscar vídeo", "URL vazia");
         setLoadError({
           title: "Erro ao carregar vídeo",
           reason: "URL do vídeo está vazia.",
@@ -259,19 +256,45 @@ export default function Editor() {
       }
 
       console.log("URL do vídeo encontrada", nextVideoUrl);
+      setVideoUrl(nextVideoUrl);
+
+      // ----- Template (overlay) -----
+      let nextTemplateUrl: string | null = data.template_url ?? null;
+      if (data.template_id) {
+        const { data: tpl, error: tplErr } = await (supabase as any)
+          .from("templates").select("*").eq("id", data.template_id).maybeSingle();
+        if (tplErr) console.error("[Editor] template fetch error", tplErr);
+        console.log("[Editor] template row ->", tpl);
+        if (tpl) {
+          setTemplate(tpl);
+          if (!nextTemplateUrl) {
+            const path = tpl.file_path ?? tpl.storage_path ?? tpl.path;
+            if (path) {
+              const { data: tSigned, error: tSignErr } = await supabase.storage
+                .from("templates")
+                .createSignedUrl(path, 60 * 60 * 6);
+              if (tSignErr) console.error("[Editor] template signed url error", tSignErr);
+              nextTemplateUrl = tSigned?.signedUrl ?? tpl.preview_url ?? tpl.file_url ?? null;
+            } else {
+              nextTemplateUrl = tpl.preview_url ?? tpl.file_url ?? null;
+            }
+          }
+        }
+      }
+      setTemplateUrl(nextTemplateUrl);
+      console.log("[Editor] template URL ->", nextTemplateUrl);
 
       const { error: urlUpdateErr } = await (supabase as any).from("edits").update({
         video_url: nextVideoUrl,
         video_filename: v.filename,
         video_storage_path: v.original_path,
+        template_url: nextTemplateUrl,
         user_id: data.user_id ?? "single-user",
         owner_user_id: data.owner_user_id ?? "single-user",
         status: "editing",
       }).eq("id", id);
       if (urlUpdateErr) console.error("[Editor] edit url update error", urlUpdateErr);
 
-      setVideoUrl(nextVideoUrl);
-      setTemplateUrl(null);
       setLoading(false);
     })();
   }, [id, navigate]);
