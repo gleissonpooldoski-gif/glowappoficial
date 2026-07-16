@@ -266,14 +266,58 @@ export async function renderComposition(input: CompositionInput): Promise<Compos
   const referenceEdge = Math.min(W, H);
   const scale = referenceEdge / 1080;
 
-  // captureStream(0) => manual frame push via requestFrame(), so canvas frames
-  // are emitted only when a new source video frame arrives. This keeps A/V in
-  // sync even if the draw loop can't keep up with realtime.
-  const stream: MediaStream = (canvas as any).captureStream(0);
-  const videoTrack = stream.getVideoTracks()[0] as any;
-  const canRequestFrame = typeof videoTrack?.requestFrame === "function";
+  // Detect the source video's real frame rate BEFORE recording, so the output
+  // track uses the same CFR and the exported file plays back at 1x. Using a
+  // fixed captureStream(fps) with browser auto-sampling avoids the slow-motion
+  // artefacts that variable-rate manual `requestFrame()` produces in some
+  // muxers.
+  const detectSourceFps = async (): Promise<number> => {
+    const anyV = video as any;
+    if (typeof anyV.requestVideoFrameCallback !== "function") return 30;
+    return await new Promise<number>((resolve) => {
+      const samples: number[] = [];
+      let last = 0;
+      let done = false;
+      const finish = (fps: number) => { if (!done) { done = true; resolve(fps); } };
+      const cb = (_now: number, meta: any) => {
+        const t = typeof meta?.mediaTime === "number" ? meta.mediaTime : 0;
+        if (last > 0) {
+          const dt = t - last;
+          if (dt > 0.001 && dt < 0.5) samples.push(dt);
+        }
+        last = t;
+        if (samples.length >= 6) {
+          const avg = samples.reduce((a, b) => a + b, 0) / samples.length;
+          const fps = Math.round(1 / avg);
+          finish(fps >= 15 && fps <= 120 ? fps : 30);
+          return;
+        }
+        anyV.requestVideoFrameCallback(cb);
+      };
+      anyV.requestVideoFrameCallback(cb);
+      // Fallback if the video never produces enough frames quickly
+      setTimeout(() => finish(30), 1500);
+    });
+  };
 
-  // attach audio track from original video (same clock as playback => in sync)
+  // Warm up decoder to measure fps
+  video.muted = true;
+  try { await video.play(); } catch { /* noop */ }
+  const sourceFps = await detectSourceFps();
+  try { video.pause(); } catch { /* noop */ }
+  video.currentTime = 0;
+  await new Promise<void>((r) => {
+    const done = () => { video.removeEventListener("seeked", done); r(); };
+    video.addEventListener("seeked", done);
+    setTimeout(done, 500);
+  });
+  console.log("[export] source fps ->", sourceFps);
+
+  // captureStream(fps) with a fixed positive fps => browser auto-samples the
+  // canvas at CFR. This produces a proper H.264/VP9 CFR track that plays back
+  // at real-time speed.
+  const stream: MediaStream = (canvas as any).captureStream(sourceFps);
+
   const anyVideo = video as any;
   try {
     const vStream: MediaStream | undefined = anyVideo.captureStream?.() ?? anyVideo.mozCaptureStream?.();
@@ -334,17 +378,14 @@ export async function renderComposition(input: CompositionInput): Promise<Compos
   let stopReq = false;
   let rafId = 0;
 
-  // Preferred path: requestVideoFrameCallback — fires once per decoded source
-  // frame, so we emit exactly one canvas frame per source frame (constant frame
-  // rate matching the source, no dupes, no drops relative to source).
   const hasRVFC = typeof (video as any).requestVideoFrameCallback === "function";
 
+  // Draw whenever a new source frame is decoded (keeps canvas current) AND on
+  // every rAF (keeps overlay animation smooth). The auto-sampler on the
+  // captureStream picks up the latest canvas state at the fixed fps.
   const onVideoFrame = (_now: number, meta: any) => {
     if (stopReq) return;
     drawFrame();
-    if (canRequestFrame) {
-      try { videoTrack.requestFrame(); } catch { /* noop */ }
-    }
     if (duration > 0) {
       const t = typeof meta?.mediaTime === "number" ? meta.mediaTime : video.currentTime;
       const p = Math.min(95, 18 + (t / duration) * 77);
@@ -356,9 +397,6 @@ export async function renderComposition(input: CompositionInput): Promise<Compos
   const rafLoop = () => {
     if (stopReq) return;
     drawFrame();
-    if (canRequestFrame) {
-      try { videoTrack.requestFrame(); } catch { /* noop */ }
-    }
     if (duration > 0) {
       const p = Math.min(95, 18 + (video.currentTime / duration) * 77);
       onProgress?.(p, "Renderizando");
@@ -366,32 +404,32 @@ export async function renderComposition(input: CompositionInput): Promise<Compos
     rafId = requestAnimationFrame(rafLoop);
   };
 
-  // Start playback + recording (start recorder BEFORE playback to avoid missing
-  // the first frames and to keep A/V start-of-stream aligned).
+  // Start recorder BEFORE playback so the very first frame is captured and
+  // A/V start together.
   video.muted = false;
   video.volume = 1;
-  if (tplVideo) await tplVideo.play().catch(() => {});
+  video.playbackRate = 1;
+  if (tplVideo) { tplVideo.playbackRate = 1; await tplVideo.play().catch(() => {}); }
   recorder.start(500);
+  const wallStart = performance.now();
   await video.play();
 
-  if (hasRVFC) {
-    (video as any).requestVideoFrameCallback(onVideoFrame);
-  } else {
-    rafLoop();
-  }
+  if (hasRVFC) (video as any).requestVideoFrameCallback(onVideoFrame);
+  rafLoop();
 
   await new Promise<void>((resolve) => {
     const onEnd = () => { video.removeEventListener("ended", onEnd); resolve(); };
     video.addEventListener("ended", onEnd);
     if (duration > 0) {
-      setTimeout(() => { if (!video.ended) { try { video.pause(); } catch {} resolve(); } }, duration * 1000 * 2 + 5000);
+      setTimeout(() => { if (!video.ended) { try { video.pause(); } catch {} resolve(); } }, duration * 1000 * 3 + 5000);
     }
   });
 
+  const wallElapsed = (performance.now() - wallStart) / 1000;
+  console.log("[export] source duration", duration, "wall elapsed", wallElapsed.toFixed(2));
+
   stopReq = true;
   if (rafId) cancelAnimationFrame(rafId);
-  // Give the recorder a tick to flush the final frame + audio tail before stop.
-  await new Promise((r) => setTimeout(r, 150));
   try { recorder.stop(); } catch {}
   await stopped;
 
@@ -400,10 +438,27 @@ export async function renderComposition(input: CompositionInput): Promise<Compos
   const blob = new Blob(chunks, { type: mime.split(";")[0] });
   if (blob.size === 0) throw new Error("Renderização produziu arquivo vazio.");
 
-  // cleanup
+  // Sanity-check exported duration matches source duration (within 15%).
+  try {
+    const check = document.createElement("video");
+    check.preload = "metadata";
+    check.src = URL.createObjectURL(blob);
+    const outDur = await new Promise<number>((res) => {
+      check.onloadedmetadata = () => res(check.duration);
+      check.onerror = () => res(0);
+      setTimeout(() => res(0), 4000);
+    });
+    URL.revokeObjectURL(check.src);
+    console.log("[export] output duration ->", outDur, "expected ~", duration);
+    if (duration > 0 && outDur > 0 && Math.abs(outDur - duration) / duration > 0.15) {
+      console.warn("[export] duration mismatch — possible speed drift", { outDur, duration });
+    }
+  } catch { /* ignore */ }
+
   try { video.pause(); video.src = ""; video.load(); } catch {}
   if (tplVideo) { try { tplVideo.pause(); tplVideo.src = ""; tplVideo.load(); } catch {} }
 
   return { blob, mime: mime.split(";")[0], extension: ext, durationSeconds: duration };
 }
+
 
