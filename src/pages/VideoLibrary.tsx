@@ -123,7 +123,11 @@ export default function VideoLibrary() {
 
   const load = async () => {
     const [v, p, t] = await Promise.all([
-      supabase.from("videos").select("*").order("created_at", { ascending: false }),
+      supabase
+        .from("videos")
+        .select("*")
+        .not("status", "in", "(in_editing,completed)")
+        .order("created_at", { ascending: false }),
       supabase.from("projects").select("id, name").order("created_at", { ascending: false }),
       supabase.from("templates").select("id, name, preview_url, file_path, file_type").order("created_at", { ascending: false }),
     ]);
