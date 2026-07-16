@@ -257,6 +257,14 @@ export default function TemplateEditor() {
         <Badge variant="outline" className="border-gold/30 text-[10px] text-gold">1080×1920</Badge>
         <div className="ml-auto flex items-center gap-2">
           <Button
+            onClick={() => setAiOpen(true)}
+            size="sm"
+            variant="outline"
+            className="border-gold/40 text-gold hover:bg-gold/10"
+          >
+            <Wand2 size={14} className="mr-1" /> Gerar novo estilo com IA
+          </Button>
+          <Button
             onClick={save}
             disabled={saving}
             size="sm"
