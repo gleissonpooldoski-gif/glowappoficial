@@ -84,6 +84,7 @@ type PendingDelete =
 
 export default function VideoLibrary() {
   const navigate = useNavigate();
+  const { activeProject } = useActiveProject();
   const [videos, setVideos] = useState<Video[] | null>(null);
   const [thumbs, setThumbs] = useState<Record<string, string>>({});
   const [projects, setProjects] = useState<{ id: string; name: string }[]>([]);
