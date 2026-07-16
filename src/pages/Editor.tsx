@@ -943,21 +943,26 @@ export default function Editor() {
                     left: `${t.x}%`, top: `${t.y}%`,
                     transform: "translate(-50%, -50%)",
                     fontFamily: `"${t.font}", sans-serif`,
-                    fontSize: t.size,
+                    fontSize: previewScale > 0 ? t.size * previewScale : t.size,
                     color: t.color,
                     fontWeight: t.weight,
                     textTransform: t.transform ?? "none",
-                    letterSpacing: t.letterSpacing != null ? `${t.letterSpacing}px` : undefined,
+                    letterSpacing:
+                      t.letterSpacing != null
+                        ? `${t.letterSpacing * (previewScale || 1)}px`
+                        : undefined,
                     lineHeight: t.lineHeight ?? 1.2,
                     textAlign: t.align ?? "center",
                     textShadow: t.shadow === false ? "none" : "0 2px 8px rgba(0,0,0,0.6)",
                     WebkitTextStroke:
                       t.strokeWidth && t.strokeWidth > 0
-                        ? `${t.strokeWidth}px ${t.strokeColor ?? "#000000"}`
+                        ? `${t.strokeWidth * (previewScale || 1)}px ${t.strokeColor ?? "#000000"}`
                         : undefined,
                     backgroundColor: t.bgColor ?? "transparent",
-                    padding: t.bgColor ? "6px 12px" : "4px 8px",
-                    borderRadius: t.bgColor ? 8 : undefined,
+                    padding: t.bgColor
+                      ? `${6 * (previewScale || 1)}px ${12 * (previewScale || 1)}px`
+                      : `${4 * (previewScale || 1)}px ${8 * (previewScale || 1)}px`,
+                    borderRadius: t.bgColor ? 8 * (previewScale || 1) : undefined,
                   }}
                 >
                   {isEditing ? (
