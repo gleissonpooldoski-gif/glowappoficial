@@ -193,6 +193,7 @@ export default function Editor() {
   const resizeRef = useRef<{ id: string; sx: number; sy: number; base: number } | null>(null);
   const [selectedTextId, setSelectedTextId] = useState<string | null>(null);
   const stageRef = useRef<HTMLDivElement>(null);
+  const [stageSize, setStageSize] = useState<{ w: number; h: number }>({ w: 0, h: 0 });
   const dragRef = useRef<{ id: string; sx: number; sy: number; px: number; py: number } | null>(null);
 
   const [videoUrl, setVideoUrl] = useState<string | null>(null);
