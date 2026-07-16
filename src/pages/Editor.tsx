@@ -820,7 +820,7 @@ export default function Editor() {
           </Button>
           <Button size="sm" className="bg-gold-gradient text-black glow-gold" onClick={exportVideo} disabled={exporting}>
             {exporting ? <Loader2 size={14} className="mr-1 animate-spin" /> : <Rocket size={14} className="mr-1" />}
-            Exportar / Gerar vídeo
+            {exporting ? (exportProgress ?? "Renderizando…") : "Pronto para baixar"}
           </Button>
         </div>
       </div>
