@@ -39,9 +39,9 @@ export type PublishParams = {
 async function invoke<T = any>(fn: string, body: Record<string, unknown>): Promise<T> {
   const { data, error } = await supabase.functions.invoke(fn, { body });
   if (error) {
+    const anyErr = error as any;
     const details =
-      // @ts-expect-error – context is present on FunctionsHttpError
-      typeof error.context?.text === "function" ? await error.context.text() : error.message;
+      typeof anyErr?.context?.text === "function" ? await anyErr.context.text() : error.message;
     throw new Error(details || "Falha ao chamar a função.");
   }
   if ((data as any)?.error && !(data as any)?.success) {
