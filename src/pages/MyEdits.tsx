@@ -215,8 +215,8 @@ export default function MyEdits() {
                       </Button>
                     ) : r.status === "processing" ? (
                       <Button size="sm" variant="outline" className="h-7 flex-1 text-[11px]"
-                        onClick={() => navigate("/processing")}>
-                        <Rocket size={12} className="mr-1" /> Ver fila
+                        onClick={() => navigate("/finished")}>
+                        <Rocket size={12} className="mr-1" /> Ver renderização
                       </Button>
                     ) : (
                       <Button size="sm" variant="outline" className="h-7 flex-1 text-[11px]"
