@@ -1,6 +1,6 @@
 import { useEffect, useMemo, useState } from "react";
 import { useNavigate } from "react-router-dom";
-import { Pencil, Trash2, Loader2, Film, Rocket, CheckCircle2, Clock, PlayCircle, CheckSquare, Square } from "lucide-react";
+import { Pencil, Trash2, Loader2, Film, Rocket, CheckCircle2, Clock, PlayCircle, CheckSquare, Square, Undo2 } from "lucide-react";
 import { supabase } from "@/integrations/supabase/client";
 import { toast } from "sonner";
 import { Card, CardContent } from "@/components/ui/card";
@@ -75,9 +75,35 @@ export default function MyEdits() {
 
   const remove = async (id: string) => {
     if (!confirm("Excluir este projeto de edição?")) return;
+    const row = rows?.find((r) => r.id === id);
     const { error } = await (supabase as any).from("edits").delete().eq("id", id);
     if (error) return toast.error(error.message);
+    // Free the video back to the library if it isn't already completed.
+    if (row?.video_id && row.status !== "completed") {
+      await (supabase as any)
+        .from("videos")
+        .update({ status: "uploaded" })
+        .eq("id", row.video_id)
+        .neq("status", "completed");
+    }
     toast.success("Projeto excluído");
+    load();
+  };
+
+  const returnToLibrary = async (row: EditRow) => {
+    if (!row.video_id) {
+      toast.error("Este projeto não tem vídeo vinculado.");
+      return;
+    }
+    if (!confirm("Retornar este vídeo para a Biblioteca? O projeto de edição será removido.")) return;
+    const { error: vErr } = await (supabase as any)
+      .from("videos")
+      .update({ status: "uploaded" })
+      .eq("id", row.video_id);
+    if (vErr) return toast.error(vErr.message);
+    const { error: eErr } = await (supabase as any).from("edits").delete().eq("id", row.id);
+    if (eErr) return toast.error(eErr.message);
+    toast.success("Vídeo devolvido para a Biblioteca");
     load();
   };
 
@@ -86,6 +112,17 @@ export default function MyEdits() {
     const ids = confirmMode === "all" ? rows.map((r) => r.id) : Array.from(selected);
     if (ids.length === 0) { setConfirmMode(null); return; }
     setDeleting(true);
+    // Free videos of non-completed edits back to the library.
+    const videoIds = rows
+      .filter((r) => ids.includes(r.id) && r.status !== "completed" && r.video_id)
+      .map((r) => r.video_id as string);
+    if (videoIds.length) {
+      await (supabase as any)
+        .from("videos")
+        .update({ status: "uploaded" })
+        .in("id", videoIds)
+        .neq("status", "completed");
+    }
     // RLS garante que o usuário só apaga os próprios projetos.
     const { error } = await (supabase as any).from("edits").delete().in("id", ids);
     setDeleting(false);
@@ -222,6 +259,17 @@ export default function MyEdits() {
                       <Button size="sm" variant="outline" className="h-7 flex-1 text-[11px]"
                         onClick={() => navigate("/finished")}>
                         <CheckCircle2 size={12} className="mr-1" /> Ver pronto
+                      </Button>
+                    )}
+                    {r.status !== "completed" && r.status !== "processing" && r.video_id && (
+                      <Button
+                        size="sm"
+                        variant="outline"
+                        className="h-7 w-7 p-0 text-muted-foreground hover:text-gold"
+                        title="Retornar para Biblioteca"
+                        onClick={() => returnToLibrary(r)}
+                      >
+                        <Undo2 size={12} />
                       </Button>
                     )}
                     <Button size="sm" variant="ghost"

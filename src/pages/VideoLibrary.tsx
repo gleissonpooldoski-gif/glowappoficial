@@ -123,7 +123,11 @@ export default function VideoLibrary() {
 
   const load = async () => {
     const [v, p, t] = await Promise.all([
-      supabase.from("videos").select("*").order("created_at", { ascending: false }),
+      supabase
+        .from("videos")
+        .select("*")
+        .not("status", "in", "(in_editing,completed)")
+        .order("created_at", { ascending: false }),
       supabase.from("projects").select("id, name").order("created_at", { ascending: false }),
       supabase.from("templates").select("id, name, preview_url, file_path, file_type").order("created_at", { ascending: false }),
     ]);
@@ -466,6 +470,13 @@ export default function VideoLibrary() {
         .select("id, video_id, video_filename, video_storage_path, video_url, owner_user_id, template_id, template_url, user_id, status");
       if (error) throw error;
       console.log("[VideoLibrary] edit project created", created);
+
+      // Move videos out of the library — they now live inside an editing project.
+      const { error: upErr } = await (supabase as any)
+        .from("videos")
+        .update({ status: "in_editing" })
+        .in("id", ids);
+      if (upErr) console.error("[VideoLibrary] failed to flag videos as in_editing", upErr);
       const firstId = created?.[0]?.id;
       toast.success(`${rows.length} rascunho(s) criado(s). Abrindo editor...`);
       setApplyOpen(false);
