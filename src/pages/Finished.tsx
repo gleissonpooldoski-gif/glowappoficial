@@ -272,15 +272,50 @@ export default function Finished() {
 
   return (
     <div className="space-y-6">
-      <header className="flex flex-col gap-3 md:flex-row md:items-center md:justify-between">
+      <header className="flex flex-col gap-3 md:flex-row md:items-start md:justify-between">
         <div>
           <h1 className="text-2xl font-semibold tracking-tight">Vídeos Prontos</h1>
           <p className="text-sm text-muted-foreground">Seus vídeos finalizados. Reproduza, baixe ou exclua.</p>
         </div>
-        <Button variant="outline" className="border-border/60" disabled>
-          <Package size={14} className="mr-1" /> Baixar todos (ZIP) — em breve
-        </Button>
+        {videos && videos.length > 0 && (
+          <div className="flex flex-wrap items-center gap-2">
+            <Button size="sm" variant="outline" onClick={toggleAll}>
+              {allSelected ? <CheckSquare size={14} className="mr-1.5" /> : <Square size={14} className="mr-1.5" />}
+              {allSelected ? "Limpar seleção" : "Selecionar todos"}
+            </Button>
+            <Button
+              size="sm"
+              variant="outline"
+              className="border-gold/40 text-gold hover:bg-gold/10"
+              disabled={zipBusy}
+              onClick={downloadAll}
+            >
+              {zipBusy ? <Loader2 size={14} className="mr-1.5 animate-spin" /> : <Package size={14} className="mr-1.5" />}
+              {selected.size > 0 ? `Baixar selecionados (${selected.size})` : "Baixar todos"}
+            </Button>
+            <Button
+              size="sm"
+              variant="outline"
+              className="border-destructive/40 text-destructive hover:bg-destructive/10"
+              disabled={selected.size === 0 || bulkBusy}
+              onClick={() => setConfirmMode("selection")}
+            >
+              <Trash2 size={14} className="mr-1.5" />
+              Excluir selecionados ({selected.size})
+            </Button>
+            <Button
+              size="sm"
+              variant="destructive"
+              disabled={bulkBusy}
+              onClick={() => setConfirmMode("all")}
+            >
+              <Trash2 size={14} className="mr-1.5" />
+              Excluir todos
+            </Button>
+          </div>
+        )}
       </header>
+
 
       {jobs.length > 0 && (
         <div className="space-y-2">
