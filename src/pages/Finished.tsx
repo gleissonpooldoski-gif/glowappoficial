@@ -10,6 +10,7 @@ import { Progress } from "@/components/ui/progress";
 import { formatBytes } from "@/lib/format";
 import { format } from "date-fns";
 import { ptBR } from "date-fns/locale";
+import { useActiveProject } from "@/context/ProjectContext";
 
 const BUCKET = "videos-processed";
 
