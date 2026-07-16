@@ -46,7 +46,7 @@ export default function Publications() {
 
   useEffect(() => {
     load();
-    const t = window.setInterval(load, 8000);
+    const t = window.setInterval(load, 5000);
     return () => window.clearInterval(t);
   }, []);
 
