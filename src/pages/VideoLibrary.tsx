@@ -176,6 +176,20 @@ export default function VideoLibrary() {
     load();
   }, [activeProject?.id]);
 
+  // Realtime: qualquer INSERT/UPDATE/DELETE em videos deste projeto recarrega a lista.
+  useEffect(() => {
+    if (!activeProject?.id) return;
+    const channel = supabase
+      .channel(`videos-${activeProject.id}`)
+      .on(
+        "postgres_changes",
+        { event: "*", schema: "public", table: "videos", filter: `project_id=eq.${activeProject.id}` },
+        () => { load(); },
+      )
+      .subscribe();
+    return () => { supabase.removeChannel(channel); };
+  }, [activeProject?.id]);
+
   const updateItem = useCallback((id: string, patch: Partial<QueueItem>) => {
     setQueue((q) => q.map((it) => (it.id === id ? { ...it, ...patch } : it)));
   }, []);
