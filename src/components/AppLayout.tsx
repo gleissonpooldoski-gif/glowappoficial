@@ -13,22 +13,29 @@ import {
   Sun,
   Search,
   Sparkles,
+  BarChart3,
+  Wand2,
+  LogOut,
 } from "lucide-react";
 import { useTheme } from "next-themes";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
+import { useAuth } from "@/contexts/AuthContext";
 import { cn } from "@/lib/utils";
 
 const nav = [
   { to: "/", label: "Dashboard", icon: LayoutDashboard, end: true },
-  { to: "/library", label: "Biblioteca", icon: ImageIcon },
   { to: "/new", label: "Novo Post", icon: PlusSquare },
   { to: "/calendar", label: "Calendário", icon: Calendar },
+  { to: "/library", label: "Biblioteca", icon: ImageIcon },
   { to: "/history", label: "Histórico", icon: History },
+  { to: "/analytics", label: "Analytics", icon: BarChart3 },
+  { to: "/ai", label: "IA", icon: Wand2 },
   { to: "/settings", label: "Configurações", icon: Settings },
 ];
 
 function SidebarContent({ onNavigate }: { onNavigate?: () => void }) {
+  const { user, signOut } = useAuth();
   return (
     <div className="flex h-full w-60 flex-col border-r bg-sidebar">
       <div className="flex h-14 items-center gap-2 border-b px-5">
@@ -37,7 +44,7 @@ function SidebarContent({ onNavigate }: { onNavigate?: () => void }) {
         </div>
         <span className="text-sm font-semibold tracking-tight">ContentFlow</span>
       </div>
-      <nav className="flex-1 space-y-0.5 p-3">
+      <nav className="flex-1 space-y-0.5 overflow-y-auto p-3">
         {nav.map((item) => {
           const Icon = item.icon;
           return (
@@ -62,10 +69,20 @@ function SidebarContent({ onNavigate }: { onNavigate?: () => void }) {
         })}
       </nav>
       <div className="border-t p-3">
-        <div className="rounded-md bg-sidebar-accent/50 px-3 py-2.5">
-          <p className="text-xs font-medium text-sidebar-foreground">Workspace pessoal</p>
-          <p className="mt-0.5 text-[11px] text-muted-foreground">v0.1 · em desenvolvimento</p>
+        <div className="mb-2 rounded-md bg-sidebar-accent/50 px-3 py-2">
+          <p className="truncate text-xs font-medium text-sidebar-foreground">
+            {user?.email ?? "Workspace"}
+          </p>
+          <p className="mt-0.5 text-[11px] text-muted-foreground">Workspace pessoal</p>
         </div>
+        <Button
+          variant="ghost"
+          size="sm"
+          className="w-full justify-start gap-2 h-8"
+          onClick={signOut}
+        >
+          <LogOut size={14} /> Sair
+        </Button>
       </div>
     </div>
   );
@@ -77,17 +94,15 @@ export default function AppLayout() {
   const location = useLocation();
 
   const currentLabel =
-    nav.find((n) => (n.end ? location.pathname === n.to : location.pathname.startsWith(n.to)))?.label ??
-    "ContentFlow";
+    nav.find((n) => (n.end ? location.pathname === n.to : location.pathname.startsWith(n.to)))
+      ?.label ?? "ContentFlow";
 
   return (
     <div className="flex h-screen w-full overflow-hidden bg-background">
-      {/* Desktop sidebar */}
       <div className="hidden md:flex">
         <SidebarContent />
       </div>
 
-      {/* Mobile drawer */}
       {mobileOpen && (
         <div className="fixed inset-0 z-50 md:hidden">
           <div className="absolute inset-0 bg-black/40" onClick={() => setMobileOpen(false)} />
@@ -107,19 +122,14 @@ export default function AppLayout() {
           >
             {mobileOpen ? <X size={18} /> : <Menu size={18} />}
           </Button>
-
           <h1 className="text-sm font-medium">{currentLabel}</h1>
-
           <div className="ml-auto flex items-center gap-2">
             <div className="relative hidden sm:block">
               <Search
                 size={14}
                 className="pointer-events-none absolute left-2.5 top-1/2 -translate-y-1/2 text-muted-foreground"
               />
-              <Input
-                placeholder="Buscar..."
-                className="h-8 w-56 pl-8 text-sm"
-              />
+              <Input placeholder="Buscar..." className="h-8 w-56 pl-8 text-sm" />
             </div>
             <Button
               variant="ghost"
