@@ -503,6 +503,39 @@ export default function Finished() {
           })}
         </div>
       )}
+
+      <AlertDialog open={confirmMode !== null} onOpenChange={(o) => { if (!o) { setConfirmMode(null); setPendingRemoveId(null); } }}>
+        <AlertDialogContent>
+          <AlertDialogHeader>
+            <AlertDialogTitle>
+              {confirmMode === "all"
+                ? "Excluir todos os vídeos prontos?"
+                : confirmMode === "selection"
+                ? "Excluir vídeos selecionados?"
+                : "Excluir este vídeo?"}
+            </AlertDialogTitle>
+            <AlertDialogDescription>
+              {confirmMode === "all"
+                ? "Tem certeza que deseja excluir todos os vídeos prontos? Os arquivos serão removidos do armazenamento e essa ação não poderá ser desfeita."
+                : confirmMode === "selection"
+                ? `Tem certeza que deseja excluir ${selected.size} vídeo(s) selecionado(s)? Os arquivos serão removidos do armazenamento.`
+                : "O arquivo será removido do armazenamento e essa ação não poderá ser desfeita."}
+            </AlertDialogDescription>
+          </AlertDialogHeader>
+          <AlertDialogFooter>
+            <AlertDialogCancel disabled={bulkBusy}>Cancelar</AlertDialogCancel>
+            <AlertDialogAction
+              onClick={(e) => { e.preventDefault(); runConfirmedDelete(); }}
+              disabled={bulkBusy}
+              className="bg-destructive text-destructive-foreground hover:bg-destructive/90"
+            >
+              {bulkBusy ? <Loader2 size={14} className="mr-1.5 animate-spin" /> : <Trash2 size={14} className="mr-1.5" />}
+              {confirmMode === "all" ? "Excluir todos" : confirmMode === "selection" ? "Excluir selecionados" : "Excluir"}
+            </AlertDialogAction>
+          </AlertDialogFooter>
+        </AlertDialogContent>
+      </AlertDialog>
     </div>
   );
 }
+
