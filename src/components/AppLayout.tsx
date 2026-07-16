@@ -72,7 +72,7 @@ export default function AppLayout() {
   const [mobileOpen, setMobileOpen] = useState(false);
   const location = useLocation();
   const current =
-    nav.find((n) => (n.end ? location.pathname === n.to : location.pathname.startsWith(n.to)))
+    nav.find((n) => location.pathname.startsWith(n.to))
       ?.label ?? "ViralFactory";
 
   return (
