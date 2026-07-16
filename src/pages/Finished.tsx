@@ -126,7 +126,7 @@ export default function Finished() {
     load();
     const t = window.setInterval(load, 5000);
     return () => window.clearInterval(t);
-  }, []);
+  }, [activeProject?.id]);
 
   const download = async (v: FinishedVideo) => {
     if (!v.processed_path) { toast.info("Arquivo ainda não disponível."); return; }
