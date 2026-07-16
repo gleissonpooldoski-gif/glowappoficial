@@ -46,6 +46,9 @@ export default function TemplateEditor() {
   const [doc, setDoc] = useState<TemplateDoc>(emptyDoc());
   const [selectedId, setSelectedId] = useState<string | null>(null);
   const [saving, setSaving] = useState(false);
+  const [aiOpen, setAiOpen] = useState(false);
+  const [aiStyle, setAiStyle] = useState("");
+  const [regenerating, setRegenerating] = useState(false);
   const fileInputRef = useRef<HTMLInputElement>(null);
   const uploadTypeRef = useRef<"image" | "logo">("image");
 
