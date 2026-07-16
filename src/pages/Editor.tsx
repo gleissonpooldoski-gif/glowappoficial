@@ -840,7 +840,7 @@ export default function Editor() {
         </Card>
 
         {/* Center — canvas */}
-        <div className="flex items-center justify-center rounded-lg border border-border/50 bg-black/60 p-4">
+        <div className="flex flex-col items-center justify-center gap-3 rounded-lg border border-border/50 bg-black/60 p-4">
           <div
             ref={canvasWrapRef}
             className="group relative"
