@@ -109,7 +109,7 @@ export default function Finished() {
           <CardContent className="flex flex-col items-center gap-2 py-16 text-center">
             <Film className="text-gold" />
             <p className="text-sm text-muted-foreground">
-              Nenhum vídeo finalizado. Abra um projeto no editor e clique em <b>Pronto para baixar</b>.
+              Nenhum vídeo finalizado. Abra um projeto no editor e clique em <b>Exportar vídeo</b>.
             </p>
           </CardContent>
         </Card>
