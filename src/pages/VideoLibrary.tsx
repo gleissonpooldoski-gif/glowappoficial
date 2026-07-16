@@ -129,7 +129,7 @@ export default function VideoLibrary() {
         .from("videos")
         .select("*")
         .eq("project_id", pid)
-        .not("status", "in", "(in_editing,completed)")
+        .in("status", ["processing", "uploaded"])
         .order("created_at", { ascending: false }),
       supabase.from("projects").select("id, name").order("created_at", { ascending: false }),
       supabase.from("templates").select("id, name, preview_url, file_path, file_type")
@@ -193,7 +193,16 @@ export default function VideoLibrary() {
         projectId,
         (pct) => updateItem(next.id, { progress: pct }),
         (xhr) => updateItem(next.id, { xhr }),
-        (hash) => updateItem(next.id, { fileHash: hash })
+        (hash) => updateItem(next.id, { fileHash: hash }),
+        (videoId) => {
+          // Vídeo já registrado — aparece imediatamente na Biblioteca (status="processing").
+          updateItem(next.id, { videoId });
+          load();
+        },
+        () => {
+          // Processamento em background concluído (thumbnail + duração + status="uploaded").
+          load();
+        }
       )
         .then((res) => {
           seenHashes.current.add(res.fileHash);
@@ -212,7 +221,6 @@ export default function VideoLibrary() {
         .finally(() => {
           activeCount.current--;
           runNext();
-          load();
         });
     }
   }, [updateItem]);
@@ -824,6 +832,12 @@ export default function VideoLibrary() {
                       />
                     ) : (
                       <Film className="text-gold/40" size={32} />
+                    )}
+                    {v.status === "processing" && (
+                      <span className="absolute inset-0 flex flex-col items-center justify-center gap-1 bg-black/60 text-[10px] text-white">
+                        <Loader2 size={18} className="animate-spin text-gold" />
+                        Processando...
+                      </span>
                     )}
                     <span className="absolute inset-0 flex items-center justify-center bg-black/40 opacity-0 transition group-hover:opacity-100">
                       <span className="flex items-center gap-1 rounded-full bg-gold px-3 py-1.5 text-xs font-medium text-black">
