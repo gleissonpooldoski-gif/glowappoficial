@@ -172,6 +172,42 @@ export type Database = {
           },
         ]
       }
+      instagram_credentials: {
+        Row: {
+          access_token: string
+          account: string
+          created_at: string
+          id: string
+          ig_business_id: string
+          last_validated_at: string | null
+          last_validation_detail: string | null
+          last_validation_status: string | null
+          updated_at: string
+        }
+        Insert: {
+          access_token: string
+          account: string
+          created_at?: string
+          id?: string
+          ig_business_id: string
+          last_validated_at?: string | null
+          last_validation_detail?: string | null
+          last_validation_status?: string | null
+          updated_at?: string
+        }
+        Update: {
+          access_token?: string
+          account?: string
+          created_at?: string
+          id?: string
+          ig_business_id?: string
+          last_validated_at?: string | null
+          last_validation_detail?: string | null
+          last_validation_status?: string | null
+          updated_at?: string
+        }
+        Relationships: []
+      }
       instagram_posts: {
         Row: {
           account: string

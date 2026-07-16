@@ -13,6 +13,7 @@ import {
   SelectTrigger,
   SelectValue,
 } from "@/components/ui/select";
+import InstagramCredentialsCard from "@/components/InstagramCredentialsCard";
 
 type App = {
   id?: string;
@@ -142,6 +143,8 @@ export default function Settings() {
           </div>
         </CardContent>
       </Card>
+
+      <InstagramCredentialsCard />
 
       <Card className="glass border-border/50">
         <CardContent className="flex items-start gap-3 p-5 text-xs text-muted-foreground">
