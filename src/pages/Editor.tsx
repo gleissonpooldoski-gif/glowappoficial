@@ -163,6 +163,9 @@ export default function Editor() {
       console.log("[Editor] edit ->", {
         video_id: data.video_id,
         video_url: data.video_url,
+        video_filename: data.video_filename,
+        video_storage_path: data.video_storage_path,
+        owner_user_id: data.owner_user_id,
         template_id: data.template_id,
         template_url: data.template_url,
         user_id: data.user_id,
@@ -179,42 +182,30 @@ export default function Editor() {
         setLoading(false);
         return;
       }
-      if (!data.template_id) {
-        setLoadError({
-          title: "Erro ao carregar vídeo",
-          reason: "Este projeto não tem template associado. Volte à biblioteca e selecione um template.",
-          url: data.template_url,
-        });
-        setEdit(data);
-        setLoading(false);
-        return;
-      }
 
       setEdit(data);
       setRatio(data.aspect_ratio ?? "9:16");
       setDoc(safeDoc(data.doc));
 
-      const [{ data: v, error: vErr }, { data: t, error: tErr }] = await Promise.all([
-        supabase.from("videos").select("*").eq("id", data.video_id).maybeSingle(),
-        supabase.from("templates").select("*").eq("id", data.template_id).maybeSingle(),
-      ]);
+      console.log("Carregando vídeo...");
+      const { data: v, error: vErr } = await supabase
+        .from("videos")
+        .select("*")
+        .eq("id", data.video_id)
+        .maybeSingle();
 
       if (vErr) console.error("[Editor] video fetch error", vErr);
-      if (tErr) console.error("[Editor] template fetch error", tErr);
       console.log("[Editor] video row ->", v ? {
         id: v.id,
+        filename: v.filename,
         original_path: v.original_path,
         original_url: v.original_url,
+        mime_type: v.mime_type,
         status: v.status,
-      } : null);
-      console.log("[Editor] template row ->", t ? {
-        id: t.id,
-        file_path: t.file_path,
-        preview_url: t.preview_url,
-        file_type: t.file_type,
       } : null);
 
       if (!v) {
+        console.error("Erro ao buscar vídeo", vErr);
         setLoadError({
           title: "Erro ao carregar vídeo",
           reason: vErr?.message ?? "Vídeo original não encontrado no banco (pode ter sido excluído).",
@@ -223,30 +214,20 @@ export default function Editor() {
         setLoading(false);
         return;
       }
-      if (!t) {
-        setLoadError({
-          title: "Erro ao carregar vídeo",
-          reason: tErr?.message ?? "Template selecionado não encontrado no banco (pode ter sido excluído).",
-          url: data.template_url,
-        });
-        setVideo(v);
-        setLoading(false);
-        return;
-      }
       if (!v.original_path && !v.original_url && !data.video_url) {
+        console.error("Erro ao buscar vídeo", "URL/caminho vazio");
         setLoadError({
           title: "Erro ao carregar vídeo",
           reason: "O vídeo não tem arquivo original armazenado nem URL salva no projeto.",
           url: data.video_url ?? v.original_url,
         });
         setVideo(v);
-        setTemplate(t);
         setLoading(false);
         return;
       }
 
       setVideo(v);
-      setTemplate(t);
+      setTemplate(null);
 
       let nextVideoUrl = data.video_url ?? v.original_url ?? null;
       if (v.original_path) {
@@ -255,6 +236,7 @@ export default function Editor() {
           .createSignedUrl(v.original_path, 60 * 60 * 6);
         if (signErr || !signed?.signedUrl) {
           console.error("[Editor] createSignedUrl failed", signErr, "path:", v.original_path);
+          console.error("Erro ao buscar vídeo", signErr);
           setLoadError({
             title: "Erro ao carregar vídeo",
             reason: `Não foi possível gerar URL assinada do vídeo (${signErr?.message ?? "sem permissão"}).`,
@@ -266,6 +248,7 @@ export default function Editor() {
         nextVideoUrl = signed.signedUrl;
       }
       if (!nextVideoUrl) {
+        console.error("Erro ao buscar vídeo", "URL vazia");
         setLoadError({
           title: "Erro ao carregar vídeo",
           reason: "URL do vídeo está vazia.",
@@ -275,74 +258,20 @@ export default function Editor() {
         return;
       }
 
-      let nextTemplateUrl = data.template_url ?? t.preview_url ?? null;
-      if (t.file_path) {
-        const { data: signedTemplate, error: templateSignErr } = await supabase.storage
-          .from("media")
-          .createSignedUrl(t.file_path, 60 * 60 * 6);
-        if (templateSignErr || !signedTemplate?.signedUrl) {
-          console.error("[Editor] template createSignedUrl failed", templateSignErr, "path:", t.file_path);
-          setLoadError({
-            title: "Erro ao carregar vídeo",
-            reason: `Não foi possível gerar URL assinada do template (${templateSignErr?.message ?? "sem permissão"}).`,
-            url: nextTemplateUrl,
-          });
-          setLoading(false);
-          return;
-        }
-        nextTemplateUrl = signedTemplate.signedUrl;
-      }
-      if (!nextTemplateUrl) {
-        setLoadError({
-          title: "Erro ao carregar vídeo",
-          reason: "URL do template está vazia.",
-          url: null,
-        });
-        setLoading(false);
-        return;
-      }
-
-      console.log("[Editor] video URL loaded", nextVideoUrl);
-      console.log("[Editor] template URL loaded", nextTemplateUrl);
+      console.log("URL do vídeo encontrada", nextVideoUrl);
 
       const { error: urlUpdateErr } = await (supabase as any).from("edits").update({
         video_url: nextVideoUrl,
-        template_url: nextTemplateUrl,
+        video_filename: v.filename,
+        video_storage_path: v.original_path,
         user_id: data.user_id ?? "single-user",
+        owner_user_id: data.owner_user_id ?? "single-user",
+        status: "editing",
       }).eq("id", id);
       if (urlUpdateErr) console.error("[Editor] edit url update error", urlUpdateErr);
 
-      try {
-        await preloadVideo(nextVideoUrl);
-        if ((t.file_type ?? "").startsWith("video/")) {
-          await preloadVideo(nextTemplateUrl);
-        } else {
-          await preloadImage(nextTemplateUrl);
-        }
-      } catch (err: any) {
-        console.error("[Editor] media preload failed", {
-          video_id: data.video_id,
-          video_url: nextVideoUrl,
-          template_id: data.template_id,
-          template_url: nextTemplateUrl,
-          error: err,
-        });
-        setLoadError({
-          title: "Erro ao carregar vídeo",
-          reason: err?.message ?? "Falha no carregamento do player.",
-          url: nextVideoUrl,
-        });
-        setLoading(false);
-        return;
-      }
-
       setVideoUrl(nextVideoUrl);
-      setTemplateUrl(nextTemplateUrl);
-
-      const { error: editUpdateErr } = await (supabase as any).from("edits").update({
-        status: "editing",
-      }).eq("id", id);
-      if (editUpdateErr) console.error("[Editor] edit status/url update error", editUpdateErr);
+      setTemplateUrl(null);
       setLoading(false);
     })();
   }, [id, navigate]);
@@ -475,6 +404,79 @@ export default function Editor() {
 
   const r = RATIOS[ratio] ?? RATIOS["9:16"];
   const videoSrc = videoUrl;
+
+  return (
+    <div className="flex h-[calc(100vh-6rem)] flex-col gap-3">
+      <div className="flex flex-wrap items-center justify-between gap-2">
+        <div className="flex items-center gap-2">
+          <Button variant="ghost" size="sm" onClick={() => navigate("/videos")}>
+            <ArrowLeft size={14} className="mr-1" /> Voltar
+          </Button>
+          <div>
+            <h1 className="text-lg font-semibold leading-tight">Editor de Vídeo</h1>
+            <p className="text-xs text-muted-foreground">
+              {video?.filename ?? edit?.video_filename ?? "Vídeo original"}
+            </p>
+          </div>
+        </div>
+      </div>
+
+      <Card className="glass flex-1 border-border/50">
+        <CardContent className="flex h-full flex-col gap-3 p-4">
+          <div className="rounded-md border border-border/50 bg-muted/30 p-3 text-xs text-muted-foreground">
+            <div>URL do vídeo encontrada</div>
+            <div className="mt-1 break-all font-mono text-[11px]">{videoSrc}</div>
+          </div>
+          <div className="flex min-h-0 flex-1 items-center justify-center rounded-lg bg-black p-3">
+            {videoSrc ? (
+              <video
+                key={videoSrc}
+                controls
+                playsInline
+                preload="auto"
+                className="max-h-full w-full rounded-md bg-black"
+                src={videoSrc}
+                onLoadStart={() => {
+                  console.log("Carregando vídeo...");
+                  setVideoReady(false);
+                }}
+                onLoadedData={(event) => {
+                  console.log("[Editor] <video controls> loaded", {
+                    video_id: edit?.video_id,
+                    url: videoSrc,
+                    width: event.currentTarget.videoWidth,
+                    height: event.currentTarget.videoHeight,
+                    duration: event.currentTarget.duration,
+                  });
+                  setVideoReady(true);
+                }}
+                onError={(e) => {
+                  const el = e.currentTarget;
+                  const reason = mediaErrorReason(el);
+                  console.error("Erro ao buscar vídeo", {
+                    video_id: edit?.video_id,
+                    url: videoSrc,
+                    reason,
+                    error: el.error,
+                  });
+                  setLoadError({ title: "Erro ao carregar vídeo", reason, url: videoSrc });
+                }}
+              />
+            ) : (
+              <div className="text-sm text-muted-foreground">Erro ao buscar vídeo</div>
+            )}
+          </div>
+          {!videoReady && (
+            <div className="flex items-center justify-center text-xs text-muted-foreground">
+              <Loader2 className="mr-2 h-4 w-4 animate-spin text-gold" />
+              Carregando vídeo...
+            </div>
+          )}
+        </CardContent>
+      </Card>
+    </div>
+  );
+
   const templateSrc = templateUrl;
 
   return (

@@ -430,23 +430,29 @@ export default function VideoLibrary() {
 
         console.log("[VideoLibrary] creating edit project", {
           video_id: vid,
+          file_name: v.filename,
+          storage_path: v.original_path,
           video_url: data.signedUrl,
           template_id: chosenTemplate,
           template_url: templateUrl,
           user_id: "single-user",
-          status: "draft",
+          owner_user_id: "single-user",
+          status: "editing",
         });
 
         return {
           video_id: vid,
           video_url: data.signedUrl,
+          video_filename: v.filename,
+          video_storage_path: v.original_path,
           template_id: chosenTemplate,
           template_url: templateUrl,
           user_id: "single-user",
+          owner_user_id: "single-user",
           project_id: v?.project_id ?? null,
           name: v?.filename ?? "Rascunho",
           aspect_ratio: "9:16",
-          status: "draft" as const,
+          status: "editing" as const,
           doc: {
             video: { zoom: 1, x: 0, y: 0 },
             texts: [],
@@ -457,7 +463,7 @@ export default function VideoLibrary() {
       const { data: created, error } = await (supabase as any)
         .from("edits")
         .insert(rows)
-        .select("id, video_id, video_url, template_id, template_url, user_id, status");
+        .select("id, video_id, video_filename, video_storage_path, video_url, owner_user_id, template_id, template_url, user_id, status");
       if (error) throw error;
       console.log("[VideoLibrary] edit project created", created);
       const firstId = created?.[0]?.id;
