@@ -619,6 +619,15 @@ export default function Editor() {
                 <Plus size={12} className="mr-1" /> Texto
               </Button>
             </div>
+            <Button
+              size="sm"
+              variant="outline"
+              className="h-8 w-full justify-start border-gold/40 bg-gold/5 text-xs text-gold hover:bg-gold/10"
+              onClick={() => setLibraryOpen(true)}
+            >
+              <MessageSquareText size={12} className="mr-2" />
+              Textos e CTAs prontos
+            </Button>
             <div className="space-y-1">
               <div className="rounded border border-border/40 bg-black/30 p-2 text-xs">
                 🎬 Vídeo base
