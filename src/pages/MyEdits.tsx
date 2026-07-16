@@ -250,6 +250,17 @@ export default function MyEdits() {
                         <CheckCircle2 size={12} className="mr-1" /> Ver pronto
                       </Button>
                     )}
+                    {r.status !== "completed" && r.status !== "processing" && r.video_id && (
+                      <Button
+                        size="sm"
+                        variant="outline"
+                        className="h-7 w-7 p-0 text-muted-foreground hover:text-gold"
+                        title="Retornar para Biblioteca"
+                        onClick={() => returnToLibrary(r)}
+                      >
+                        <Undo2 size={12} />
+                      </Button>
+                    )}
                     <Button size="sm" variant="ghost"
                       className="h-7 w-7 p-0 text-muted-foreground hover:text-destructive"
                       onClick={() => remove(r.id)}>
