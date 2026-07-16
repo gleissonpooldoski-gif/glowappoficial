@@ -472,6 +472,7 @@ export default function Editor() {
     return m > 0 ? m / 1080 : 0;
   }, [stageSize]);
 
+  const selectedText = useMemo(
     () => doc.texts.find((t) => t.id === selectedTextId) ?? null,
     [doc.texts, selectedTextId],
   );
