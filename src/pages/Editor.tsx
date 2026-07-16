@@ -2,7 +2,7 @@ import { useEffect, useMemo, useRef, useState } from "react";
 import { useNavigate, useParams } from "react-router-dom";
 import {
   ArrowLeft, Save, Rocket, Type, Plus, Trash2, Loader2, Layers, Copy,
-  Palette, Image as ImageIcon, ZoomIn, ZoomOut, Move, Play, Pause, Volume2, VolumeX, Maximize2,
+  Palette, Image as ImageIcon, ZoomIn, ZoomOut, Move, Play, Pause, Volume2, VolumeX, Maximize2, SkipBack, SkipForward,
 } from "lucide-react";
 import { supabase } from "@/integrations/supabase/client";
 
@@ -261,6 +261,16 @@ export default function Editor() {
       el.pause();
     }
   };
+
+  const seekTo = (t: number) => {
+    const el = videoRef.current;
+    if (!el) return;
+    const d = el.duration && isFinite(el.duration) ? el.duration : duration;
+    const clamped = Math.max(0, Math.min(d || 0, t));
+    try { el.currentTime = clamped; } catch (err) { console.error("[Editor] seek failed", err); }
+    setCurrentTime(clamped);
+  };
+  const skip = (delta: number) => seekTo((videoRef.current?.currentTime ?? currentTime) + delta);
 
   const toggleMute = () => {
     const el = videoRef.current;
@@ -830,7 +840,7 @@ export default function Editor() {
         </Card>
 
         {/* Center — canvas */}
-        <div className="flex items-center justify-center rounded-lg border border-border/50 bg-black/60 p-4">
+        <div className="flex flex-col items-center justify-center gap-3 rounded-lg border border-border/50 bg-black/60 p-4">
           <div
             ref={canvasWrapRef}
             className="group relative"
@@ -1079,6 +1089,35 @@ export default function Editor() {
             </div>
           )}
           </div>
+          {/* Timeline persistente abaixo do player — navegar em qualquer ponto do vídeo */}
+          {videoSrc && (
+            <div className="w-full max-w-[1100px] rounded-md border border-border/50 bg-background/60 px-3 py-2">
+              <div className="flex items-center gap-3">
+                <Button size="icon" variant="ghost" className="h-8 w-8" onClick={() => skip(-5)} title="Voltar 5s">
+                  <SkipBack size={16} />
+                </Button>
+                <Button size="icon" variant="ghost" className="h-8 w-8" onClick={togglePlay} title={isPlaying ? "Pausar" : "Reproduzir"}>
+                  {isPlaying ? <Pause size={16} /> : <Play size={16} />}
+                </Button>
+                <Button size="icon" variant="ghost" className="h-8 w-8" onClick={() => skip(5)} title="Avançar 5s">
+                  <SkipForward size={16} />
+                </Button>
+                <span className="font-mono text-[11px] tabular-nums text-muted-foreground w-24 shrink-0">
+                  {formatTime(currentTime)} / {formatTime(duration)}
+                </span>
+                <input
+                  type="range"
+                  min={0}
+                  max={duration || 0}
+                  step={0.05}
+                  value={Math.min(currentTime, duration || 0)}
+                  onChange={(e) => seekTo(parseFloat(e.target.value))}
+                  className="h-1.5 flex-1 cursor-pointer accent-gold"
+                  aria-label="Linha do tempo do vídeo"
+                />
+              </div>
+            </div>
+          )}
         </div>
 
 
