@@ -451,7 +451,27 @@ export default function Editor() {
 
 
 
-  const selectedText = useMemo(
+  useEffect(() => {
+    const el = stageRef.current;
+    if (!el) return;
+    const update = () => {
+      const r = el.getBoundingClientRect();
+      setStageSize({ w: r.width, h: r.height });
+    };
+    update();
+    const ro = new ResizeObserver(update);
+    ro.observe(el);
+    window.addEventListener("resize", update);
+    return () => { ro.disconnect(); window.removeEventListener("resize", update); };
+  }, [ratio, loading]);
+
+  // Preview scale mirrors the export renderer: scale = min(W,H)/1080.
+  // Guarantees the font size chosen by the user matches the exported MP4.
+  const previewScale = useMemo(() => {
+    const m = Math.min(stageSize.w, stageSize.h);
+    return m > 0 ? m / 1080 : 0;
+  }, [stageSize]);
+
     () => doc.texts.find((t) => t.id === selectedTextId) ?? null,
     [doc.texts, selectedTextId],
   );
