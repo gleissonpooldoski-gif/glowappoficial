@@ -58,6 +58,7 @@ import {
   processItem,
   validateFile,
 } from "@/lib/uploadQueue";
+import { useActiveProject } from "@/context/ProjectContext";
 
 const TEMPLATE_BUCKET = "media";
 
