@@ -10,6 +10,8 @@ import {
   Clock,
   RotateCw,
   X,
+  Play,
+  Ban,
 } from "lucide-react";
 import { supabase } from "@/integrations/supabase/client";
 import { toast } from "sonner";
@@ -19,6 +21,12 @@ import { Input } from "@/components/ui/input";
 import { Badge } from "@/components/ui/badge";
 import { Progress } from "@/components/ui/progress";
 import { Skeleton } from "@/components/ui/skeleton";
+import {
+  Dialog,
+  DialogContent,
+  DialogHeader,
+  DialogTitle,
+} from "@/components/ui/dialog";
 import {
   Select,
   SelectContent,
@@ -31,7 +39,9 @@ import { cn } from "@/lib/utils";
 import {
   BUCKET,
   CONCURRENCY,
+  DuplicateVideoError,
   QueueItem,
+  computeFileHash,
   processItem,
   validateFile,
 } from "@/lib/uploadQueue";
@@ -46,6 +56,7 @@ type Video = {
   duration_seconds: number | null;
   size_bytes: number | null;
   mime_type: string | null;
+  file_hash: string | null;
   status: string;
   created_at: string;
 };
@@ -58,10 +69,12 @@ export default function VideoLibrary() {
   const [queue, setQueue] = useState<QueueItem[]>([]);
   const [query, setQuery] = useState("");
   const [drag, setDrag] = useState(false);
+  const [playing, setPlaying] = useState<{ video: Video; url: string } | null>(null);
   const inputRef = useRef<HTMLInputElement>(null);
   const queueRef = useRef<QueueItem[]>([]);
   const activeCount = useRef(0);
   const projectRef = useRef<string>("none");
+  const seenHashes = useRef<Set<string>>(new Set());
 
   useEffect(() => {
     queueRef.current = queue;
@@ -79,7 +92,9 @@ export default function VideoLibrary() {
     setVideos(list);
     setProjects((p.data ?? []) as any);
 
-    // Sign thumbnails for private bucket
+    // Track existing hashes so duplicate detection also works purely client-side
+    seenHashes.current = new Set(list.map((x) => x.file_hash).filter(Boolean) as string[]);
+
     const toSign = list.filter((x) => x.thumbnail_path).map((x) => x.thumbnail_path!) as string[];
     if (toSign.length) {
       const { data } = await supabase.storage.from(BUCKET).createSignedUrls(toSign, 60 * 60 * 24 * 7);
@@ -111,19 +126,27 @@ export default function VideoLibrary() {
         next,
         projectId,
         (pct) => updateItem(next.id, { progress: pct }),
-        (xhr) => updateItem(next.id, { xhr })
+        (xhr) => updateItem(next.id, { xhr }),
+        (hash) => updateItem(next.id, { fileHash: hash })
       )
         .then((res) => {
+          seenHashes.current.add(res.fileHash);
           updateItem(next.id, {
             status: "completed",
             progress: 100,
             videoId: res.videoId,
             thumbnailUrl: res.thumbnailUrl,
             durationSeconds: res.duration,
+            fileHash: res.fileHash,
           });
         })
         .catch((err: Error) => {
-          updateItem(next.id, { status: "failed", error: err.message });
+          if (err instanceof DuplicateVideoError) {
+            toast.warning(`${next.file.name}: já foi enviado`);
+            updateItem(next.id, { status: "duplicate", error: err.message });
+          } else {
+            updateItem(next.id, { status: "failed", error: err.message });
+          }
         })
         .finally(() => {
           activeCount.current--;
@@ -134,10 +157,13 @@ export default function VideoLibrary() {
   }, [updateItem]);
 
   const handleFiles = useCallback(
-    (files: FileList | File[]) => {
+    async (files: FileList | File[]) => {
       const arr = Array.from(files);
       const newItems: QueueItem[] = [];
+      const localHashes = new Set<string>();
       let rejected = 0;
+      let dupes = 0;
+
       for (const file of arr) {
         const err = validateFile(file);
         if (err) {
@@ -149,18 +175,40 @@ export default function VideoLibrary() {
             progress: 0,
             error: err,
           });
-        } else {
+          continue;
+        }
+        // Compute hash upfront to dedupe within batch and against library
+        let hash: string | undefined;
+        try {
+          hash = await computeFileHash(file);
+        } catch {
+          hash = undefined;
+        }
+        if (hash && (seenHashes.current.has(hash) || localHashes.has(hash))) {
+          dupes++;
           newItems.push({
             id: crypto.randomUUID(),
             file,
-            status: "pending",
+            status: "duplicate",
             progress: 0,
+            fileHash: hash,
+            error: "Este vídeo já foi enviado.",
           });
+          continue;
         }
+        if (hash) localHashes.add(hash);
+        newItems.push({
+          id: crypto.randomUUID(),
+          file,
+          status: "pending",
+          progress: 0,
+          fileHash: hash,
+        });
       }
       if (newItems.length === 0) return;
       setQueue((q) => [...newItems, ...q]);
       if (rejected > 0) toast.error(`${rejected} arquivo(s) rejeitado(s)`);
+      if (dupes > 0) toast.warning(`${dupes} vídeo(s) duplicado(s) ignorado(s)`);
       setTimeout(() => runNext(), 0);
     },
     [runNext]
@@ -169,7 +217,9 @@ export default function VideoLibrary() {
   const retryItem = useCallback(
     (id: string) => {
       setQueue((q) =>
-        q.map((it) => (it.id === id ? { ...it, status: "pending", progress: 0, error: undefined } : it))
+        q.map((it) =>
+          it.id === id ? { ...it, status: "pending", progress: 0, error: undefined } : it
+        )
       );
       setTimeout(() => runNext(), 0);
     },
@@ -193,8 +243,24 @@ export default function VideoLibrary() {
     if (paths.length) await supabase.storage.from(BUCKET).remove(paths);
     const { error } = await supabase.from("videos").delete().eq("id", v.id);
     if (error) return toast.error(error.message);
+    if (v.file_hash) seenHashes.current.delete(v.file_hash);
     toast.success("Vídeo excluído");
     load();
+  };
+
+  const openPlayer = async (v: Video) => {
+    if (!v.original_path) {
+      toast.error("Arquivo original não disponível");
+      return;
+    }
+    const { data, error } = await supabase.storage
+      .from(BUCKET)
+      .createSignedUrl(v.original_path, 60 * 60);
+    if (error || !data?.signedUrl) {
+      toast.error("Não foi possível carregar o vídeo");
+      return;
+    }
+    setPlaying({ video: v, url: data.signedUrl });
   };
 
   const filtered = (videos ?? []).filter((v) =>
@@ -206,7 +272,8 @@ export default function VideoLibrary() {
     const uploading = queue.filter((i) => i.status === "uploading").length;
     const completed = queue.filter((i) => i.status === "completed").length;
     const failed = queue.filter((i) => i.status === "failed").length;
-    return { pending, uploading, completed, failed, total: queue.length };
+    const duplicate = queue.filter((i) => i.status === "duplicate").length;
+    return { pending, uploading, completed, failed, duplicate, total: queue.length };
   }, [queue]);
 
   return (
@@ -214,7 +281,7 @@ export default function VideoLibrary() {
       <header className="space-y-1.5">
         <h1 className="text-2xl font-semibold tracking-tight">Biblioteca de Vídeos</h1>
         <p className="text-sm text-muted-foreground">
-          Envio em massa com fila inteligente · MP4, MOV, WEBM · até 2GB por arquivo
+          Envio em massa com fila inteligente · MP4, MOV, WEBM · até 2GB · deduplicação por hash
         </p>
       </header>
 
@@ -283,7 +350,7 @@ export default function VideoLibrary() {
         <Card className="glass border-border/50">
           <CardContent className="p-4">
             <div className="mb-3 flex items-center justify-between">
-              <div className="flex items-center gap-3 text-xs">
+              <div className="flex flex-wrap items-center gap-3 text-xs">
                 <span className="font-medium">Fila de upload</span>
                 <span className="text-muted-foreground">
                   {stats.completed}/{stats.total} concluídos
@@ -295,6 +362,11 @@ export default function VideoLibrary() {
                 )}
                 {stats.pending > 0 && (
                   <Badge variant="outline">{stats.pending} aguardando</Badge>
+                )}
+                {stats.duplicate > 0 && (
+                  <Badge variant="outline" className="border-amber-500/40 text-amber-500">
+                    {stats.duplicate} duplicado(s)
+                  </Badge>
                 )}
                 {stats.failed > 0 && (
                   <Badge variant="destructive">{stats.failed} com erro</Badge>
@@ -315,6 +387,8 @@ export default function VideoLibrary() {
                       <CheckCircle2 size={16} className="text-emerald-500" />
                     ) : it.status === "failed" ? (
                       <XCircle size={16} className="text-destructive" />
+                    ) : it.status === "duplicate" ? (
+                      <Ban size={16} className="text-amber-500" />
                     ) : it.status === "uploading" ? (
                       <Loader2 size={16} className="animate-spin text-gold" />
                     ) : (
@@ -335,7 +409,14 @@ export default function VideoLibrary() {
                       </span>
                     </div>
                     {it.error && (
-                      <p className="mt-1 text-[10px] text-destructive">{it.error}</p>
+                      <p
+                        className={cn(
+                          "mt-1 text-[10px]",
+                          it.status === "duplicate" ? "text-amber-500" : "text-destructive"
+                        )}
+                      >
+                        {it.error}
+                      </p>
                     )}
                   </div>
                   <div className="flex items-center gap-1">
@@ -386,7 +467,11 @@ export default function VideoLibrary() {
             const thumb = v.thumbnail_path ? thumbs[v.thumbnail_path] : v.thumbnail_url;
             return (
               <Card key={v.id} className="glass border-border/50 group overflow-hidden">
-                <div className="relative aspect-[9/16] flex items-center justify-center bg-black">
+                <button
+                  type="button"
+                  onClick={() => openPlayer(v)}
+                  className="relative aspect-[9/16] w-full flex items-center justify-center bg-black"
+                >
                   {thumb ? (
                     <img
                       src={thumb}
@@ -397,19 +482,28 @@ export default function VideoLibrary() {
                   ) : (
                     <Film className="text-gold/40" size={32} />
                   )}
-                  <button
-                    onClick={() => remove(v)}
+                  <span className="absolute inset-0 flex items-center justify-center bg-black/40 opacity-0 transition group-hover:opacity-100">
+                    <span className="flex items-center gap-1 rounded-full bg-gold px-3 py-1.5 text-xs font-medium text-black">
+                      <Play size={12} /> Assistir
+                    </span>
+                  </span>
+                  <span
+                    onClick={(e) => {
+                      e.stopPropagation();
+                      remove(v);
+                    }}
+                    role="button"
                     className="absolute right-2 top-2 rounded-md bg-black/70 p-1.5 text-muted-foreground opacity-0 transition hover:text-destructive group-hover:opacity-100"
                   >
                     <Trash2 size={14} />
-                  </button>
+                  </span>
                   <Badge
                     variant="outline"
                     className="absolute left-2 top-2 border-gold/30 bg-black/60 text-[10px] text-gold"
                   >
                     {v.status}
                   </Badge>
-                </div>
+                </button>
                 <CardContent className="p-3">
                   <p className="truncate text-xs font-medium">{v.filename}</p>
                   <div className="mt-1 flex items-center justify-between text-[10px] text-muted-foreground">
@@ -422,6 +516,33 @@ export default function VideoLibrary() {
           })}
         </div>
       )}
+
+      <Dialog open={!!playing} onOpenChange={(o) => !o && setPlaying(null)}>
+        <DialogContent className="max-w-3xl bg-black p-0 border-border/50">
+          <DialogHeader className="px-4 pt-4">
+            <DialogTitle className="text-sm truncate pr-6">
+              {playing?.video.filename}
+            </DialogTitle>
+          </DialogHeader>
+          {playing && (
+            <div className="p-4 pt-2">
+              <video
+                key={playing.url}
+                src={playing.url}
+                controls
+                autoPlay
+                className="w-full max-h-[70vh] rounded-md bg-black"
+              >
+                Seu navegador não suporta vídeo HTML5.
+              </video>
+              <div className="mt-2 flex items-center justify-between text-[11px] text-muted-foreground">
+                <span>{formatDuration(playing.video.duration_seconds)}</span>
+                <span>{formatBytes(playing.video.size_bytes)}</span>
+              </div>
+            </div>
+          )}
+        </DialogContent>
+      </Dialog>
     </div>
   );
 }

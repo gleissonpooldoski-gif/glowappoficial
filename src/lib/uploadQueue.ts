@@ -9,7 +9,7 @@ export const CONCURRENCY = 3;
 const SUPABASE_URL = import.meta.env.VITE_SUPABASE_URL as string;
 const SUPABASE_KEY = import.meta.env.VITE_SUPABASE_PUBLISHABLE_KEY as string;
 
-export type QueueStatus = "pending" | "uploading" | "completed" | "failed";
+export type QueueStatus = "pending" | "hashing" | "uploading" | "completed" | "failed" | "duplicate";
 
 export type QueueItem = {
   id: string;
@@ -20,6 +20,7 @@ export type QueueItem = {
   videoId?: string;
   thumbnailUrl?: string;
   durationSeconds?: number | null;
+  fileHash?: string;
   xhr?: XMLHttpRequest;
 };
 
@@ -29,6 +30,26 @@ export function validateFile(file: File): string | null {
   if (file.size > MAX_BYTES) return "Arquivo maior que 2GB";
   if (file.size === 0) return "Arquivo vazio ou corrompido";
   return null;
+}
+
+// Fast content-based hash: SHA-256 of (first 2MB + last 2MB + size + name).
+// Good enough to detect true duplicates without reading GB into RAM.
+export async function computeFileHash(file: File): Promise<string> {
+  const SAMPLE = 2 * 1024 * 1024;
+  const head = await file.slice(0, Math.min(SAMPLE, file.size)).arrayBuffer();
+  const tail =
+    file.size > SAMPLE
+      ? await file.slice(Math.max(0, file.size - SAMPLE)).arrayBuffer()
+      : new ArrayBuffer(0);
+  const meta = new TextEncoder().encode(`${file.size}:${file.name}`);
+  const combined = new Uint8Array(head.byteLength + tail.byteLength + meta.byteLength);
+  combined.set(new Uint8Array(head), 0);
+  combined.set(new Uint8Array(tail), head.byteLength);
+  combined.set(meta, head.byteLength + tail.byteLength);
+  const digest = await crypto.subtle.digest("SHA-256", combined);
+  return Array.from(new Uint8Array(digest))
+    .map((b) => b.toString(16).padStart(2, "0"))
+    .join("");
 }
 
 export function probeDurationAndThumbnail(
@@ -116,12 +137,31 @@ export function uploadWithProgress(
   return { promise, xhr };
 }
 
+export class DuplicateVideoError extends Error {
+  constructor() {
+    super("Este vídeo já foi enviado.");
+    this.name = "DuplicateVideoError";
+  }
+}
+
 export async function processItem(
   item: QueueItem,
   projectId: string | null,
   onProgress: (pct: number) => void,
-  registerXhr: (xhr: XMLHttpRequest) => void
-): Promise<{ videoId: string; thumbnailUrl?: string; duration: number | null }> {
+  registerXhr: (xhr: XMLHttpRequest) => void,
+  onHash?: (hash: string) => void
+): Promise<{ videoId: string; thumbnailUrl?: string; duration: number | null; fileHash: string }> {
+  const fileHash = item.fileHash ?? (await computeFileHash(item.file));
+  onHash?.(fileHash);
+
+  // Server-side dedup check
+  const { data: existing } = await supabase
+    .from("videos")
+    .select("id")
+    .eq("file_hash", fileHash)
+    .maybeSingle();
+  if (existing) throw new DuplicateVideoError();
+
   const safeName = item.file.name.replace(/[^\w.\-]+/g, "_");
   const key = `${crypto.randomUUID()}-${safeName}`;
   const originalPath = `originals/${key}`;
@@ -162,12 +202,19 @@ export async function processItem(
       duration_seconds: duration ?? undefined,
       size_bytes: item.file.size,
       mime_type: item.file.type,
+      file_hash: fileHash,
       status: "completed" as any,
       progress: 100,
-    })
+    } as any)
     .select("id")
     .single();
-  if (insertErr) throw insertErr;
+  if (insertErr) {
+    // Cleanup uploaded files if DB insert fails (e.g. race on unique hash)
+    const paths = [originalPath, thumbnailPath].filter(Boolean) as string[];
+    if (paths.length) await supabase.storage.from(BUCKET).remove(paths);
+    if ((insertErr as any).code === "23505") throw new DuplicateVideoError();
+    throw insertErr;
+  }
 
-  return { videoId: inserted!.id as string, thumbnailUrl, duration };
+  return { videoId: inserted!.id as string, thumbnailUrl, duration, fileHash };
 }
