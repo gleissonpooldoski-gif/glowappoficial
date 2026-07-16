@@ -24,6 +24,7 @@ import {
   AlertDialogDescription, AlertDialogFooter, AlertDialogHeader, AlertDialogTitle,
 } from "@/components/ui/alert-dialog";
 import { formatBytes } from "@/lib/format";
+import { useActiveProject } from "@/context/ProjectContext";
 
 const BUCKET = "media";
 const CATEGORIES = ["Geral", "Intro", "Outro", "Overlay", "Transição", "Legenda", "Chamada", "Vinheta"];
