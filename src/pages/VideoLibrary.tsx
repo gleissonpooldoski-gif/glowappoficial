@@ -114,13 +114,15 @@ export default function VideoLibrary() {
   }, [selectedProject]);
 
   const load = async () => {
-    const [v, p] = await Promise.all([
+    const [v, p, t] = await Promise.all([
       supabase.from("videos").select("*").order("created_at", { ascending: false }),
       supabase.from("projects").select("id, name").order("created_at", { ascending: false }),
+      supabase.from("templates").select("id, name, preview_url").order("created_at", { ascending: false }),
     ]);
     const list = (v.data ?? []) as Video[];
     setVideos(list);
     setProjects((p.data ?? []) as any);
+    setTemplates((t.data ?? []) as any);
     seenHashes.current = new Set(list.map((x) => x.file_hash).filter(Boolean) as string[]);
 
     const toSign = list.filter((x) => x.thumbnail_path).map((x) => x.thumbnail_path!) as string[];
