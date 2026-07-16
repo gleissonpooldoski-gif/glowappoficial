@@ -62,8 +62,8 @@ export default function ProjectDetail() {
                 </Link>
               </Button>
               <Button asChild className="bg-gold-gradient text-black">
-                <Link to="/processing">
-                  <Rocket size={14} className="mr-1" /> Gerar vídeos
+                <Link to="/edits">
+                  <Rocket size={14} className="mr-1" /> Ir para projetos de edição
                 </Link>
               </Button>
             </div>

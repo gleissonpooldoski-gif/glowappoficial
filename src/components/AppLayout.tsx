@@ -1,13 +1,8 @@
 import { useState } from "react";
 import { NavLink, Outlet, useLocation } from "react-router-dom";
 import {
-  LayoutDashboard,
-  FolderKanban,
   Film,
   LayoutTemplate,
-  Palette,
-  Cog,
-  Rocket,
   Sparkles,
   CheckCircle2,
   Pencil,
@@ -17,15 +12,10 @@ import {
 import { cn } from "@/lib/utils";
 
 const nav = [
-  { to: "/", label: "Dashboard", icon: LayoutDashboard, end: true },
-  { to: "/projects", label: "Projetos", icon: FolderKanban },
   { to: "/videos", label: "Biblioteca de Vídeos", icon: Film },
   { to: "/templates", label: "Templates", icon: LayoutTemplate },
-  { to: "/edits", label: "Meus Projetos de Edição", icon: Pencil },
-  { to: "/brand", label: "Minha Marca", icon: Palette },
-  { to: "/processing", label: "Processamentos", icon: Rocket },
+  { to: "/edits", label: "Projetos de Edição", icon: Pencil },
   { to: "/finished", label: "Vídeos Prontos", icon: CheckCircle2 },
-  { to: "/settings", label: "Configurações", icon: Cog },
 ];
 
 function Sidebar({ onNavigate }: { onNavigate?: () => void }) {
@@ -49,7 +39,7 @@ function Sidebar({ onNavigate }: { onNavigate?: () => void }) {
             <NavLink
               key={item.to}
               to={item.to}
-              end={item.end}
+              end={item.to === "/"}
               onClick={onNavigate}
               className={({ isActive }) =>
                 cn(
@@ -82,7 +72,7 @@ export default function AppLayout() {
   const [mobileOpen, setMobileOpen] = useState(false);
   const location = useLocation();
   const current =
-    nav.find((n) => (n.end ? location.pathname === n.to : location.pathname.startsWith(n.to)))
+    nav.find((n) => location.pathname.startsWith(n.to))
       ?.label ?? "ViralFactory";
 
   return (

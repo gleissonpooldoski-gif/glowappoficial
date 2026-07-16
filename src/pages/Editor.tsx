@@ -538,46 +538,218 @@ export default function Editor() {
     return true;
   };
 
+  const [exportProgress, setExportProgress] = useState<string | null>(null);
+
   const exportVideo = async () => {
-    if (!id || !edit) return;
+    if (!id || !edit || !videoRef.current) return;
     setExporting(true);
+    setExportProgress("Preparando renderização…");
     try {
-      const ok = await save(true);
-      if (!ok) return;
-      const { data: q, error: qErr } = await supabase.from("processing_queue").insert({
-        video_id: edit.video_id,
-        template_id: edit.template_id,
-        project_id: edit.project_id,
-        status: "pending" as const,
-        progress: 0,
-        options: {
-          edit_id: id,
-          aspect_ratio: ratio,
-          doc,
-          audio: {
-            // Preservar áudio original do vídeo no render final.
-            keep_original: true,
-            source: "video",
-            volume: isMuted ? 0 : volume,
-            muted: false,
-            codec: "aac",
-          },
-          ffmpeg_hint: "-map 0:v -map 0:a? -c:v libx264 -c:a aac -b:a 192k -shortest",
-        } as any,
-      }).select("id").single();
-      if (qErr) throw qErr;
-      await (supabase as any).from("edits").update({
-        status: "processing", queue_id: q.id,
-      }).eq("id", id);
-      // NOTE: não alteramos o status do vídeo original — a renderização
-      // gera um novo arquivo em "Vídeos Prontos" apenas quando o pipeline
-      // marca o vídeo como "finished".
-      toast.success("Enviado para renderização");
-      navigate("/processing");
+      const okSave = await save(true);
+      if (!okSave) return;
+
+      const videoEl = videoRef.current;
+      // Garante que o vídeo tem dados
+      if (videoEl.readyState < 2) {
+        await new Promise<void>((res, rej) => {
+          const ok = () => { cleanup(); res(); };
+          const err = () => { cleanup(); rej(new Error("Falha ao carregar vídeo")); };
+          const cleanup = () => {
+            videoEl.removeEventListener("loadeddata", ok);
+            videoEl.removeEventListener("error", err);
+          };
+          videoEl.addEventListener("loadeddata", ok);
+          videoEl.addEventListener("error", err);
+        });
+      }
+
+      const rInfo = RATIOS[ratio] ?? RATIOS["9:16"];
+      const H = 1280;
+      const W = Math.round((H * rInfo.w) / rInfo.h);
+      const canvas = document.createElement("canvas");
+      canvas.width = W; canvas.height = H;
+      const ctx = canvas.getContext("2d");
+      if (!ctx) throw new Error("Canvas 2D indisponível");
+
+      // Template como imagem
+      let templateImg: HTMLImageElement | null = null;
+      if (templateUrl) {
+        templateImg = new Image();
+        templateImg.crossOrigin = "anonymous";
+        templateImg.src = templateUrl;
+        await new Promise<void>((res) => {
+          templateImg!.onload = () => res();
+          templateImg!.onerror = () => res(); // segue sem template se falhar
+        });
+      }
+
+      setExportProgress("Renderizando frames…");
+
+      // Streams
+      const canvasStream = canvas.captureStream(30);
+      try {
+        const vs = (videoEl as any).captureStream?.() as MediaStream | undefined;
+        vs?.getAudioTracks().forEach((t) => canvasStream.addTrack(t));
+      } catch (err) {
+        console.warn("[Editor] captureStream de áudio falhou", err);
+      }
+
+      const mimeCandidates = [
+        "video/webm;codecs=vp9,opus",
+        "video/webm;codecs=vp8,opus",
+        "video/webm",
+      ];
+      const mime =
+        mimeCandidates.find((m) => typeof MediaRecorder !== "undefined" && MediaRecorder.isTypeSupported(m)) ||
+        "video/webm";
+
+      const chunks: Blob[] = [];
+      const recorder = new MediaRecorder(canvasStream, {
+        mimeType: mime, videoBitsPerSecond: 6_000_000,
+      });
+      recorder.ondataavailable = (e) => { if (e.data.size > 0) chunks.push(e.data); };
+
+      // Preparar playback
+      videoEl.pause();
+      videoEl.loop = false;
+      videoEl.currentTime = 0;
+      videoEl.muted = false;
+      videoEl.volume = 1;
+
+      await new Promise<void>((res) => {
+        const on = () => { videoEl.removeEventListener("seeked", on); res(); };
+        videoEl.addEventListener("seeked", on);
+      });
+
+      await videoEl.play();
+      recorder.start(500);
+
+      let stopped = false;
+      const drawFrame = () => {
+        if (stopped) return;
+        ctx.fillStyle = "#000";
+        ctx.fillRect(0, 0, W, H);
+
+        const vw = videoEl.videoWidth, vh = videoEl.videoHeight;
+        if (vw && vh) {
+          const baseScale = Math.max(W / vw, H / vh);
+          const scale = baseScale * (doc.video.zoom || 1);
+          const dw = vw * scale, dh = vh * scale;
+          const dx = (W - dw) / 2 + ((doc.video.x || 0) / 100) * W;
+          const dy = (H - dh) / 2 + ((doc.video.y || 0) / 100) * H;
+          ctx.drawImage(videoEl, dx, dy, dw, dh);
+        }
+
+        if (templateImg && templateImg.naturalWidth) {
+          const prev = ctx.globalAlpha;
+          ctx.globalAlpha = doc.template.opacity ?? 1;
+          const tw = templateImg.naturalWidth, th = templateImg.naturalHeight;
+          const fit = doc.template.fit ?? "contain";
+          const s = fit === "cover" ? Math.max(W / tw, H / th) : Math.min(W / tw, H / th);
+          const dw = tw * s, dh = th * s;
+          ctx.drawImage(templateImg, (W - dw) / 2, (H - dh) / 2, dw, dh);
+          ctx.globalAlpha = prev;
+        }
+
+        for (const t of doc.texts) {
+          const size = Math.max(8, (t.size / 720) * H);
+          ctx.font = `${t.weight || 700} ${size}px "${t.font}", sans-serif`;
+          ctx.textAlign = (t.align ?? "center") as CanvasTextAlign;
+          ctx.textBaseline = "middle";
+          let text = t.text || "";
+          if (t.transform === "uppercase") text = text.toUpperCase();
+          else if (t.transform === "lowercase") text = text.toLowerCase();
+          else if (t.transform === "capitalize") text = text.replace(/\b\w/g, (c) => c.toUpperCase());
+
+          const x = (t.x / 100) * W;
+          const y = (t.y / 100) * H;
+
+          if (t.bgColor) {
+            const m = ctx.measureText(text);
+            const padX = 20, padY = 14;
+            const bw = m.width + padX * 2;
+            const bh = size + padY * 2;
+            const bx = t.align === "left" ? x - padX : t.align === "right" ? x - bw + padX : x - bw / 2;
+            ctx.fillStyle = t.bgColor;
+            ctx.fillRect(bx, y - bh / 2, bw, bh);
+          }
+
+          if (t.shadow !== false) {
+            ctx.shadowColor = "rgba(0,0,0,0.6)";
+            ctx.shadowBlur = 8;
+            ctx.shadowOffsetY = 2;
+          } else {
+            ctx.shadowBlur = 0; ctx.shadowOffsetY = 0;
+          }
+
+          if (t.strokeWidth && t.strokeWidth > 0) {
+            ctx.lineWidth = t.strokeWidth;
+            ctx.strokeStyle = t.strokeColor || "#000";
+            ctx.lineJoin = "round";
+            ctx.strokeText(text, x, y);
+          }
+
+          ctx.fillStyle = t.color;
+          ctx.fillText(text, x, y);
+          ctx.shadowBlur = 0; ctx.shadowOffsetY = 0;
+        }
+
+        requestAnimationFrame(drawFrame);
+      };
+      requestAnimationFrame(drawFrame);
+
+      const totalMs = Math.max(1000, Math.round((videoEl.duration || 5) * 1000) + 300);
+      await new Promise<void>((res) => {
+        const onEnd = () => { cleanup(); res(); };
+        const to = window.setTimeout(() => { cleanup(); res(); }, totalMs + 5000);
+        const cleanup = () => {
+          videoEl.removeEventListener("ended", onEnd);
+          window.clearTimeout(to);
+        };
+        videoEl.addEventListener("ended", onEnd);
+      });
+
+      stopped = true;
+      recorder.stop();
+      await new Promise<void>((res) => { recorder.onstop = () => res(); });
+      canvasStream.getTracks().forEach((t) => t.stop());
+
+      setExportProgress("Enviando para Vídeos Prontos…");
+      const blob = new Blob(chunks, { type: "video/webm" });
+      const userRes = await supabase.auth.getUser();
+      const uid = userRes.data.user?.id ?? edit.user_id ?? "anon";
+      const safeName = (edit.name || "video").toString().replace(/[^\w\-]+/g, "_").slice(0, 60);
+      const filename = `${safeName || "video"}_${Date.now()}.webm`;
+      const path = `${uid}/${id}/${filename}`;
+
+      const { error: upErr } = await supabase.storage
+        .from("videos-processed")
+        .upload(path, blob, { contentType: "video/webm", upsert: true });
+      if (upErr) throw upErr;
+
+      const { error: insErr } = await supabase.from("videos").insert({
+        filename,
+        processed_path: path,
+        duration_seconds: videoEl.duration || null,
+        size_bytes: blob.size,
+        mime_type: "video/webm",
+        status: "finished" as const,
+        template_id: edit.template_id || null,
+        project_id: edit.project_id || null,
+        progress: 100,
+      } as any);
+      if (insErr) throw insErr;
+
+      await (supabase as any).from("edits").update({ status: "completed" }).eq("id", id);
+
+      toast.success("Vídeo pronto! Enviado para Vídeos Prontos.");
+      navigate("/finished");
     } catch (e: any) {
+      console.error("[Editor] export failed", e);
       toast.error(e?.message ?? "Falha ao exportar");
     } finally {
       setExporting(false);
+      setExportProgress(null);
     }
   };
 
@@ -648,7 +820,7 @@ export default function Editor() {
           </Button>
           <Button size="sm" className="bg-gold-gradient text-black glow-gold" onClick={exportVideo} disabled={exporting}>
             {exporting ? <Loader2 size={14} className="mr-1 animate-spin" /> : <Rocket size={14} className="mr-1" />}
-            Exportar / Gerar vídeo
+            {exporting ? (exportProgress ?? "Renderizando…") : "Pronto para baixar"}
           </Button>
         </div>
       </div>
@@ -754,6 +926,7 @@ export default function Editor() {
                 <video
                   ref={videoRef}
                   src={videoSrc}
+                  crossOrigin="anonymous"
                   className="absolute inset-0 h-full w-full object-cover"
                   style={{
                     zIndex: 1,
