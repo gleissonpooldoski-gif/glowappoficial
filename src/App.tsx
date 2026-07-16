@@ -14,6 +14,7 @@ import Processing from "./pages/Processing";
 import Finished from "./pages/Finished";
 import Settings from "./pages/Settings";
 import NotFound from "./pages/NotFound";
+import Editor from "./pages/Editor";
 
 const queryClient = new QueryClient();
 
