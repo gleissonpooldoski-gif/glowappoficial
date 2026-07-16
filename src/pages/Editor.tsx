@@ -177,9 +177,9 @@ export default function Editor() {
       await (supabase as any).from("edits").update({
         status: "processing", queue_id: q.id,
       }).eq("id", id);
-      if (edit.video_id) {
-        await supabase.from("videos").update({ status: "queued" as const }).eq("id", edit.video_id);
-      }
+      // NOTE: não alteramos o status do vídeo original — a renderização
+      // gera um novo arquivo em "Vídeos Prontos" apenas quando o pipeline
+      // marca o vídeo como "finished".
       toast.success("Enviado para renderização");
       navigate("/processing");
     } catch (e: any) {
