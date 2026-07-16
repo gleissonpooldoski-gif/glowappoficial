@@ -1,7 +1,7 @@
 import { useEffect, useMemo, useRef, useState } from "react";
 import { useNavigate, useParams } from "react-router-dom";
 import {
-  ArrowLeft, Save, Rocket, Type, Plus, Trash2, Loader2, Layers,
+  ArrowLeft, Save, Rocket, Type, Plus, Trash2, Loader2, Layers, Copy,
   Palette, Image as ImageIcon, ZoomIn, ZoomOut, Move, Play, Pause, Volume2, VolumeX, Maximize2,
 } from "lucide-react";
 import { supabase } from "@/integrations/supabase/client";
@@ -483,6 +483,17 @@ export default function Editor() {
   const removeText = (tid: string) => {
     setDoc((d) => ({ ...d, texts: d.texts.filter((t) => t.id !== tid) }));
     if (selectedTextId === tid) setSelectedTextId(null);
+    toast.success("Texto excluído");
+  };
+
+  const duplicateText = (tid: string) => {
+    setDoc((d) => {
+      const src = d.texts.find((t) => t.id === tid);
+      if (!src) return d;
+      const copy: TextEl = { ...src, id: crypto.randomUUID(), x: Math.min(100, src.x + 4), y: Math.min(100, src.y + 4) };
+      setSelectedTextId(copy.id);
+      return { ...d, texts: [...d.texts, copy] };
+    });
   };
 
   const onStagePointerDown = (e: React.PointerEvent, tid: string) => {
@@ -1086,6 +1097,24 @@ export default function Editor() {
               <TabsContent value="text" className="mt-3 space-y-3">
                 {selectedText ? (
                   <>
+                    <div className="flex items-center gap-2">
+                      <Button
+                        size="sm"
+                        variant="outline"
+                        className="h-8 flex-1 text-xs"
+                        onClick={() => duplicateText(selectedText.id)}
+                      >
+                        <Copy size={12} className="mr-1" /> Duplicar
+                      </Button>
+                      <Button
+                        size="sm"
+                        variant="outline"
+                        className="h-8 flex-1 border-destructive/40 text-xs text-destructive hover:bg-destructive/10"
+                        onClick={() => removeText(selectedText.id)}
+                      >
+                        <Trash2 size={12} className="mr-1" /> Excluir texto
+                      </Button>
+                    </div>
                     <div className="space-y-1.5">
                       <Label className="text-xs">Conteúdo</Label>
                       <Input value={selectedText.text}
