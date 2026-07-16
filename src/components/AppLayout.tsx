@@ -1,30 +1,40 @@
-import { ReactNode, useState } from "react";
-import { NavLink, useLocation } from "react-router-dom";
-import { LayoutDashboard, PlusSquare, Calendar, Image, History, Settings, LogOut, Moon, Sun, Menu, X } from "lucide-react";
-import { useAuth } from "@/contexts/AuthContext";
+import { useState } from "react";
+import { NavLink, Outlet, useLocation } from "react-router-dom";
+import {
+  LayoutDashboard,
+  Image as ImageIcon,
+  PlusSquare,
+  Calendar,
+  History,
+  Settings,
+  Menu,
+  X,
+  Moon,
+  Sun,
+  Search,
+  Sparkles,
+} from "lucide-react";
 import { useTheme } from "next-themes";
 import { Button } from "@/components/ui/button";
+import { Input } from "@/components/ui/input";
 import { cn } from "@/lib/utils";
 
 const nav = [
   { to: "/", label: "Dashboard", icon: LayoutDashboard, end: true },
+  { to: "/library", label: "Biblioteca", icon: ImageIcon },
   { to: "/new", label: "Novo Post", icon: PlusSquare },
   { to: "/calendar", label: "Calendário", icon: Calendar },
-  { to: "/library", label: "Biblioteca", icon: Image },
   { to: "/history", label: "Histórico", icon: History },
   { to: "/settings", label: "Configurações", icon: Settings },
 ];
 
-export default function AppLayout({ children }: { children: ReactNode }) {
-  const { signOut, user } = useAuth();
-  const { theme, setTheme } = useTheme();
-  const [mobileOpen, setMobileOpen] = useState(false);
-  const location = useLocation();
-
-  const Sidebar = (
-    <aside className="flex h-full w-60 flex-col border-r bg-sidebar">
+function SidebarContent({ onNavigate }: { onNavigate?: () => void }) {
+  return (
+    <div className="flex h-full w-60 flex-col border-r bg-sidebar">
       <div className="flex h-14 items-center gap-2 border-b px-5">
-        <div className="h-6 w-6 rounded-md bg-primary" />
+        <div className="flex h-6 w-6 items-center justify-center rounded-md bg-primary text-primary-foreground">
+          <Sparkles size={14} strokeWidth={2} />
+        </div>
         <span className="text-sm font-semibold tracking-tight">ContentFlow</span>
       </div>
       <nav className="flex-1 space-y-0.5 p-3">
@@ -35,7 +45,7 @@ export default function AppLayout({ children }: { children: ReactNode }) {
               key={item.to}
               to={item.to}
               end={item.end}
-              onClick={() => setMobileOpen(false)}
+              onClick={onNavigate}
               className={({ isActive }) =>
                 cn(
                   "flex items-center gap-2.5 rounded-md px-3 py-2 text-sm transition-colors",
@@ -51,48 +61,86 @@ export default function AppLayout({ children }: { children: ReactNode }) {
           );
         })}
       </nav>
-      <div className="border-t p-3 space-y-1">
-        <div className="px-3 py-1.5 text-xs text-muted-foreground truncate">{user?.email}</div>
-        <Button
-          variant="ghost"
-          size="sm"
-          className="w-full justify-start gap-2 h-9"
-          onClick={() => setTheme(theme === "dark" ? "light" : "dark")}
-        >
-          {theme === "dark" ? <Sun size={16} /> : <Moon size={16} />}
-          {theme === "dark" ? "Tema claro" : "Tema escuro"}
-        </Button>
-        <Button variant="ghost" size="sm" className="w-full justify-start gap-2 h-9" onClick={signOut}>
-          <LogOut size={16} />
-          Sair
-        </Button>
+      <div className="border-t p-3">
+        <div className="rounded-md bg-sidebar-accent/50 px-3 py-2.5">
+          <p className="text-xs font-medium text-sidebar-foreground">Workspace pessoal</p>
+          <p className="mt-0.5 text-[11px] text-muted-foreground">v0.1 · em desenvolvimento</p>
+        </div>
       </div>
-    </aside>
+    </div>
   );
+}
+
+export default function AppLayout() {
+  const { theme, setTheme } = useTheme();
+  const [mobileOpen, setMobileOpen] = useState(false);
+  const location = useLocation();
+
+  const currentLabel =
+    nav.find((n) => (n.end ? location.pathname === n.to : location.pathname.startsWith(n.to)))?.label ??
+    "ContentFlow";
 
   return (
     <div className="flex h-screen w-full overflow-hidden bg-background">
       {/* Desktop sidebar */}
-      <div className="hidden md:flex">{Sidebar}</div>
+      <div className="hidden md:flex">
+        <SidebarContent />
+      </div>
 
       {/* Mobile drawer */}
       {mobileOpen && (
         <div className="fixed inset-0 z-50 md:hidden">
           <div className="absolute inset-0 bg-black/40" onClick={() => setMobileOpen(false)} />
-          <div className="absolute inset-y-0 left-0">{Sidebar}</div>
+          <div className="absolute inset-y-0 left-0">
+            <SidebarContent onNavigate={() => setMobileOpen(false)} />
+          </div>
         </div>
       )}
 
       <div className="flex flex-1 flex-col overflow-hidden">
-        <header className="flex h-14 items-center gap-3 border-b px-4 md:hidden">
-          <Button variant="ghost" size="icon" onClick={() => setMobileOpen(!mobileOpen)}>
+        <header className="flex h-14 items-center gap-3 border-b bg-background/80 px-4 backdrop-blur md:px-6">
+          <Button
+            variant="ghost"
+            size="icon"
+            className="md:hidden"
+            onClick={() => setMobileOpen(!mobileOpen)}
+          >
             {mobileOpen ? <X size={18} /> : <Menu size={18} />}
           </Button>
-          <div className="h-5 w-5 rounded bg-primary" />
-          <span className="text-sm font-semibold">ContentFlow</span>
+
+          <h1 className="text-sm font-medium">{currentLabel}</h1>
+
+          <div className="ml-auto flex items-center gap-2">
+            <div className="relative hidden sm:block">
+              <Search
+                size={14}
+                className="pointer-events-none absolute left-2.5 top-1/2 -translate-y-1/2 text-muted-foreground"
+              />
+              <Input
+                placeholder="Buscar..."
+                className="h-8 w-56 pl-8 text-sm"
+              />
+            </div>
+            <Button
+              variant="ghost"
+              size="icon"
+              className="h-8 w-8"
+              onClick={() => setTheme(theme === "dark" ? "light" : "dark")}
+              aria-label="Alternar tema"
+            >
+              <Sun size={16} className="hidden dark:block" />
+              <Moon size={16} className="dark:hidden" />
+            </Button>
+          </div>
         </header>
-        <main key={location.pathname} className="flex-1 overflow-auto animate-in fade-in duration-200">
-          <div className="mx-auto max-w-6xl px-4 md:px-8 py-6 md:py-8">{children}</div>
+
+        <main
+          key={location.pathname}
+          className="flex-1 overflow-auto animate-in fade-in duration-200"
+        >
+          <div className="mx-auto max-w-6xl px-4 py-6 md:px-8 md:py-8">
+            <Outlet />
+          </div>
         </main>
       </div>
     </div>
