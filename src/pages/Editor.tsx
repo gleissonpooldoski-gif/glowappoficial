@@ -227,7 +227,6 @@ export default function Editor() {
       }
 
       setVideo(v);
-      setTemplate(null);
 
       let nextVideoUrl = data.video_url ?? v.original_url ?? null;
       if (v.original_path) {
@@ -236,7 +235,6 @@ export default function Editor() {
           .createSignedUrl(v.original_path, 60 * 60 * 6);
         if (signErr || !signed?.signedUrl) {
           console.error("[Editor] createSignedUrl failed", signErr, "path:", v.original_path);
-          console.error("Erro ao buscar vídeo", signErr);
           setLoadError({
             title: "Erro ao carregar vídeo",
             reason: `Não foi possível gerar URL assinada do vídeo (${signErr?.message ?? "sem permissão"}).`,
@@ -248,7 +246,6 @@ export default function Editor() {
         nextVideoUrl = signed.signedUrl;
       }
       if (!nextVideoUrl) {
-        console.error("Erro ao buscar vídeo", "URL vazia");
         setLoadError({
           title: "Erro ao carregar vídeo",
           reason: "URL do vídeo está vazia.",
@@ -259,19 +256,45 @@ export default function Editor() {
       }
 
       console.log("URL do vídeo encontrada", nextVideoUrl);
+      setVideoUrl(nextVideoUrl);
+
+      // ----- Template (overlay) -----
+      let nextTemplateUrl: string | null = data.template_url ?? null;
+      if (data.template_id) {
+        const { data: tpl, error: tplErr } = await (supabase as any)
+          .from("templates").select("*").eq("id", data.template_id).maybeSingle();
+        if (tplErr) console.error("[Editor] template fetch error", tplErr);
+        console.log("[Editor] template row ->", tpl);
+        if (tpl) {
+          setTemplate(tpl);
+          if (!nextTemplateUrl) {
+            const path = tpl.file_path ?? tpl.storage_path ?? tpl.path;
+            if (path) {
+              const { data: tSigned, error: tSignErr } = await supabase.storage
+                .from("templates")
+                .createSignedUrl(path, 60 * 60 * 6);
+              if (tSignErr) console.error("[Editor] template signed url error", tSignErr);
+              nextTemplateUrl = tSigned?.signedUrl ?? tpl.preview_url ?? tpl.file_url ?? null;
+            } else {
+              nextTemplateUrl = tpl.preview_url ?? tpl.file_url ?? null;
+            }
+          }
+        }
+      }
+      setTemplateUrl(nextTemplateUrl);
+      console.log("[Editor] template URL ->", nextTemplateUrl);
 
       const { error: urlUpdateErr } = await (supabase as any).from("edits").update({
         video_url: nextVideoUrl,
         video_filename: v.filename,
         video_storage_path: v.original_path,
+        template_url: nextTemplateUrl,
         user_id: data.user_id ?? "single-user",
         owner_user_id: data.owner_user_id ?? "single-user",
         status: "editing",
       }).eq("id", id);
       if (urlUpdateErr) console.error("[Editor] edit url update error", urlUpdateErr);
 
-      setVideoUrl(nextVideoUrl);
-      setTemplateUrl(null);
       setLoading(false);
     })();
   }, [id, navigate]);
@@ -404,79 +427,6 @@ export default function Editor() {
 
   const r = RATIOS[ratio] ?? RATIOS["9:16"];
   const videoSrc = videoUrl;
-
-  return (
-    <div className="flex h-[calc(100vh-6rem)] flex-col gap-3">
-      <div className="flex flex-wrap items-center justify-between gap-2">
-        <div className="flex items-center gap-2">
-          <Button variant="ghost" size="sm" onClick={() => navigate("/videos")}>
-            <ArrowLeft size={14} className="mr-1" /> Voltar
-          </Button>
-          <div>
-            <h1 className="text-lg font-semibold leading-tight">Editor de Vídeo</h1>
-            <p className="text-xs text-muted-foreground">
-              {video?.filename ?? edit?.video_filename ?? "Vídeo original"}
-            </p>
-          </div>
-        </div>
-      </div>
-
-      <Card className="glass flex-1 border-border/50">
-        <CardContent className="flex h-full flex-col gap-3 p-4">
-          <div className="rounded-md border border-border/50 bg-muted/30 p-3 text-xs text-muted-foreground">
-            <div>URL do vídeo encontrada</div>
-            <div className="mt-1 break-all font-mono text-[11px]">{videoSrc}</div>
-          </div>
-          <div className="flex min-h-0 flex-1 items-center justify-center rounded-lg bg-black p-3">
-            {videoSrc ? (
-              <video
-                key={videoSrc}
-                controls
-                playsInline
-                preload="auto"
-                className="max-h-full w-full rounded-md bg-black"
-                src={videoSrc}
-                onLoadStart={() => {
-                  console.log("Carregando vídeo...");
-                  setVideoReady(false);
-                }}
-                onLoadedData={(event) => {
-                  console.log("[Editor] <video controls> loaded", {
-                    video_id: edit?.video_id,
-                    url: videoSrc,
-                    width: event.currentTarget.videoWidth,
-                    height: event.currentTarget.videoHeight,
-                    duration: event.currentTarget.duration,
-                  });
-                  setVideoReady(true);
-                }}
-                onError={(e) => {
-                  const el = e.currentTarget;
-                  const reason = mediaErrorReason(el);
-                  console.error("Erro ao buscar vídeo", {
-                    video_id: edit?.video_id,
-                    url: videoSrc,
-                    reason,
-                    error: el.error,
-                  });
-                  setLoadError({ title: "Erro ao carregar vídeo", reason, url: videoSrc });
-                }}
-              />
-            ) : (
-              <div className="text-sm text-muted-foreground">Erro ao buscar vídeo</div>
-            )}
-          </div>
-          {!videoReady && (
-            <div className="flex items-center justify-center text-xs text-muted-foreground">
-              <Loader2 className="mr-2 h-4 w-4 animate-spin text-gold" />
-              Carregando vídeo...
-            </div>
-          )}
-        </CardContent>
-      </Card>
-    </div>
-  );
-
   const templateSrc = templateUrl;
 
   return (
