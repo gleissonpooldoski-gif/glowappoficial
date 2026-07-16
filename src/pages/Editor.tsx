@@ -2,7 +2,7 @@ import { useEffect, useMemo, useRef, useState } from "react";
 import { useNavigate, useParams } from "react-router-dom";
 import {
   ArrowLeft, Save, Rocket, Type, Plus, Trash2, Loader2, Layers,
-  Palette, Image as ImageIcon, ZoomIn, ZoomOut, Move, Play, Pause, Volume2, VolumeX,
+  Palette, Image as ImageIcon, ZoomIn, ZoomOut, Move, Play, Pause, Volume2, VolumeX, Maximize2,
 } from "lucide-react";
 import { supabase } from "@/integrations/supabase/client";
 import { toast } from "sonner";
@@ -174,6 +174,26 @@ export default function Editor() {
   const [duration, setDuration] = useState(0);
   const [currentTime, setCurrentTime] = useState(0);
   const [hasAudioTrack, setHasAudioTrack] = useState<boolean | null>(null);
+  const [showControls, setShowControls] = useState(true);
+  const hideTimerRef = useRef<number | null>(null);
+  const canvasWrapRef = useRef<HTMLDivElement>(null);
+
+  const revealControls = () => {
+    setShowControls(true);
+    if (hideTimerRef.current) window.clearTimeout(hideTimerRef.current);
+    hideTimerRef.current = window.setTimeout(() => {
+      if (videoRef.current && !videoRef.current.paused) setShowControls(false);
+    }, 2200);
+  };
+
+  const requestFullscreen = () => {
+    const el = canvasWrapRef.current;
+    if (!el) return;
+    if (document.fullscreenElement) document.exitFullscreen();
+    else el.requestFullscreen?.().catch(() => {});
+  };
+
+
 
   useEffect(() => {
     const el = videoRef.current;
@@ -627,17 +647,26 @@ export default function Editor() {
         {/* Center — canvas */}
         <div className="flex items-center justify-center rounded-lg border border-border/50 bg-black/60 p-4">
           <div
+            ref={canvasWrapRef}
+            className="group relative"
+            onMouseMove={revealControls}
+            onMouseEnter={revealControls}
+            onMouseLeave={() => {
+              if (videoRef.current && !videoRef.current.paused) setShowControls(false);
+            }}
+            style={{
+              aspectRatio: `${r.w} / ${r.h}`,
+              height: r.h >= r.w ? "min(78vh, 820px)" : undefined,
+              width: r.w > r.h ? "min(82vw, 1100px)" : undefined,
+            }}
+          >
+          <div
             ref={stageRef}
             onPointerMove={onStagePointerMove}
             onPointerUp={onStagePointerUp}
             onPointerLeave={onStagePointerUp}
-            onClick={() => setSelectedTextId(null)}
-            className="relative overflow-hidden rounded-md bg-black shadow-2xl ring-1 ring-gold/20"
-            style={{
-              aspectRatio: `${r.w} / ${r.h}`,
-              height: r.h >= r.w ? "min(70vh, 720px)" : undefined,
-              width: r.w > r.h ? "min(80vw, 1000px)" : undefined,
-            }}
+            onClick={() => { setSelectedTextId(null); revealControls(); }}
+            className="relative h-full w-full overflow-hidden rounded-md bg-black shadow-2xl ring-1 ring-gold/20"
           >
             {/* Layer 1 — Vídeo original (fundo, opacidade total, sem blend) */}
             {videoSrc ? (
@@ -741,13 +770,14 @@ export default function Editor() {
             ))}
           </div>
 
-          {/* Controles de áudio/reprodução do vídeo original */}
+          {/* Controles overlay estilo CapCut — aparecem no hover/click */}
           {videoSrc && (
-            <div className="mt-3 flex items-center gap-3 rounded-md border border-border/50 bg-black/40 p-2">
-              <Button size="icon" variant="ghost" className="h-8 w-8" onClick={togglePlay}
-                title={isPlaying ? "Pausar" : "Reproduzir com áudio"}>
-                {isPlaying ? <Pause size={14} /> : <Play size={14} />}
-              </Button>
+            <div
+              className={cn(
+                "pointer-events-none absolute inset-x-0 bottom-0 z-[5] flex flex-col gap-1 rounded-b-md bg-gradient-to-t from-black/85 via-black/60 to-transparent px-3 pb-2 pt-6 transition-opacity duration-200",
+                showControls ? "opacity-100" : "opacity-0",
+              )}
+            >
               <input
                 type="range" min={0} max={duration || 0} step={0.1}
                 value={currentTime}
@@ -756,27 +786,46 @@ export default function Editor() {
                   if (videoRef.current) videoRef.current.currentTime = t;
                   setCurrentTime(t);
                 }}
-                className="h-1 flex-1 accent-gold"
+                onClick={(e) => e.stopPropagation()}
+                className="pointer-events-auto h-1 w-full accent-gold"
               />
-              <span className="min-w-[80px] text-right font-mono text-[11px] text-muted-foreground">
-                {formatTime(currentTime)} / {formatTime(duration)}
-              </span>
-              <Button size="icon" variant="ghost" className="h-8 w-8" onClick={toggleMute}
-                title={isMuted ? "Reativar áudio" : "Silenciar"}>
-                {isMuted || volume === 0 ? <VolumeX size={14} /> : <Volume2 size={14} />}
-              </Button>
-              <input
-                type="range" min={0} max={1} step={0.01}
-                value={isMuted ? 0 : volume}
-                onChange={(e) => onVolume(parseFloat(e.target.value))}
-                className="h-1 w-24 accent-gold"
-              />
-              {hasAudioTrack === false && (
-                <span className="text-[10px] text-muted-foreground">Vídeo sem faixa de áudio</span>
-              )}
+              <div className="pointer-events-auto flex items-center gap-2 text-white">
+                <Button size="icon" variant="ghost" className="h-8 w-8 text-white hover:bg-white/10"
+                  onClick={(e) => { e.stopPropagation(); togglePlay(); revealControls(); }}
+                  title={isPlaying ? "Pausar" : "Reproduzir"}>
+                  {isPlaying ? <Pause size={16} /> : <Play size={16} />}
+                </Button>
+                <Button size="icon" variant="ghost" className="h-8 w-8 text-white hover:bg-white/10"
+                  onClick={(e) => { e.stopPropagation(); toggleMute(); }}
+                  title={isMuted ? "Reativar áudio" : "Silenciar"}>
+                  {isMuted || volume === 0 ? <VolumeX size={16} /> : <Volume2 size={16} />}
+                </Button>
+                <input
+                  type="range" min={0} max={1} step={0.01}
+                  value={isMuted ? 0 : volume}
+                  onChange={(e) => onVolume(parseFloat(e.target.value))}
+                  onClick={(e) => e.stopPropagation()}
+                  className="h-1 w-20 accent-gold"
+                />
+                <span className="ml-2 font-mono text-[11px] text-white/80">
+                  {formatTime(currentTime)} / {formatTime(duration)}
+                </span>
+                {hasAudioTrack === false && (
+                  <span className="ml-2 text-[10px] text-white/60">sem áudio</span>
+                )}
+                <div className="ml-auto flex items-center gap-1">
+                  <Button size="icon" variant="ghost" className="h-8 w-8 text-white hover:bg-white/10"
+                    onClick={(e) => { e.stopPropagation(); requestFullscreen(); }}
+                    title="Tela cheia">
+                    <Maximize2 size={16} />
+                  </Button>
+                </div>
+              </div>
             </div>
           )}
+          </div>
         </div>
+
 
 
         {/* Right panel — properties */}
