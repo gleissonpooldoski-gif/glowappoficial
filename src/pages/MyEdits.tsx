@@ -51,6 +51,7 @@ export default function MyEdits() {
       .from("edits")
       .select("*, videos(filename, thumbnail_url), templates(name, preview_url)")
       .eq("project_id", activeProject.id)
+      .in("status", ["draft", "editing", "failed"])
       .order("updated_at", { ascending: false });
     if (error) { toast.error(error.message); setRows([]); return; }
     setRows((data ?? []) as EditRow[]);
