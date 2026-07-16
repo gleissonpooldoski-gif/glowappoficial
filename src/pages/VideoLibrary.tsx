@@ -444,17 +444,6 @@ export default function VideoLibrary() {
           throw new Error(error?.message ?? `Não foi possível gerar URL do vídeo ${v.filename}.`);
         }
 
-        console.log("[VideoLibrary] creating edit project", {
-          video_id: vid,
-          file_name: v.filename,
-          storage_path: v.original_path,
-          video_url: data.signedUrl,
-          template_id: chosenTemplate,
-          template_url: templateUrl,
-          user_id: "single-user",
-          owner_user_id: "single-user",
-          status: "editing",
-        });
 
         return {
           video_id: vid,
@@ -481,7 +470,7 @@ export default function VideoLibrary() {
         .insert(rows)
         .select("id, video_id, video_filename, video_storage_path, video_url, owner_user_id, template_id, template_url, user_id, status");
       if (error) throw error;
-      console.log("[VideoLibrary] edit project created", created);
+      
 
       // Move videos out of the library — they now live inside an editing project.
       const { error: upErr } = await (supabase as any)

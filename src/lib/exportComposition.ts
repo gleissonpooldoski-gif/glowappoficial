@@ -335,7 +335,7 @@ export async function renderComposition(input: CompositionInput): Promise<Compos
   if (!sourceVideoTrack) throw new Error("Vídeo original não contém trilha de vídeo válida.");
 
   const sourceMeta = await getSourceMeta(sourceInput, sourceVideoTrack, sourceAudioTrack);
-  console.log("[export] source meta ->", sourceMeta);
+  
 
   onProgress?.(8, "Carregando template");
   let tplImage: HTMLImageElement | null = null;
@@ -442,7 +442,7 @@ export async function renderComposition(input: CompositionInput): Promise<Compos
 
   conversion.onProgress = (progress, processedTime) => {
     onProgress?.(Math.min(94, 18 + progress * 76), "Renderizando");
-    if (sourceMeta.duration > 0) console.log("[export] render progress", Math.round(progress * 100), "time", processedTime.toFixed(2));
+    
   };
 
   await conversion.execute();
@@ -453,15 +453,6 @@ export async function renderComposition(input: CompositionInput): Promise<Compos
   const validation = await validateFinalMp4(blob, sourceMeta);
   const muxedMime = await output.getMimeType().catch(() => MP4_MIME);
 
-  console.log("[export] final mp4 ->", {
-    size: blob.size,
-    duration: validation.duration,
-    sourceDuration: sourceMeta.duration,
-    fps: validation.fps,
-    sourceFps: sourceMeta.fps,
-    hasAudio: validation.hasAudio,
-    mime: muxedMime,
-  });
 
   onProgress?.(97, "Finalizando arquivo");
 
