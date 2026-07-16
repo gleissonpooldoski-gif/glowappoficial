@@ -295,14 +295,14 @@ export default function MyEdits() {
                         variant="outline"
                         className="h-7 w-7 p-0 text-muted-foreground hover:text-gold"
                         title="Retornar para Biblioteca"
-                        onClick={() => returnToLibrary(r)}
+                        onClick={() => askReturn(r)}
                       >
                         <Undo2 size={12} />
                       </Button>
                     )}
                     <Button size="sm" variant="ghost"
                       className="h-7 w-7 p-0 text-muted-foreground hover:text-destructive"
-                      onClick={() => remove(r.id)}>
+                      onClick={() => askRemove(r)}>
                       <Trash2 size={12} />
                     </Button>
                   </div>
