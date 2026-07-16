@@ -153,14 +153,7 @@ export async function processItem(
 ): Promise<{ videoId: string; thumbnailUrl?: string; duration: number | null; fileHash: string }> {
   const fileHash = item.fileHash ?? (await computeFileHash(item.file));
   onHash?.(fileHash);
-
-  // Server-side dedup check
-  const { data: existing } = await supabase
-    .from("videos")
-    .select("id")
-    .eq("file_hash", fileHash)
-    .maybeSingle();
-  if (existing) throw new DuplicateVideoError();
+  // Uploads duplicados são permitidos — cada envio é uma nova utilização.
 
   const safeName = item.file.name.replace(/[^\w.\-]+/g, "_");
   const key = `${crypto.randomUUID()}-${safeName}`;
