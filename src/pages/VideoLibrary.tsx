@@ -82,9 +82,11 @@ type PendingDelete =
   | { kind: "project"; ids: string[]; projectName: string; step: 1 };
 
 export default function VideoLibrary() {
+  const navigate = useNavigate();
   const [videos, setVideos] = useState<Video[] | null>(null);
   const [thumbs, setThumbs] = useState<Record<string, string>>({});
   const [projects, setProjects] = useState<{ id: string; name: string }[]>([]);
+  const [templates, setTemplates] = useState<{ id: string; name: string; preview_url: string | null }[]>([]);
   const [selectedProject, setSelectedProject] = useState<string>("none");
   const [filterProject, setFilterProject] = useState<string>("all");
   const [queue, setQueue] = useState<QueueItem[]>([]);
@@ -95,6 +97,9 @@ export default function VideoLibrary() {
   const [pendingDelete, setPendingDelete] = useState<PendingDelete | null>(null);
   const [deleting, setDeleting] = useState(false);
   const [downloading, setDownloading] = useState(false);
+  const [applyOpen, setApplyOpen] = useState(false);
+  const [chosenTemplate, setChosenTemplate] = useState<string>("");
+  const [applying, setApplying] = useState(false);
   const inputRef = useRef<HTMLInputElement>(null);
   const queueRef = useRef<QueueItem[]>([]);
   const activeCount = useRef(0);
