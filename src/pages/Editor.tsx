@@ -30,8 +30,12 @@ type TextEl = {
   animation: "none" | "fade" | "slide-up" | "pulse";
 };
 
+type BlendMode =
+  | "normal" | "multiply" | "screen" | "overlay" | "lighten" | "darken" | "soft-light" | "hard-light";
+
 type EditDoc = {
   video: { zoom: number; x: number; y: number };
+  template: { opacity: number; blend: BlendMode; fit: "contain" | "cover" };
   texts: TextEl[];
   colors: { primary: string; secondary: string };
   logo_url?: string | null;
@@ -49,10 +53,22 @@ const RATIOS: Record<string, { w: number; h: number; label: string }> = {
   "1:1": { w: 1, h: 1, label: "1:1 Instagram" },
 };
 
+const BLEND_MODES: { value: BlendMode; label: string }[] = [
+  { value: "normal", label: "Normal (usa alpha do template)" },
+  { value: "screen", label: "Screen (clareia)" },
+  { value: "multiply", label: "Multiply (escurece)" },
+  { value: "overlay", label: "Overlay" },
+  { value: "lighten", label: "Lighten" },
+  { value: "darken", label: "Darken" },
+  { value: "soft-light", label: "Soft light" },
+  { value: "hard-light", label: "Hard light" },
+];
+
 const FONTS = ["Montserrat", "Inter", "Poppins", "Playfair Display", "Bebas Neue", "Roboto", "Oswald"];
 
 const defaultDoc: EditDoc = {
   video: { zoom: 1, x: 0, y: 0 },
+  template: { opacity: 1, blend: "normal", fit: "contain" },
   texts: [],
   colors: { primary: "#D4AF37", secondary: "#FFFFFF" },
 };
@@ -63,10 +79,12 @@ const safeDoc = (value: unknown): EditDoc => {
     ...defaultDoc,
     ...raw,
     video: { ...defaultDoc.video, ...(raw.video ?? {}) },
+    template: { ...defaultDoc.template, ...(raw.template ?? {}) },
     colors: { ...defaultDoc.colors, ...(raw.colors ?? {}) },
     texts: Array.isArray(raw.texts) ? raw.texts : [],
   };
 };
+
 
 const mediaErrorReason = (video: HTMLVideoElement) => {
   const code = video.error?.code;
