@@ -360,6 +360,7 @@ export default function Editor() {
                   t.animation === "slide-up" && "animate-[slide-up_0.6s_ease-out]",
                 )}
                 style={{
+                  zIndex: 3,
                   left: `${t.x}%`, top: `${t.y}%`,
                   transform: "translate(-50%, -50%)",
                   fontFamily: t.font, fontSize: t.size, color: t.color,
