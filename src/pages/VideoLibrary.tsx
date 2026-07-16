@@ -193,7 +193,16 @@ export default function VideoLibrary() {
         projectId,
         (pct) => updateItem(next.id, { progress: pct }),
         (xhr) => updateItem(next.id, { xhr }),
-        (hash) => updateItem(next.id, { fileHash: hash })
+        (hash) => updateItem(next.id, { fileHash: hash }),
+        (videoId) => {
+          // Vídeo já registrado — aparece imediatamente na Biblioteca (status="processing").
+          updateItem(next.id, { videoId });
+          load();
+        },
+        () => {
+          // Processamento em background concluído (thumbnail + duração + status="uploaded").
+          load();
+        }
       )
         .then((res) => {
           seenHashes.current.add(res.fileHash);
@@ -212,7 +221,6 @@ export default function VideoLibrary() {
         .finally(() => {
           activeCount.current--;
           runNext();
-          load();
         });
     }
   }, [updateItem]);
