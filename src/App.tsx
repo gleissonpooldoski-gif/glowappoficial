@@ -36,6 +36,7 @@ const App = () => (
             <Route path="/processing" element={<Processing />} />
             <Route path="/finished" element={<Finished />} />
             <Route path="/settings" element={<Settings />} />
+            <Route path="/editor/:id" element={<Editor />} />
           </Route>
           <Route path="*" element={<NotFound />} />
         </Routes>
