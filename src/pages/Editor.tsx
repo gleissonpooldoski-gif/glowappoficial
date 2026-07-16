@@ -174,6 +174,26 @@ export default function Editor() {
   const [duration, setDuration] = useState(0);
   const [currentTime, setCurrentTime] = useState(0);
   const [hasAudioTrack, setHasAudioTrack] = useState<boolean | null>(null);
+  const [showControls, setShowControls] = useState(true);
+  const hideTimerRef = useRef<number | null>(null);
+  const canvasWrapRef = useRef<HTMLDivElement>(null);
+
+  const revealControls = () => {
+    setShowControls(true);
+    if (hideTimerRef.current) window.clearTimeout(hideTimerRef.current);
+    hideTimerRef.current = window.setTimeout(() => {
+      if (videoRef.current && !videoRef.current.paused) setShowControls(false);
+    }, 2200);
+  };
+
+  const requestFullscreen = () => {
+    const el = canvasWrapRef.current;
+    if (!el) return;
+    if (document.fullscreenElement) document.exitFullscreen();
+    else el.requestFullscreen?.().catch(() => {});
+  };
+
+
 
   useEffect(() => {
     const el = videoRef.current;
