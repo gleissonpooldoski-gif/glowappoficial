@@ -377,6 +377,49 @@ export default function VideoLibrary() {
     }
   };
 
+  const applyTemplate = async () => {
+    if (!chosenTemplate || selected.size === 0) return;
+    setApplying(true);
+    try {
+      const ids = Array.from(selected);
+      const byId = new Map((videos ?? []).map((v) => [v.id, v] as const));
+      const rows = ids.map((vid) => {
+        const v = byId.get(vid);
+        return {
+          video_id: vid,
+          template_id: chosenTemplate,
+          project_id: v?.project_id ?? null,
+          status: "pending" as const,
+          progress: 0,
+          options: { captions: true, logo: true, music: false, effects: true },
+        };
+      });
+      const chunk = 200;
+      for (let i = 0; i < rows.length; i += chunk) {
+        const { error } = await supabase
+          .from("processing_queue")
+          .insert(rows.slice(i, i + chunk));
+        if (error) throw error;
+      }
+      for (let i = 0; i < ids.length; i += chunk) {
+        await supabase
+          .from("videos")
+          .update({ status: "queued" as const })
+          .in("id", ids.slice(i, i + chunk));
+      }
+      toast.success(`${rows.length} vídeo(s) enviados para a fila`);
+      setApplyOpen(false);
+      setChosenTemplate("");
+      setSelected(new Set());
+      navigate("/processing");
+    } catch (e: any) {
+      toast.error(e?.message ?? "Falha ao aplicar template");
+    } finally {
+      setApplying(false);
+    }
+  };
+
+
   const requestDeleteSelected = () => {
     if (selected.size === 0) return;
     setPendingDelete({ kind: "selected", ids: Array.from(selected), step: 1 });
