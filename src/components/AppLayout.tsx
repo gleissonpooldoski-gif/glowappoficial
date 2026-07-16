@@ -17,6 +17,7 @@ const nav = [
   { to: "/edits", label: "Projetos de Edição", icon: Pencil },
   { to: "/finished", label: "Vídeos Prontos", icon: CheckCircle2 },
   { to: "/publications", label: "Publicações", icon: Instagram },
+  { to: "/settings", label: "Configurações", icon: SettingsIcon },
 ];
 
 function ProjectSwitcher({ onNavigate }: { onNavigate?: () => void }) {
