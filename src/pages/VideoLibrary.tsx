@@ -835,6 +835,89 @@ export default function VideoLibrary() {
         </DialogContent>
       </Dialog>
 
+      {/* Apply template dialog */}
+      <Dialog open={applyOpen} onOpenChange={(o) => !applying && setApplyOpen(o)}>
+        <DialogContent className="max-w-2xl">
+          <DialogHeader>
+            <DialogTitle>
+              Aplicar template a {selected.size} vídeo(s)
+            </DialogTitle>
+          </DialogHeader>
+          <div className="space-y-3">
+            <p className="text-xs text-muted-foreground">
+              Cada vídeo selecionado gera uma renderização independente usando o
+              mesmo template.
+            </p>
+            {templates.length === 0 ? (
+              <div className="rounded-md border border-dashed border-border/50 p-6 text-center text-xs text-muted-foreground">
+                Nenhum template criado ainda.{" "}
+                <button
+                  className="text-gold underline"
+                  onClick={() => navigate("/templates")}
+                >
+                  Criar template
+                </button>
+              </div>
+            ) : (
+              <div className="grid max-h-80 grid-cols-2 gap-2 overflow-y-auto sm:grid-cols-3">
+                {templates.map((t) => {
+                  const active = chosenTemplate === t.id;
+                  return (
+                    <button
+                      key={t.id}
+                      onClick={() => setChosenTemplate(t.id)}
+                      className={cn(
+                        "flex flex-col overflow-hidden rounded-md border text-left transition",
+                        active
+                          ? "border-gold ring-1 ring-gold/40"
+                          : "border-border/50 hover:border-gold/40"
+                      )}
+                    >
+                      <div className="aspect-[9/16] w-full bg-black">
+                        {t.preview_url ? (
+                          <img
+                            src={t.preview_url}
+                            alt={t.name}
+                            className="h-full w-full object-cover"
+                          />
+                        ) : (
+                          <div className="flex h-full w-full items-center justify-center text-gold/30">
+                            <Film size={28} />
+                          </div>
+                        )}
+                      </div>
+                      <div className="truncate px-2 py-1.5 text-xs">{t.name}</div>
+                    </button>
+                  );
+                })}
+              </div>
+            )}
+          </div>
+          <div className="flex justify-end gap-2">
+            <Button
+              variant="ghost"
+              onClick={() => setApplyOpen(false)}
+              disabled={applying}
+            >
+              Cancelar
+            </Button>
+            <Button
+              onClick={applyTemplate}
+              disabled={!chosenTemplate || applying}
+              className="bg-gold-gradient text-black"
+            >
+              {applying ? (
+                <Loader2 size={14} className="mr-1 animate-spin" />
+              ) : (
+                <Rocket size={14} className="mr-1" />
+              )}
+              Gerar {selected.size} vídeo(s)
+            </Button>
+          </div>
+        </DialogContent>
+      </Dialog>
+
+
       {/* Delete confirmation */}
       <AlertDialog
         open={!!pendingDelete}
