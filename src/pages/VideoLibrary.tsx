@@ -187,7 +187,7 @@ export default function VideoLibrary() {
       activeCount.current++;
       updateItem(next.id, { status: "uploading", progress: 0, error: undefined });
 
-      const projectId = projectRef.current === "none" ? null : projectRef.current;
+      const projectId = activeProject?.id ?? (projectRef.current === "none" ? null : projectRef.current);
       processItem(
         next,
         projectId,
