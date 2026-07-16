@@ -1048,6 +1048,76 @@ export default function Editor() {
           </span>
         </CardContent>
       </Card>
+
+      {/* Biblioteca de textos e CTAs prontos */}
+      <Dialog open={libraryOpen} onOpenChange={setLibraryOpen}>
+        <DialogContent className="max-w-3xl">
+          <DialogHeader>
+            <DialogTitle className="flex items-center gap-2">
+              <MessageSquareText size={18} className="text-gold" />
+              Textos e CTAs
+            </DialogTitle>
+            <DialogDescription>
+              Adicione frases prontas de engajamento ao seu vídeo. Cada texto vira uma camada editável.
+            </DialogDescription>
+          </DialogHeader>
+
+          <div className="grid gap-3 md:grid-cols-[200px_1fr]">
+            <div className="flex flex-row gap-1 overflow-x-auto md:flex-col md:overflow-visible">
+              {TEXT_CATEGORIES.map((c) => (
+                <button
+                  key={c.value}
+                  onClick={() => setLibraryCategory(c.value)}
+                  className={cn(
+                    "whitespace-nowrap rounded border px-3 py-2 text-left text-xs transition md:whitespace-normal",
+                    libraryCategory === c.value
+                      ? "border-gold/60 bg-gold/10 text-gold"
+                      : "border-border/40 bg-black/30 hover:border-gold/30",
+                  )}
+                >
+                  <div className="font-medium">{c.label}</div>
+                  <div className="mt-0.5 hidden text-[10px] text-muted-foreground md:block">{c.hint}</div>
+                </button>
+              ))}
+            </div>
+
+            <ScrollArea className="h-[420px] rounded border border-border/40 bg-black/20 p-2">
+              <div className="grid gap-2">
+                {TEXT_PRESETS[libraryCategory].map((p) => (
+                  <div
+                    key={p.id}
+                    className="flex items-center gap-3 rounded-md border border-border/40 bg-black/40 p-2"
+                  >
+                    <div
+                      className="flex-1 truncate text-sm"
+                      style={{ fontWeight: p.weight ?? 700 }}
+                      title={p.text}
+                    >
+                      {p.text}
+                    </div>
+                    <Button
+                      size="sm"
+                      className="h-8 bg-gold-gradient text-black"
+                      onClick={() => { addPreset(p); setLibraryOpen(false); }}
+                    >
+                      <Plus size={12} className="mr-1" /> Adicionar
+                    </Button>
+                  </div>
+                ))}
+                <Button
+                  variant="outline"
+                  size="sm"
+                  className="mt-2 border-dashed"
+                  onClick={() => toast.info("Geração por IA em breve — estrutura já preparada.")}
+                >
+                  <Sparkles size={12} className="mr-1.5" />
+                  Gerar mais frases com IA
+                </Button>
+              </div>
+            </ScrollArea>
+          </div>
+        </DialogContent>
+      </Dialog>
     </div>
   );
 }
