@@ -41,7 +41,7 @@ export default function Finished() {
       .select("*, templates(name)")
       .eq("status", "finished")
       .order("updated_at", { ascending: false });
-    const list = (data ?? []) as FinishedVideo[];
+    const list = ((data ?? []) as any[]) as FinishedVideo[];
     setVideos(list);
 
     // Signed URLs for inline preview
