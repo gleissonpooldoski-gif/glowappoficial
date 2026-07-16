@@ -690,6 +690,13 @@ export default function VideoLibrary() {
           <div className="flex items-center gap-2">
             <Button
               size="sm"
+              onClick={() => setApplyOpen(true)}
+              className="bg-gold-gradient text-black glow-gold"
+            >
+              <Wand2 size={13} className="mr-1" /> Aplicar template
+            </Button>
+            <Button
+              size="sm"
               variant="outline"
               onClick={downloadSelected}
               disabled={downloading}
