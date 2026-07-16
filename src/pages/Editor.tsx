@@ -873,6 +873,7 @@ export default function Editor() {
                   mixBlendMode: doc.template.blend,
                   opacity: doc.template.opacity,
                   background: "transparent",
+                  transform: `translate(${doc.template.x}%, ${doc.template.y}%)`,
                 }}
               />
             )}
@@ -888,6 +889,7 @@ export default function Editor() {
                   mixBlendMode: doc.template.blend,
                   opacity: doc.template.opacity,
                   background: "transparent",
+                  transform: `translate(${doc.template.x}%, ${doc.template.y}%)`,
                 }}
                 autoPlay muted loop playsInline
               />
