@@ -301,7 +301,7 @@ export default function Editor() {
   useEffect(() => {
     if (!id) return;
     (async () => {
-      console.log("[Editor] loading edit", id);
+      
       const { data, error } = await (supabase as any)
         .from("edits").select("*").eq("id", id).maybeSingle();
       if (error || !data) {
@@ -310,17 +310,6 @@ export default function Editor() {
         navigate("/edits");
         return;
       }
-      console.log("[Editor] edit ->", {
-        video_id: data.video_id,
-        video_url: data.video_url,
-        video_filename: data.video_filename,
-        video_storage_path: data.video_storage_path,
-        owner_user_id: data.owner_user_id,
-        template_id: data.template_id,
-        template_url: data.template_url,
-        user_id: data.user_id,
-        status: data.status,
-      });
 
       if (!data.video_id) {
         setLoadError({
@@ -337,7 +326,7 @@ export default function Editor() {
       setRatio(data.aspect_ratio ?? "9:16");
       setDoc(safeDoc(data.doc));
 
-      console.log("Carregando vídeo...");
+      
       const { data: v, error: vErr } = await supabase
         .from("videos")
         .select("*")
@@ -345,14 +334,6 @@ export default function Editor() {
         .maybeSingle();
 
       if (vErr) console.error("[Editor] video fetch error", vErr);
-      console.log("[Editor] video row ->", v ? {
-        id: v.id,
-        filename: v.filename,
-        original_path: v.original_path,
-        original_url: v.original_url,
-        mime_type: v.mime_type,
-        status: v.status,
-      } : null);
 
       if (!v) {
         console.error("Erro ao buscar vídeo", vErr);
@@ -405,7 +386,7 @@ export default function Editor() {
         return;
       }
 
-      console.log("URL do vídeo encontrada", nextVideoUrl);
+      
       setVideoUrl(nextVideoUrl);
 
       // ----- Template (overlay) -----
@@ -414,7 +395,7 @@ export default function Editor() {
         const { data: tpl, error: tplErr } = await (supabase as any)
           .from("templates").select("*").eq("id", data.template_id).maybeSingle();
         if (tplErr) console.error("[Editor] template fetch error", tplErr);
-        console.log("[Editor] template row ->", tpl);
+        
         if (tpl) {
           setTemplate(tpl);
           if (!nextTemplateUrl) {
@@ -432,7 +413,7 @@ export default function Editor() {
         }
       }
       setTemplateUrl(nextTemplateUrl);
-      console.log("[Editor] template URL ->", nextTemplateUrl);
+      
 
       const { error: urlUpdateErr } = await (supabase as any).from("edits").update({
         video_url: nextVideoUrl,
@@ -851,7 +832,7 @@ export default function Editor() {
                   playsInline
                   preload="auto"
                   onLoadedData={() => {
-                    console.log("[Editor] <video> loaded data");
+                    
                     setVideoReady(true);
                   }}
                   onError={(e) => {
