@@ -239,8 +239,29 @@ export default function Editor() {
 
   if (loading) {
     return (
-      <div className="flex h-[70vh] items-center justify-center">
+      <div className="flex h-[70vh] flex-col items-center justify-center gap-3">
         <Loader2 className="animate-spin text-gold" />
+        <p className="text-xs text-muted-foreground">Carregando vídeo e template…</p>
+      </div>
+    );
+  }
+
+  if (loadError) {
+    return (
+      <div className="mx-auto flex h-[70vh] max-w-lg flex-col items-center justify-center gap-3 text-center">
+        <div className="rounded-full bg-destructive/10 p-3 text-destructive">
+          <ArrowLeft size={18} />
+        </div>
+        <h2 className="text-lg font-semibold">Não foi possível abrir o editor</h2>
+        <p className="text-sm text-muted-foreground">{loadError}</p>
+        <div className="flex gap-2">
+          <Button variant="outline" size="sm" onClick={() => navigate("/edits")}>
+            <ArrowLeft size={14} className="mr-1" /> Meus projetos
+          </Button>
+          <Button size="sm" onClick={() => navigate("/videos")}>
+            Ir para biblioteca
+          </Button>
+        </div>
       </div>
     );
   }
