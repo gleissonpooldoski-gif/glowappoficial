@@ -153,18 +153,34 @@ export default function Finished() {
 
   const removeMany = async (ids: string[]) => {
     if (!videos || ids.length === 0) return;
-    const targets = videos.filter((v) => ids.includes(v.id));
-    const paths = targets.map((v) => v.processed_path).filter(Boolean) as string[];
-    if (paths.length) {
-      const { error: sErr } = await supabase.storage.from(BUCKET).remove(paths);
-      if (sErr) console.warn("[Finished] storage remove failed", sErr);
+    const idSet = new Set(ids);
+    const targets = videos.filter((v) => idSet.has(v.id));
+    const snapshot = videos;
+    // Optimistic UI.
+    setVideos((prev) => (prev ? prev.filter((v) => !idSet.has(v.id)) : prev));
+    try {
+      // Clean up render_jobs (FK is SET NULL, remove explicitly to avoid orphans).
+      try {
+        await (supabase as any).from("render_jobs").delete().in("video_id", ids);
+      } catch (e) {
+        console.warn("[Finished] render_jobs cleanup failed", e);
+      }
+      const { error } = await supabase.from("videos").delete().in("id", ids);
+      if (error) throw error;
+      const paths = targets.map((v) => v.processed_path).filter(Boolean) as string[];
+      if (paths.length) {
+        const { error: sErr } = await supabase.storage.from(BUCKET).remove(paths);
+        if (sErr) console.warn("[Finished] storage remove failed", sErr);
+      }
+      toast.success(ids.length === 1 ? "Vídeo excluído" : `${ids.length} vídeos excluídos`);
+      setSelected(new Set());
+      void load();
+    } catch (e: any) {
+      setVideos(snapshot);
+      toast.error(`Falha ao excluir: ${e?.message ?? "erro desconhecido"}`);
     }
-    const { error } = await supabase.from("videos").delete().in("id", ids);
-    if (error) return toast.error(error.message);
-    toast.success(`${ids.length} vídeo(s) excluído(s)`);
-    setSelected(new Set());
-    load();
   };
+
 
   const askRemoveOne = (id: string) => { setPendingRemoveId(id); setConfirmMode("one"); };
 

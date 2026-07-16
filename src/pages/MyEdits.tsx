@@ -43,7 +43,8 @@ export default function MyEdits() {
   const [rows, setRows] = useState<EditRow[] | null>(null);
   const [selected, setSelected] = useState<Set<string>>(new Set());
   const [deleting, setDeleting] = useState(false);
-  const [confirmMode, setConfirmMode] = useState<null | "all" | "selection">(null);
+  const [confirmMode, setConfirmMode] = useState<null | "all" | "selection" | "one" | "return">(null);
+  const [pendingRow, setPendingRow] = useState<EditRow | null>(null);
 
   const load = async () => {
     if (!activeProject) { setRows([]); return; }
@@ -78,39 +79,61 @@ export default function MyEdits() {
     setSelected(allSelected ? new Set() : new Set(rows.map((r) => r.id)));
   };
 
-  const remove = async (id: string) => {
-    if (!confirm("Excluir este projeto de edição?")) return;
-    const row = rows?.find((r) => r.id === id);
-    const { error } = await (supabase as any).from("edits").delete().eq("id", id);
-    if (error) return toast.error(error.message);
-    // Free the video back to the library if it isn't already completed.
-    if (row?.video_id && row.status !== "completed") {
-      await (supabase as any)
-        .from("videos")
-        .update({ status: "uploaded" })
-        .eq("id", row.video_id)
-        .neq("status", "completed");
-    }
-    toast.success("Projeto excluído");
-    load();
+  const askRemove = (row: EditRow) => { setPendingRow(row); setConfirmMode("one"); };
+  const askReturn = (row: EditRow) => {
+    if (!row.video_id) { toast.error("Este projeto não tem vídeo vinculado."); return; }
+    setPendingRow(row); setConfirmMode("return");
   };
 
-  const returnToLibrary = async (row: EditRow) => {
-    if (!row.video_id) {
-      toast.error("Este projeto não tem vídeo vinculado.");
-      return;
+  const doRemoveOne = async () => {
+    if (!pendingRow) return;
+    const row = pendingRow;
+    setDeleting(true);
+    // Optimistic UI.
+    const snapshot = rows;
+    setRows((prev) => (prev ? prev.filter((r) => r.id !== row.id) : prev));
+    try {
+      const { error } = await (supabase as any).from("edits").delete().eq("id", row.id);
+      if (error) throw error;
+      if (row.video_id && row.status !== "completed") {
+        await (supabase as any)
+          .from("videos")
+          .update({ status: "uploaded" })
+          .eq("id", row.video_id)
+          .neq("status", "completed");
+      }
+      toast.success("Projeto excluído");
+      void load();
+    } catch (e: any) {
+      setRows(snapshot);
+      toast.error(`Falha ao excluir: ${e?.message ?? "erro desconhecido"}`);
+    } finally {
+      setDeleting(false); setConfirmMode(null); setPendingRow(null);
     }
-    if (!confirm("Retornar este vídeo para a Biblioteca? O projeto de edição será removido.")) return;
-    const { error: vErr } = await (supabase as any)
-      .from("videos")
-      .update({ status: "uploaded" })
-      .eq("id", row.video_id);
-    if (vErr) return toast.error(vErr.message);
-    const { error: eErr } = await (supabase as any).from("edits").delete().eq("id", row.id);
-    if (eErr) return toast.error(eErr.message);
-    toast.success("Vídeo devolvido para a Biblioteca");
-    load();
   };
+
+  const doReturnToLibrary = async () => {
+    if (!pendingRow?.video_id) { setConfirmMode(null); setPendingRow(null); return; }
+    const row = pendingRow;
+    setDeleting(true);
+    const snapshot = rows;
+    setRows((prev) => (prev ? prev.filter((r) => r.id !== row.id) : prev));
+    try {
+      const { error: vErr } = await (supabase as any)
+        .from("videos").update({ status: "uploaded" }).eq("id", row.video_id);
+      if (vErr) throw vErr;
+      const { error: eErr } = await (supabase as any).from("edits").delete().eq("id", row.id);
+      if (eErr) throw eErr;
+      toast.success("Vídeo devolvido para a Biblioteca");
+      void load();
+    } catch (e: any) {
+      setRows(snapshot);
+      toast.error(`Falha: ${e?.message ?? "erro desconhecido"}`);
+    } finally {
+      setDeleting(false); setConfirmMode(null); setPendingRow(null);
+    }
+  };
+
 
   const runBulkDelete = async () => {
     if (!rows) return;
@@ -272,14 +295,14 @@ export default function MyEdits() {
                         variant="outline"
                         className="h-7 w-7 p-0 text-muted-foreground hover:text-gold"
                         title="Retornar para Biblioteca"
-                        onClick={() => returnToLibrary(r)}
+                        onClick={() => askReturn(r)}
                       >
                         <Undo2 size={12} />
                       </Button>
                     )}
                     <Button size="sm" variant="ghost"
                       className="h-7 w-7 p-0 text-muted-foreground hover:text-destructive"
-                      onClick={() => remove(r.id)}>
+                      onClick={() => askRemove(r)}>
                       <Trash2 size={12} />
                     </Button>
                   </div>
@@ -290,31 +313,48 @@ export default function MyEdits() {
         </div>
       )}
 
-      <AlertDialog open={confirmMode !== null} onOpenChange={(open) => !open && setConfirmMode(null)}>
+      <AlertDialog open={confirmMode !== null} onOpenChange={(open) => { if (!open) { setConfirmMode(null); setPendingRow(null); } }}>
         <AlertDialogContent>
           <AlertDialogHeader>
             <AlertDialogTitle>
-              {confirmMode === "all" ? "Excluir todos os projetos?" : "Excluir projetos selecionados?"}
+              {confirmMode === "all" && "Excluir todos os projetos?"}
+              {confirmMode === "selection" && "Excluir projetos selecionados?"}
+              {confirmMode === "one" && "Tem certeza que deseja excluir este projeto?"}
+              {confirmMode === "return" && "Retornar vídeo para a Biblioteca?"}
             </AlertDialogTitle>
             <AlertDialogDescription>
-              {confirmMode === "all"
-                ? "Tem certeza que deseja excluir todos os projetos de edição? Essa ação não poderá ser desfeita."
-                : `Tem certeza que deseja excluir ${selected.size} projeto(s) selecionado(s)? Essa ação não poderá ser desfeita.`}
+              {confirmMode === "all" && "Tem certeza que deseja excluir todos os projetos de edição? Essa ação não poderá ser desfeita."}
+              {confirmMode === "selection" && `Tem certeza que deseja excluir ${selected.size} projeto(s) selecionado(s)? Essa ação não poderá ser desfeita.`}
+              {confirmMode === "one" && "O projeto de edição será removido. O vídeo original volta para a Biblioteca."}
+              {confirmMode === "return" && "O projeto de edição será removido e o vídeo voltará a aparecer na Biblioteca."}
             </AlertDialogDescription>
           </AlertDialogHeader>
           <AlertDialogFooter>
             <AlertDialogCancel disabled={deleting}>Cancelar</AlertDialogCancel>
             <AlertDialogAction
-              onClick={(e) => { e.preventDefault(); runBulkDelete(); }}
+              onClick={(e) => {
+                e.preventDefault();
+                if (confirmMode === "one") doRemoveOne();
+                else if (confirmMode === "return") doReturnToLibrary();
+                else runBulkDelete();
+              }}
               disabled={deleting}
-              className="bg-destructive text-destructive-foreground hover:bg-destructive/90"
+              className={cn(
+                confirmMode === "return"
+                  ? "bg-gold text-black hover:bg-gold/90"
+                  : "bg-destructive text-destructive-foreground hover:bg-destructive/90",
+              )}
             >
-              {deleting ? <Loader2 size={14} className="mr-1.5 animate-spin" /> : <Trash2 size={14} className="mr-1.5" />}
-              {confirmMode === "all" ? "Excluir todos" : "Excluir selecionados"}
+              {deleting ? <Loader2 size={14} className="mr-1.5 animate-spin" /> : (confirmMode === "return" ? <Undo2 size={14} className="mr-1.5" /> : <Trash2 size={14} className="mr-1.5" />)}
+              {confirmMode === "all" && "Excluir todos"}
+              {confirmMode === "selection" && "Excluir selecionados"}
+              {confirmMode === "one" && "Excluir"}
+              {confirmMode === "return" && "Retornar"}
             </AlertDialogAction>
           </AlertDialogFooter>
         </AlertDialogContent>
       </AlertDialog>
+
     </div>
   );
 }
