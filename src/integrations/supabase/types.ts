@@ -270,6 +270,88 @@ export type Database = {
         }
         Relationships: []
       }
+      render_jobs: {
+        Row: {
+          completed_at: string | null
+          composition: Json
+          created_at: string
+          edit_id: string | null
+          error: string | null
+          external_job_id: string | null
+          id: string
+          output_path: string | null
+          output_url: string | null
+          progress: number
+          project_id: string | null
+          provider: string
+          started_at: string | null
+          status: Database["public"]["Enums"]["render_job_status"]
+          updated_at: string
+          user_id: string | null
+          video_id: string | null
+        }
+        Insert: {
+          completed_at?: string | null
+          composition?: Json
+          created_at?: string
+          edit_id?: string | null
+          error?: string | null
+          external_job_id?: string | null
+          id?: string
+          output_path?: string | null
+          output_url?: string | null
+          progress?: number
+          project_id?: string | null
+          provider?: string
+          started_at?: string | null
+          status?: Database["public"]["Enums"]["render_job_status"]
+          updated_at?: string
+          user_id?: string | null
+          video_id?: string | null
+        }
+        Update: {
+          completed_at?: string | null
+          composition?: Json
+          created_at?: string
+          edit_id?: string | null
+          error?: string | null
+          external_job_id?: string | null
+          id?: string
+          output_path?: string | null
+          output_url?: string | null
+          progress?: number
+          project_id?: string | null
+          provider?: string
+          started_at?: string | null
+          status?: Database["public"]["Enums"]["render_job_status"]
+          updated_at?: string
+          user_id?: string | null
+          video_id?: string | null
+        }
+        Relationships: [
+          {
+            foreignKeyName: "render_jobs_edit_id_fkey"
+            columns: ["edit_id"]
+            isOneToOne: false
+            referencedRelation: "edits"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "render_jobs_project_id_fkey"
+            columns: ["project_id"]
+            isOneToOne: false
+            referencedRelation: "projects"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "render_jobs_video_id_fkey"
+            columns: ["video_id"]
+            isOneToOne: false
+            referencedRelation: "videos"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
       templates: {
         Row: {
           category: string | null
@@ -403,6 +485,7 @@ export type Database = {
         | "celebridades"
         | "outro"
       queue_status: "pending" | "processing" | "done" | "error"
+      render_job_status: "QUEUED" | "PROCESSING" | "COMPLETED" | "FAILED"
       video_status:
         | "uploaded"
         | "queued"
@@ -558,6 +641,7 @@ export const Constants = {
         "outro",
       ],
       queue_status: ["pending", "processing", "done", "error"],
+      render_job_status: ["QUEUED", "PROCESSING", "COMPLETED", "FAILED"],
       video_status: [
         "uploaded",
         "queued",

@@ -556,60 +556,84 @@ export default function Editor() {
     if (!id || !edit) return;
     setExporting(true);
     setExportPhase("prep");
-    setExportPercent(2);
-    let progressTimer: number | null = null;
+    setExportPercent(5);
     try {
       const okSave = await save(true);
       if (!okSave) return;
 
       setExportPhase("template");
-      setExportPercent(12);
-      await new Promise((res) => window.setTimeout(res, 250));
-      setExportPhase("render");
-      setExportPercent(18);
+      setExportPercent(15);
 
-      let simulated = 18;
-      progressTimer = window.setInterval(() => {
-        simulated = Math.min(88, simulated + (simulated < 55 ? 3 : 1));
-        if (simulated > 72) setExportPhase("encode");
-        setExportPercent(simulated);
-      }, 900);
-
+      // Enqueue job on the backend — no ffmpeg/subprocess in Edge Runtime.
       const { data, error } = await supabase.functions.invoke("render-video", {
         body: { editId: id },
       });
-      if (progressTimer) {
-        window.clearInterval(progressTimer);
-        progressTimer = null;
-      }
 
       if (error) {
         let details = error.message;
         if (error instanceof FunctionsHttpError) {
           details = await error.context.text();
         }
-        console.error("[Editor] server render failed", details);
+        console.error("[Editor] enqueue render failed", details);
         try {
           const parsed = JSON.parse(details);
-          throw new Error(parsed.details || parsed.error || "Falha ao finalizar vídeo no servidor.");
+          throw new Error(parsed.details || parsed.error || "Falha ao criar job de renderização.");
         } catch (parseErr) {
-          if (parseErr instanceof SyntaxError) throw new Error(details || "Falha ao finalizar vídeo no servidor.");
+          if (parseErr instanceof SyntaxError) throw new Error(details || "Falha ao criar job de renderização.");
           throw parseErr;
         }
       }
 
-      setExportPhase("upload");
-      setExportPercent(96);
-      await (supabase as any).from("edits").update({ status: "completed" }).eq("id", id);
-      setExportPercent(100);
+      const jobId = data?.jobId as string | undefined;
+      if (!jobId) throw new Error("Job de renderização não foi criado.");
 
-      toast.success(data?.filename ? `Vídeo pronto: ${data.filename}` : "Vídeo pronto! Enviado para Vídeos Prontos.");
-      navigate("/finished");
+      setExportPhase("render");
+      setExportPercent(30);
+      toast.success("Renderização enfileirada. Você pode continuar navegando.");
+
+      // Non-blocking poll — user can leave the page; Finished lists queued jobs too.
+      const started = Date.now();
+      const poll = window.setInterval(async () => {
+        try {
+          const { data: job } = await (supabase as any)
+            .from("render_jobs")
+            .select("status, progress, output_path, error")
+            .eq("id", jobId)
+            .maybeSingle();
+          if (!job) return;
+          const p = Math.max(30, Math.min(95, Number(job.progress || 0)));
+          setExportPercent(p);
+          if (job.status === "PROCESSING") setExportPhase("encode");
+          if (job.status === "COMPLETED") {
+            window.clearInterval(poll);
+            setExportPhase("upload");
+            setExportPercent(100);
+            toast.success("Vídeo pronto! Enviado para Vídeos Prontos.");
+            setExporting(false);
+            setExportPhase("idle");
+            navigate("/finished");
+          }
+          if (job.status === "FAILED") {
+            window.clearInterval(poll);
+            setExporting(false);
+            setExportPhase("idle");
+            toast.error(job.error || "Renderização falhou no worker externo.");
+          }
+          // Timeout after 15 min of polling — job continues on server
+          if (Date.now() - started > 15 * 60 * 1000) {
+            window.clearInterval(poll);
+            setExporting(false);
+            setExportPhase("idle");
+            toast.info("Renderização ainda em andamento. Acompanhe em Vídeos Prontos.");
+            navigate("/finished");
+          }
+        } catch (err) {
+          console.warn("[Editor] poll render_jobs failed", err);
+        }
+      }, 3000);
     } catch (e: any) {
       console.error("[Editor] export failed", e);
-      toast.error(e?.message ?? "Não foi possível finalizar o vídeo. Tente novamente em instantes.");
-    } finally {
-      if (progressTimer) window.clearInterval(progressTimer);
+      toast.error(e?.message ?? "Não foi possível iniciar a renderização. Tente novamente em instantes.");
       setExporting(false);
       setExportPhase("idle");
       setExportPercent(0);
