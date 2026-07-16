@@ -299,7 +299,7 @@ Deno.serve(async (req) => {
     const { token, igId } = await tokensFor(supabase, account as Account);
     if (!token || !igId) throw new Error(`Credenciais Meta ausentes para a conta '${account}'.`);
 
-    const accountCheckUrl = `https://graph.facebook.com/${GRAPH_VERSION}/${igId}?fields=id,username,account_type&access_token=${encodeURIComponent(token)}`;
+    const accountCheckUrl = `https://graph.facebook.com/${GRAPH_VERSION}/${igId}?fields=id,username&access_token=${encodeURIComponent(token)}`;
     const accountCheck = await metaGet(accountCheckUrl);
     await appendLog(post.id, { event: "instagram_business_id_check", ig_id: igId, response: accountCheck.data });
 
