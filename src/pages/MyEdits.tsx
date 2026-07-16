@@ -14,6 +14,7 @@ import {
 import { format } from "date-fns";
 import { ptBR } from "date-fns/locale";
 import { cn } from "@/lib/utils";
+import { useActiveProject } from "@/context/ProjectContext";
 
 type EditRow = {
   id: string;
