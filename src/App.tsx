@@ -26,11 +26,7 @@ function Protected() {
       </div>
     );
   if (!user) return <Navigate to="/auth" replace />;
-  return (
-    <AppLayout>
-      <Outlet />
-    </AppLayout>
-  );
+  return <AppLayout />;
 }
 
 const App = () => (
