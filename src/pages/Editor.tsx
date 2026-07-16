@@ -1115,6 +1115,19 @@ export default function Editor() {
                   className="h-1.5 flex-1 cursor-pointer accent-gold"
                   aria-label="Linha do tempo do vídeo"
                 />
+                <Button size="icon" variant="ghost" className="h-8 w-8" onClick={toggleMute} title={isMuted ? "Reativar áudio" : "Silenciar"}>
+                  {isMuted || volume === 0 ? <VolumeX size={16} /> : <Volume2 size={16} />}
+                </Button>
+                <input
+                  type="range"
+                  min={0}
+                  max={1}
+                  step={0.01}
+                  value={isMuted ? 0 : volume}
+                  onChange={(e) => onVolume(parseFloat(e.target.value))}
+                  className="h-1.5 w-24 cursor-pointer accent-gold"
+                  aria-label="Volume"
+                />
               </div>
             </div>
           )}
