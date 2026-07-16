@@ -165,6 +165,8 @@ export default function Editor() {
   const [ratio, setRatio] = useState<string>("9:16");
   const [libraryOpen, setLibraryOpen] = useState(false);
   const [libraryCategory, setLibraryCategory] = useState<TextPresetCategory>("cta_comment");
+  const [editingTextId, setEditingTextId] = useState<string | null>(null);
+  const resizeRef = useRef<{ id: string; sx: number; sy: number; base: number } | null>(null);
   const [selectedTextId, setSelectedTextId] = useState<string | null>(null);
   const stageRef = useRef<HTMLDivElement>(null);
   const dragRef = useRef<{ id: string; sx: number; sy: number; px: number; py: number } | null>(null);
