@@ -2,50 +2,57 @@ import { Toaster } from "@/components/ui/toaster";
 import { Toaster as Sonner } from "@/components/ui/sonner";
 import { TooltipProvider } from "@/components/ui/tooltip";
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
-import { BrowserRouter, Routes, Route } from "react-router-dom";
-import { AuthProvider } from "@/contexts/AuthContext";
-import Index from "./pages/Index";
-import Login from "./pages/Login";
-import Register from "./pages/Register";
-import ForgotPassword from "./pages/ForgotPassword";
-import Onboarding from "./pages/Onboarding";
+import { BrowserRouter, Routes, Route, Navigate, Outlet } from "react-router-dom";
+import { ThemeProvider } from "next-themes";
+import { AuthProvider, useAuth } from "@/contexts/AuthContext";
+import AppLayout from "@/components/AppLayout";
+import Auth from "./pages/Auth";
 import Dashboard from "./pages/Dashboard";
-import Rotina from "./pages/Rotina";
-import RotinaDetalhe from "./pages/RotinaDetalhe";
-import Tutoriais from "./pages/Tutoriais";
-import TutorialCategoria from "./pages/TutorialCategoria";
-import Chat from "./pages/Chat";
-import Perfil from "./pages/Perfil";
+import Library from "./pages/Library";
+import NewPost from "./pages/NewPost";
+import CalendarPage from "./pages/CalendarPage";
+import History from "./pages/History";
+import Settings from "./pages/Settings";
 import NotFound from "./pages/NotFound";
 
 const queryClient = new QueryClient();
 
+function Protected() {
+  const { user, loading } = useAuth();
+  if (loading) return <div className="min-h-screen flex items-center justify-center text-muted-foreground">Carregando...</div>;
+  if (!user) return <Navigate to="/auth" replace />;
+  return (
+    <AppLayout>
+      <Outlet />
+    </AppLayout>
+  );
+}
+
 const App = () => (
   <QueryClientProvider client={queryClient}>
-    <TooltipProvider>
-      <AuthProvider>
-        <Toaster />
-        <Sonner />
-        <BrowserRouter>
-          <Routes>
-            <Route path="/" element={<Index />} />
-            <Route path="/login" element={<Login />} />
-            <Route path="/register" element={<Register />} />
-            <Route path="/forgot-password" element={<ForgotPassword />} />
-            <Route path="/onboarding" element={<Onboarding />} />
-            <Route path="/dashboard" element={<Dashboard />} />
-            <Route path="/rotina" element={<Rotina />} />
-            <Route path="/rotina/manha" element={<RotinaDetalhe />} />
-            <Route path="/rotina/noite" element={<RotinaDetalhe />} />
-            <Route path="/tutoriais" element={<Tutoriais />} />
-            <Route path="/tutoriais/:categoria" element={<TutorialCategoria />} />
-            <Route path="/chat" element={<Chat />} />
-            <Route path="/perfil" element={<Perfil />} />
-            <Route path="*" element={<NotFound />} />
-          </Routes>
-        </BrowserRouter>
-      </AuthProvider>
-    </TooltipProvider>
+    <ThemeProvider attribute="class" defaultTheme="system" enableSystem>
+      <TooltipProvider>
+        <AuthProvider>
+          <Toaster />
+          <Sonner />
+          <BrowserRouter>
+            <Routes>
+              <Route path="/auth" element={<Auth />} />
+              <Route element={<Protected />}>
+                <Route path="/" element={<Dashboard />} />
+                <Route path="/new" element={<NewPost />} />
+                <Route path="/new/:id" element={<NewPost />} />
+                <Route path="/calendar" element={<CalendarPage />} />
+                <Route path="/library" element={<Library />} />
+                <Route path="/history" element={<History />} />
+                <Route path="/settings" element={<Settings />} />
+              </Route>
+              <Route path="*" element={<NotFound />} />
+            </Routes>
+          </BrowserRouter>
+        </AuthProvider>
+      </TooltipProvider>
+    </ThemeProvider>
   </QueryClientProvider>
 );
 

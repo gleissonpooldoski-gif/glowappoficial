@@ -47,11 +47,16 @@ export default {
           DEFAULT: "hsl(var(--card))",
           foreground: "hsl(var(--card-foreground))",
         },
-        glow: {
-          pink: "hsl(var(--glow-pink))",
-          lilac: "hsl(var(--glow-lilac))",
-          soft: "hsl(var(--glow-soft))",
+        success: {
+          DEFAULT: "hsl(var(--success))",
+          foreground: "hsl(var(--success-foreground))",
         },
+        warning: {
+          DEFAULT: "hsl(var(--warning))",
+          foreground: "hsl(var(--warning-foreground))",
+        },
+        instagram: "hsl(var(--instagram))",
+        tiktok: "hsl(var(--tiktok))",
         sidebar: {
           DEFAULT: "hsl(var(--sidebar-background))",
           foreground: "hsl(var(--sidebar-foreground))",

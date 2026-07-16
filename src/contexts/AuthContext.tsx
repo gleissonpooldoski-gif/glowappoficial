@@ -1,86 +1,58 @@
-import React, { createContext, useContext, useState, useEffect, ReactNode } from "react";
-import { SkinType, SkinGoal } from "@/data/routines";
-
-export interface User {
-  id: string;
-  email: string;
-  name: string;
-  skinType?: SkinType;
-  goal?: SkinGoal;
-  age?: string;
-  city?: string;
-  onboardingComplete: boolean;
-}
+import { createContext, useContext, useEffect, useState, ReactNode } from "react";
+import { supabase } from "@/integrations/supabase/client";
+import type { Session, User } from "@supabase/supabase-js";
 
 interface AuthContextType {
   user: User | null;
-  isAuthenticated: boolean;
-  login: (email: string, password: string) => Promise<void>;
-  register: (name: string, email: string, password: string) => Promise<void>;
-  logout: () => void;
-  updateProfile: (data: Partial<User>) => void;
+  session: Session | null;
+  loading: boolean;
+  signIn: (email: string, password: string) => Promise<{ error: Error | null }>;
+  signUp: (email: string, password: string) => Promise<{ error: Error | null }>;
+  signOut: () => Promise<void>;
 }
 
 const AuthContext = createContext<AuthContextType | null>(null);
 
 export function AuthProvider({ children }: { children: ReactNode }) {
   const [user, setUser] = useState<User | null>(null);
+  const [session, setSession] = useState<Session | null>(null);
+  const [loading, setLoading] = useState(true);
 
   useEffect(() => {
-    const stored = localStorage.getItem("glowapp_user");
-    if (stored) {
-      setUser(JSON.parse(stored));
-    }
+    const { data: { subscription } } = supabase.auth.onAuthStateChange((_event, s) => {
+      setSession(s);
+      setUser(s?.user ?? null);
+    });
+
+    supabase.auth.getSession().then(({ data: { session: s } }) => {
+      setSession(s);
+      setUser(s?.user ?? null);
+      setLoading(false);
+    });
+
+    return () => subscription.unsubscribe();
   }, []);
 
-  const saveUser = (u: User) => {
-    setUser(u);
-    localStorage.setItem("glowapp_user", JSON.stringify(u));
+  const signIn = async (email: string, password: string) => {
+    const { error } = await supabase.auth.signInWithPassword({ email, password });
+    return { error: error ? new Error(error.message) : null };
   };
 
-  const login = async (email: string, _password: string) => {
-    const stored = localStorage.getItem("glowapp_users");
-    const users: Record<string, User & { password: string }> = stored ? JSON.parse(stored) : {};
-    const found = Object.values(users).find((u) => u.email === email);
-    if (!found) throw new Error("Usuário não encontrado");
-    const { password: _p, ...userData } = found;
-    saveUser(userData);
+  const signUp = async (email: string, password: string) => {
+    const { error } = await supabase.auth.signUp({
+      email,
+      password,
+      options: { emailRedirectTo: `${window.location.origin}/` },
+    });
+    return { error: error ? new Error(error.message) : null };
   };
 
-  const register = async (name: string, email: string, password: string) => {
-    const stored = localStorage.getItem("glowapp_users");
-    const users: Record<string, any> = stored ? JSON.parse(stored) : {};
-    if (Object.values(users).some((u: any) => u.email === email)) {
-      throw new Error("E-mail já cadastrado");
-    }
-    const id = crypto.randomUUID();
-    const newUser: User = { id, email, name, onboardingComplete: false };
-    users[id] = { ...newUser, password };
-    localStorage.setItem("glowapp_users", JSON.stringify(users));
-    saveUser(newUser);
-  };
-
-  const logout = () => {
-    setUser(null);
-    localStorage.removeItem("glowapp_user");
-  };
-
-  const updateProfile = (data: Partial<User>) => {
-    if (!user) return;
-    const updated = { ...user, ...data };
-    saveUser(updated);
-    const stored = localStorage.getItem("glowapp_users");
-    if (stored) {
-      const users = JSON.parse(stored);
-      if (users[user.id]) {
-        users[user.id] = { ...users[user.id], ...data };
-        localStorage.setItem("glowapp_users", JSON.stringify(users));
-      }
-    }
+  const signOut = async () => {
+    await supabase.auth.signOut();
   };
 
   return (
-    <AuthContext.Provider value={{ user, isAuthenticated: !!user, login, register, logout, updateProfile }}>
+    <AuthContext.Provider value={{ user, session, loading, signIn, signUp, signOut }}>
       {children}
     </AuthContext.Provider>
   );
