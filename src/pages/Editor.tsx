@@ -312,29 +312,41 @@ export default function Editor() {
               width: r.w > r.h ? "min(80vw, 1000px)" : undefined,
             }}
           >
+            {/* Layer 1 — Vídeo original (fundo, opacidade total, sem blend) */}
             {videoSrc ? (
               <video
                 src={videoSrc}
                 className="absolute inset-0 h-full w-full object-cover"
                 style={{
+                  zIndex: 1,
+                  opacity: 1,
+                  mixBlendMode: "normal",
                   transform: `translate(${doc.video.x}%, ${doc.video.y}%) scale(${doc.video.zoom})`,
                   transformOrigin: "center",
                 }}
                 autoPlay muted loop playsInline
               />
             ) : (
-              <div className="absolute inset-0 flex items-center justify-center text-xs text-muted-foreground">
+              <div className="absolute inset-0 flex items-center justify-center text-xs text-muted-foreground" style={{ zIndex: 1 }}>
                 Vídeo indisponível
               </div>
             )}
+            {/* Layer 2 — Template overlay (acima do vídeo, sem blend, opacidade total) */}
             {template?.preview_url && (template.file_type ?? "").startsWith("image/") && (
-              <img src={template.preview_url} alt=""
-                className="pointer-events-none absolute inset-0 h-full w-full object-cover mix-blend-screen opacity-90" />
+              <img
+                src={template.preview_url}
+                alt=""
+                className="pointer-events-none absolute inset-0 h-full w-full object-contain"
+                style={{ zIndex: 2, mixBlendMode: "normal", opacity: 1 }}
+              />
             )}
             {template?.preview_url && (template.file_type ?? "").startsWith("video/") && (
-              <video src={template.preview_url}
-                className="pointer-events-none absolute inset-0 h-full w-full object-cover mix-blend-screen opacity-80"
-                autoPlay muted loop playsInline />
+              <video
+                src={template.preview_url}
+                className="pointer-events-none absolute inset-0 h-full w-full object-contain"
+                style={{ zIndex: 2, mixBlendMode: "normal", opacity: 1 }}
+                autoPlay muted loop playsInline
+              />
             )}
             {doc.texts.map((t) => (
               <div
@@ -348,6 +360,7 @@ export default function Editor() {
                   t.animation === "slide-up" && "animate-[slide-up_0.6s_ease-out]",
                 )}
                 style={{
+                  zIndex: 3,
                   left: `${t.x}%`, top: `${t.y}%`,
                   transform: "translate(-50%, -50%)",
                   fontFamily: t.font, fontSize: t.size, color: t.color,
