@@ -10,6 +10,7 @@ import {
   Rocket,
   Sparkles,
   CheckCircle2,
+  Pencil,
   Menu,
   X,
 } from "lucide-react";
@@ -20,6 +21,7 @@ const nav = [
   { to: "/projects", label: "Projetos", icon: FolderKanban },
   { to: "/videos", label: "Biblioteca de Vídeos", icon: Film },
   { to: "/templates", label: "Templates", icon: LayoutTemplate },
+  { to: "/edits", label: "Meus Projetos de Edição", icon: Pencil },
   { to: "/brand", label: "Minha Marca", icon: Palette },
   { to: "/processing", label: "Processamentos", icon: Rocket },
   { to: "/finished", label: "Vídeos Prontos", icon: CheckCircle2 },
