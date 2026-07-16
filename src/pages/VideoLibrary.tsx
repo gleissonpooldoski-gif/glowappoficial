@@ -389,31 +389,29 @@ export default function VideoLibrary() {
           video_id: vid,
           template_id: chosenTemplate,
           project_id: v?.project_id ?? null,
-          status: "pending" as const,
-          progress: 0,
-          options: { captions: true, logo: true, music: false, effects: true },
+          name: v?.filename ?? "Rascunho",
+          aspect_ratio: "9:16",
+          status: "draft" as const,
+          doc: {
+            video: { zoom: 1, x: 0, y: 0 },
+            texts: [],
+            colors: { primary: "#D4AF37", secondary: "#FFFFFF" },
+          },
         };
       });
-      const chunk = 200;
-      for (let i = 0; i < rows.length; i += chunk) {
-        const { error } = await supabase
-          .from("processing_queue")
-          .insert(rows.slice(i, i + chunk));
-        if (error) throw error;
-      }
-      for (let i = 0; i < ids.length; i += chunk) {
-        await supabase
-          .from("videos")
-          .update({ status: "queued" as const })
-          .in("id", ids.slice(i, i + chunk));
-      }
-      toast.success(`${rows.length} vídeo(s) enviados para a fila`);
+      const { data: created, error } = await (supabase as any)
+        .from("edits")
+        .insert(rows)
+        .select("id");
+      if (error) throw error;
+      const firstId = created?.[0]?.id;
+      toast.success(`${rows.length} rascunho(s) criado(s). Abrindo editor...`);
       setApplyOpen(false);
       setChosenTemplate("");
       setSelected(new Set());
-      navigate("/processing");
+      if (firstId) navigate(`/editor/${firstId}`);
     } catch (e: any) {
-      toast.error(e?.message ?? "Falha ao aplicar template");
+      toast.error(e?.message ?? "Falha ao criar rascunho de edição");
     } finally {
       setApplying(false);
     }

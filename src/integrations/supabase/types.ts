@@ -83,6 +83,77 @@ export type Database = {
         }
         Relationships: []
       }
+      edits: {
+        Row: {
+          aspect_ratio: string
+          created_at: string
+          doc: Json
+          id: string
+          name: string | null
+          project_id: string | null
+          queue_id: string | null
+          status: Database["public"]["Enums"]["edit_status"]
+          template_id: string | null
+          updated_at: string
+          video_id: string | null
+        }
+        Insert: {
+          aspect_ratio?: string
+          created_at?: string
+          doc?: Json
+          id?: string
+          name?: string | null
+          project_id?: string | null
+          queue_id?: string | null
+          status?: Database["public"]["Enums"]["edit_status"]
+          template_id?: string | null
+          updated_at?: string
+          video_id?: string | null
+        }
+        Update: {
+          aspect_ratio?: string
+          created_at?: string
+          doc?: Json
+          id?: string
+          name?: string | null
+          project_id?: string | null
+          queue_id?: string | null
+          status?: Database["public"]["Enums"]["edit_status"]
+          template_id?: string | null
+          updated_at?: string
+          video_id?: string | null
+        }
+        Relationships: [
+          {
+            foreignKeyName: "edits_project_id_fkey"
+            columns: ["project_id"]
+            isOneToOne: false
+            referencedRelation: "projects"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "edits_queue_id_fkey"
+            columns: ["queue_id"]
+            isOneToOne: false
+            referencedRelation: "processing_queue"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "edits_template_id_fkey"
+            columns: ["template_id"]
+            isOneToOne: false
+            referencedRelation: "templates"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "edits_video_id_fkey"
+            columns: ["video_id"]
+            isOneToOne: false
+            referencedRelation: "videos"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
       processing_queue: {
         Row: {
           brand_id: string | null
@@ -302,6 +373,7 @@ export type Database = {
       [_ in never]: never
     }
     Enums: {
+      edit_status: "draft" | "editing" | "processing" | "completed" | "failed"
       project_category:
         | "motivacao"
         | "dinheiro"
@@ -455,6 +527,7 @@ export type CompositeTypes<
 export const Constants = {
   public: {
     Enums: {
+      edit_status: ["draft", "editing", "processing", "completed", "failed"],
       project_category: [
         "motivacao",
         "dinheiro",

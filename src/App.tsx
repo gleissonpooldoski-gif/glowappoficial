@@ -14,6 +14,7 @@ import Processing from "./pages/Processing";
 import Finished from "./pages/Finished";
 import Settings from "./pages/Settings";
 import NotFound from "./pages/NotFound";
+import Editor from "./pages/Editor";
 
 const queryClient = new QueryClient();
 
@@ -35,6 +36,7 @@ const App = () => (
             <Route path="/processing" element={<Processing />} />
             <Route path="/finished" element={<Finished />} />
             <Route path="/settings" element={<Settings />} />
+            <Route path="/editor/:id" element={<Editor />} />
           </Route>
           <Route path="*" element={<NotFound />} />
         </Routes>
