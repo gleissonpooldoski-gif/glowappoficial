@@ -2,7 +2,7 @@ import { useEffect, useMemo, useRef, useState } from "react";
 import { useNavigate, useParams } from "react-router-dom";
 import {
   ArrowLeft, Save, Rocket, Type, Plus, Trash2, Loader2, Layers,
-  Palette, Image as ImageIcon, ZoomIn, ZoomOut, Move,
+  Palette, Image as ImageIcon, ZoomIn, ZoomOut, Move, Play, Pause, Volume2, VolumeX,
 } from "lucide-react";
 import { supabase } from "@/integrations/supabase/client";
 import { toast } from "sonner";
@@ -165,6 +165,73 @@ export default function Editor() {
   const [templateUrl, setTemplateUrl] = useState<string | null>(null);
   const [loadError, setLoadError] = useState<LoadError | null>(null);
   const [videoReady, setVideoReady] = useState(false);
+
+  // Áudio / playback do vídeo original
+  const videoRef = useRef<HTMLVideoElement>(null);
+  const [isPlaying, setIsPlaying] = useState(false);
+  const [volume, setVolume] = useState(1);
+  const [isMuted, setIsMuted] = useState(false);
+  const [duration, setDuration] = useState(0);
+  const [currentTime, setCurrentTime] = useState(0);
+  const [hasAudioTrack, setHasAudioTrack] = useState<boolean | null>(null);
+
+  useEffect(() => {
+    const el = videoRef.current;
+    if (!el) return;
+    const onPlay = () => setIsPlaying(true);
+    const onPause = () => setIsPlaying(false);
+    const onTime = () => setCurrentTime(el.currentTime);
+    const onMeta = () => {
+      setDuration(el.duration || 0);
+      const anyEl = el as any;
+      const tracks = anyEl.mozHasAudio ?? (anyEl.webkitAudioDecodedByteCount ? anyEl.webkitAudioDecodedByteCount > 0 : null) ?? (anyEl.audioTracks ? anyEl.audioTracks.length > 0 : null);
+      setHasAudioTrack(tracks);
+    };
+    el.addEventListener("play", onPlay);
+    el.addEventListener("pause", onPause);
+    el.addEventListener("timeupdate", onTime);
+    el.addEventListener("loadedmetadata", onMeta);
+    return () => {
+      el.removeEventListener("play", onPlay);
+      el.removeEventListener("pause", onPause);
+      el.removeEventListener("timeupdate", onTime);
+      el.removeEventListener("loadedmetadata", onMeta);
+    };
+  }, [videoUrl]);
+
+  const togglePlay = () => {
+    const el = videoRef.current;
+    if (!el) return;
+    if (el.paused) {
+      el.play().catch((err) => console.error("[Editor] play failed", err));
+    } else {
+      el.pause();
+    }
+  };
+
+  const toggleMute = () => {
+    const el = videoRef.current;
+    if (!el) return;
+    const next = !el.muted;
+    el.muted = next;
+    setIsMuted(next);
+  };
+
+  const onVolume = (v: number) => {
+    setVolume(v);
+    if (videoRef.current) {
+      videoRef.current.volume = v;
+      videoRef.current.muted = v === 0;
+      setIsMuted(v === 0);
+    }
+  };
+
+  const formatTime = (t: number) => {
+    if (!isFinite(t)) return "0:00";
+    const m = Math.floor(t / 60);
+    const s = Math.floor(t % 60);
+    return `${m}:${s < 10 ? "0" : ""}${s}`;
+  };
 
   useEffect(() => {
     if (!id) return;
@@ -392,7 +459,20 @@ export default function Editor() {
         project_id: edit.project_id,
         status: "pending" as const,
         progress: 0,
-        options: { edit_id: id, aspect_ratio: ratio, doc } as any,
+        options: {
+          edit_id: id,
+          aspect_ratio: ratio,
+          doc,
+          audio: {
+            // Preservar áudio original do vídeo no render final.
+            keep_original: true,
+            source: "video",
+            volume: isMuted ? 0 : volume,
+            muted: false,
+            codec: "aac",
+          },
+          ffmpeg_hint: "-map 0:v -map 0:a? -c:v libx264 -c:a aac -b:a 192k -shortest",
+        } as any,
       }).select("id").single();
       if (qErr) throw qErr;
       await (supabase as any).from("edits").update({
@@ -563,6 +643,7 @@ export default function Editor() {
             {videoSrc ? (
               <>
                 <video
+                  ref={videoRef}
                   src={videoSrc}
                   className="absolute inset-0 h-full w-full object-cover"
                   style={{
@@ -572,7 +653,9 @@ export default function Editor() {
                     transform: `translate(${doc.video.x}%, ${doc.video.y}%) scale(${doc.video.zoom})`,
                     transformOrigin: "center",
                   }}
-                  autoPlay muted loop playsInline
+                  loop
+                  playsInline
+                  preload="auto"
                   onLoadedData={() => {
                     console.log("[Editor] <video> loaded data");
                     setVideoReady(true);
@@ -657,7 +740,44 @@ export default function Editor() {
               </div>
             ))}
           </div>
+
+          {/* Controles de áudio/reprodução do vídeo original */}
+          {videoSrc && (
+            <div className="mt-3 flex items-center gap-3 rounded-md border border-border/50 bg-black/40 p-2">
+              <Button size="icon" variant="ghost" className="h-8 w-8" onClick={togglePlay}
+                title={isPlaying ? "Pausar" : "Reproduzir com áudio"}>
+                {isPlaying ? <Pause size={14} /> : <Play size={14} />}
+              </Button>
+              <input
+                type="range" min={0} max={duration || 0} step={0.1}
+                value={currentTime}
+                onChange={(e) => {
+                  const t = parseFloat(e.target.value);
+                  if (videoRef.current) videoRef.current.currentTime = t;
+                  setCurrentTime(t);
+                }}
+                className="h-1 flex-1 accent-gold"
+              />
+              <span className="min-w-[80px] text-right font-mono text-[11px] text-muted-foreground">
+                {formatTime(currentTime)} / {formatTime(duration)}
+              </span>
+              <Button size="icon" variant="ghost" className="h-8 w-8" onClick={toggleMute}
+                title={isMuted ? "Reativar áudio" : "Silenciar"}>
+                {isMuted || volume === 0 ? <VolumeX size={14} /> : <Volume2 size={14} />}
+              </Button>
+              <input
+                type="range" min={0} max={1} step={0.01}
+                value={isMuted ? 0 : volume}
+                onChange={(e) => onVolume(parseFloat(e.target.value))}
+                className="h-1 w-24 accent-gold"
+              />
+              {hasAudioTrack === false && (
+                <span className="text-[10px] text-muted-foreground">Vídeo sem faixa de áudio</span>
+              )}
+            </div>
+          )}
         </div>
+
 
         {/* Right panel — properties */}
         <Card className="glass border-border/50 overflow-y-auto">
