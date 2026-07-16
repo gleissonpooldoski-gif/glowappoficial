@@ -470,6 +470,13 @@ export default function VideoLibrary() {
         .select("id, video_id, video_filename, video_storage_path, video_url, owner_user_id, template_id, template_url, user_id, status");
       if (error) throw error;
       console.log("[VideoLibrary] edit project created", created);
+
+      // Move videos out of the library — they now live inside an editing project.
+      const { error: upErr } = await (supabase as any)
+        .from("videos")
+        .update({ status: "in_editing" })
+        .in("id", ids);
+      if (upErr) console.error("[VideoLibrary] failed to flag videos as in_editing", upErr);
       const firstId = created?.[0]?.id;
       toast.success(`${rows.length} rascunho(s) criado(s). Abrindo editor...`);
       setApplyOpen(false);
