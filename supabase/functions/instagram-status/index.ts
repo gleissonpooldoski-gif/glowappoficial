@@ -122,7 +122,7 @@ Deno.serve(async (req) => {
     if (error) throw error;
     if (!post) throw new Error("Publicação não encontrada.");
 
-    const { token, igId } = credentialsFor(post.account);
+    const { token, igId } = await credentialsFor(supabase, post.account);
     if (!token || !igId) throw new Error(`Credenciais Meta ausentes para a conta '${post.account}'.`);
 
     if (post.status === "PUBLICADO" && post.publish_id) {
