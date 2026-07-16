@@ -1,12 +1,16 @@
-import { useEffect, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import { useNavigate } from "react-router-dom";
-import { Pencil, Trash2, Loader2, Film, Rocket, CheckCircle2, Clock, PlayCircle } from "lucide-react";
+import { Pencil, Trash2, Loader2, Film, Rocket, CheckCircle2, Clock, PlayCircle, CheckSquare, Square } from "lucide-react";
 import { supabase } from "@/integrations/supabase/client";
 import { toast } from "sonner";
 import { Card, CardContent } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
 import { Skeleton } from "@/components/ui/skeleton";
+import {
+  AlertDialog, AlertDialogAction, AlertDialogCancel, AlertDialogContent,
+  AlertDialogDescription, AlertDialogFooter, AlertDialogHeader, AlertDialogTitle,
+} from "@/components/ui/alert-dialog";
 import { format } from "date-fns";
 import { ptBR } from "date-fns/locale";
 import { cn } from "@/lib/utils";
@@ -35,6 +39,9 @@ const STATUS_META: Record<string, { label: string; icon: any; className: string 
 export default function MyEdits() {
   const navigate = useNavigate();
   const [rows, setRows] = useState<EditRow[] | null>(null);
+  const [selected, setSelected] = useState<Set<string>>(new Set());
+  const [deleting, setDeleting] = useState(false);
+  const [confirmMode, setConfirmMode] = useState<null | "all" | "selection">(null);
 
   const load = async () => {
     const { data, error } = await (supabase as any)
@@ -43,9 +50,28 @@ export default function MyEdits() {
       .order("updated_at", { ascending: false });
     if (error) { toast.error(error.message); setRows([]); return; }
     setRows((data ?? []) as EditRow[]);
+    setSelected(new Set());
   };
 
   useEffect(() => { load(); }, []);
+
+  const allSelected = useMemo(
+    () => !!rows && rows.length > 0 && selected.size === rows.length,
+    [rows, selected],
+  );
+
+  const toggleOne = (id: string) => {
+    setSelected((prev) => {
+      const next = new Set(prev);
+      if (next.has(id)) next.delete(id); else next.add(id);
+      return next;
+    });
+  };
+
+  const toggleAll = () => {
+    if (!rows) return;
+    setSelected(allSelected ? new Set() : new Set(rows.map((r) => r.id)));
+  };
 
   const remove = async (id: string) => {
     if (!confirm("Excluir este projeto de edição?")) return;
@@ -55,14 +81,58 @@ export default function MyEdits() {
     load();
   };
 
+  const runBulkDelete = async () => {
+    if (!rows) return;
+    const ids = confirmMode === "all" ? rows.map((r) => r.id) : Array.from(selected);
+    if (ids.length === 0) { setConfirmMode(null); return; }
+    setDeleting(true);
+    // RLS garante que o usuário só apaga os próprios projetos.
+    const { error } = await (supabase as any).from("edits").delete().in("id", ids);
+    setDeleting(false);
+    setConfirmMode(null);
+    if (error) return toast.error(error.message);
+    toast.success(`${ids.length} projeto(s) excluído(s)`);
+    load();
+  };
+
   return (
     <div className="space-y-6">
-      <header className="space-y-1.5">
-        <h1 className="text-2xl font-semibold tracking-tight">Meus Projetos de Edição</h1>
-        <p className="text-sm text-muted-foreground">
-          Cada seleção de vídeo + template cria um projeto aqui. Finalize a edição
-          para enviar o vídeo para <b>Vídeos Prontos</b>.
-        </p>
+      <header className="flex flex-wrap items-end justify-between gap-3">
+        <div className="space-y-1.5">
+          <h1 className="text-2xl font-semibold tracking-tight">Meus Projetos de Edição</h1>
+          <p className="text-sm text-muted-foreground">
+            Cada seleção de vídeo + template cria um projeto aqui. Finalize a edição
+            para enviar o vídeo para <b>Vídeos Prontos</b>.
+          </p>
+        </div>
+
+        {rows && rows.length > 0 && (
+          <div className="flex flex-wrap items-center gap-2">
+            <Button size="sm" variant="outline" onClick={toggleAll}>
+              {allSelected ? <CheckSquare size={14} className="mr-1.5" /> : <Square size={14} className="mr-1.5" />}
+              {allSelected ? "Limpar seleção" : "Selecionar todos"}
+            </Button>
+            <Button
+              size="sm"
+              variant="outline"
+              className="border-destructive/40 text-destructive hover:bg-destructive/10"
+              disabled={selected.size === 0 || deleting}
+              onClick={() => setConfirmMode("selection")}
+            >
+              <Trash2 size={14} className="mr-1.5" />
+              Excluir selecionados ({selected.size})
+            </Button>
+            <Button
+              size="sm"
+              variant="destructive"
+              disabled={deleting}
+              onClick={() => setConfirmMode("all")}
+            >
+              <Trash2 size={14} className="mr-1.5" />
+              Apagar todos
+            </Button>
+          </div>
+        )}
       </header>
 
       {!rows ? (
@@ -88,9 +158,28 @@ export default function MyEdits() {
             const meta = STATUS_META[r.status] ?? STATUS_META.draft;
             const Icon = meta.icon;
             const canEdit = r.status === "draft" || r.status === "editing" || r.status === "failed";
+            const isSelected = selected.has(r.id);
             return (
-              <Card key={r.id} className="glass border-border/50 group overflow-hidden">
+              <Card
+                key={r.id}
+                className={cn(
+                  "glass group overflow-hidden transition",
+                  isSelected ? "border-gold ring-1 ring-gold/60" : "border-border/50",
+                )}
+              >
                 <div className="relative aspect-[9/16] bg-black">
+                  <button
+                    type="button"
+                    onClick={() => toggleOne(r.id)}
+                    className={cn(
+                      "absolute right-2 bottom-2 z-10 flex h-7 w-7 items-center justify-center rounded-md border bg-black/70 backdrop-blur transition",
+                      isSelected ? "border-gold text-gold" : "border-white/30 text-white/70 hover:text-white",
+                    )}
+                    title={isSelected ? "Remover da seleção" : "Selecionar"}
+                  >
+                    {isSelected ? <CheckSquare size={14} /> : <Square size={14} />}
+                  </button>
+
                   {r.videos?.thumbnail_url ? (
                     <img src={r.videos.thumbnail_url} alt="" className="h-full w-full object-cover opacity-80" />
                   ) : (
@@ -147,6 +236,32 @@ export default function MyEdits() {
           })}
         </div>
       )}
+
+      <AlertDialog open={confirmMode !== null} onOpenChange={(open) => !open && setConfirmMode(null)}>
+        <AlertDialogContent>
+          <AlertDialogHeader>
+            <AlertDialogTitle>
+              {confirmMode === "all" ? "Excluir todos os projetos?" : "Excluir projetos selecionados?"}
+            </AlertDialogTitle>
+            <AlertDialogDescription>
+              {confirmMode === "all"
+                ? "Tem certeza que deseja excluir todos os projetos de edição? Essa ação não poderá ser desfeita."
+                : `Tem certeza que deseja excluir ${selected.size} projeto(s) selecionado(s)? Essa ação não poderá ser desfeita.`}
+            </AlertDialogDescription>
+          </AlertDialogHeader>
+          <AlertDialogFooter>
+            <AlertDialogCancel disabled={deleting}>Cancelar</AlertDialogCancel>
+            <AlertDialogAction
+              onClick={(e) => { e.preventDefault(); runBulkDelete(); }}
+              disabled={deleting}
+              className="bg-destructive text-destructive-foreground hover:bg-destructive/90"
+            >
+              {deleting ? <Loader2 size={14} className="mr-1.5 animate-spin" /> : <Trash2 size={14} className="mr-1.5" />}
+              {confirmMode === "all" ? "Excluir todos" : "Excluir selecionados"}
+            </AlertDialogAction>
+          </AlertDialogFooter>
+        </AlertDialogContent>
+      </AlertDialog>
     </div>
   );
 }
