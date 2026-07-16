@@ -151,11 +151,89 @@ export default function Finished() {
     document.body.appendChild(a); a.click(); a.remove();
   };
 
-  const remove = async (v: FinishedVideo) => {
-    if (!confirm(`Excluir "${v.filename}"?`)) return;
-    if (v.processed_path) await supabase.storage.from(BUCKET).remove([v.processed_path]);
-    await supabase.from("videos").delete().eq("id", v.id);
+  const removeMany = async (ids: string[]) => {
+    if (!videos || ids.length === 0) return;
+    const targets = videos.filter((v) => ids.includes(v.id));
+    const paths = targets.map((v) => v.processed_path).filter(Boolean) as string[];
+    if (paths.length) {
+      const { error: sErr } = await supabase.storage.from(BUCKET).remove(paths);
+      if (sErr) console.warn("[Finished] storage remove failed", sErr);
+    }
+    const { error } = await supabase.from("videos").delete().in("id", ids);
+    if (error) return toast.error(error.message);
+    toast.success(`${ids.length} vídeo(s) excluído(s)`);
+    setSelected(new Set());
     load();
+  };
+
+  const askRemoveOne = (id: string) => { setPendingRemoveId(id); setConfirmMode("one"); };
+
+  const runConfirmedDelete = async () => {
+    if (!videos) { setConfirmMode(null); return; }
+    setBulkBusy(true);
+    let ids: string[] = [];
+    if (confirmMode === "all") ids = videos.map((v) => v.id);
+    else if (confirmMode === "selection") ids = Array.from(selected);
+    else if (confirmMode === "one" && pendingRemoveId) ids = [pendingRemoveId];
+    await removeMany(ids);
+    setBulkBusy(false);
+    setConfirmMode(null);
+    setPendingRemoveId(null);
+  };
+
+  const toggleOne = (id: string) => setSelected((prev) => {
+    const n = new Set(prev); if (n.has(id)) n.delete(id); else n.add(id); return n;
+  });
+  const allSelected = useMemo(
+    () => !!videos && videos.length > 0 && selected.size === videos.length, [videos, selected]);
+  const toggleAll = () => {
+    if (!videos) return;
+    setSelected(allSelected ? new Set() : new Set(videos.map((v) => v.id)));
+  };
+
+  const downloadAll = async () => {
+    if (!videos || videos.length === 0) return;
+    const targets = selected.size > 0
+      ? videos.filter((v) => selected.has(v.id))
+      : videos;
+    if (targets.length === 0) return;
+    if (targets.length === 1) return download(targets[0]);
+    setZipBusy(true);
+    try {
+      const zip = new JSZip();
+      const usedNames = new Set<string>();
+      let done = 0;
+      for (const v of targets) {
+        if (!v.processed_path) continue;
+        const { data, error } = await supabase.storage.from(BUCKET)
+          .createSignedUrl(v.processed_path, 60 * 10);
+        if (error || !data?.signedUrl) continue;
+        const res = await fetch(data.signedUrl);
+        if (!res.ok) continue;
+        const blob = await res.blob();
+        let name = v.filename;
+        let i = 1;
+        while (usedNames.has(name)) {
+          name = v.filename.replace(/\.mp4$/i, `_${i}.mp4`); i++;
+        }
+        usedNames.add(name);
+        zip.file(name, blob);
+        done++;
+        toast.message(`Preparando ZIP… (${done}/${targets.length})`);
+      }
+      const out = await zip.generateAsync({ type: "blob" });
+      const url = URL.createObjectURL(out);
+      const a = document.createElement("a");
+      const stamp = format(new Date(), "yyyyMMdd-HHmm");
+      a.href = url; a.download = `videos-prontos-${stamp}.zip`;
+      document.body.appendChild(a); a.click(); a.remove();
+      URL.revokeObjectURL(url);
+      toast.success(`ZIP com ${done} vídeo(s) baixado`);
+    } catch (e: any) {
+      toast.error(e?.message ?? "Falha ao gerar ZIP");
+    } finally {
+      setZipBusy(false);
+    }
   };
 
   const copyText = async (text: string, label: string) => {
