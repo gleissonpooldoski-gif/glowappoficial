@@ -3,8 +3,11 @@ import { useNavigate, useParams } from "react-router-dom";
 import {
   Type, Image as ImageIcon, Sparkles, Video, Square, Captions,
   Save, ArrowLeft, Copy, Trash2, Eye, EyeOff, Lock, Unlock,
-  ChevronUp, ChevronDown, ChevronsUp, ChevronsDown, RotateCcw, Layers,
+  ChevronUp, ChevronDown, ChevronsUp, ChevronsDown, RotateCcw, Layers, Wand2, Loader2,
 } from "lucide-react";
+import {
+  Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle,
+} from "@/components/ui/dialog";
 import { supabase } from "@/integrations/supabase/client";
 import { toast } from "sonner";
 import { Button } from "@/components/ui/button";
