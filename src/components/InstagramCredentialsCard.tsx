@@ -27,6 +27,7 @@ const STATUS_LABEL: Record<string, string> = {
   TOKEN_EXPIRED: "❌ Token expirado",
   IG_ID_INVALID: "❌ Instagram Business ID inválido",
   PERMISSION_MISSING: "❌ Permissão insuficiente",
+  API_BLOCKED: "🚫 Bloqueado pela API — necessita reautenticação",
   EMPTY: "— Campos vazios",
   UNKNOWN_ERROR: "❌ Erro ao validar",
 };
