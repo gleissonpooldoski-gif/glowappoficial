@@ -36,6 +36,19 @@ function AccountScheduleEditor({ account, label }: { account: InstagramAccount; 
   const [newTime, setNewTime] = useState("");
   const [loading, setLoading] = useState(true);
   const [saving, setSaving] = useState(false);
+  const [seqDate, setSeqDate] = useState("");
+  const [seqTime, setSeqTime] = useState("");
+  const [seqStartAt, setSeqStartAt] = useState<string | null>(null);
+  const [nextSlot, setNextSlot] = useState<Date | null>(null);
+
+  const loadNextSlot = async () => {
+    try {
+      const n = await findNextSlot(account);
+      setNextSlot(n);
+    } catch {
+      setNextSlot(null);
+    }
+  };
 
   useEffect(() => {
     (async () => {
@@ -44,13 +57,19 @@ function AccountScheduleEditor({ account, label }: { account: InstagramAccount; 
         if (sched) {
           setTimes(sched.times.length ? sched.times : DEFAULT_TIMES);
           setPerDay(sched.posts_per_day || 5);
+          setSeqStartAt(sched.sequence_start_at);
+          const { date, time } = toLocalInputValue(sched.sequence_start_at);
+          setSeqDate(date);
+          setSeqTime(time);
         }
+        await loadNextSlot();
       } catch (e: any) {
         console.error(e);
       } finally {
         setLoading(false);
       }
     })();
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [account]);
 
   const add = () => {
@@ -72,11 +91,23 @@ function AccountScheduleEditor({ account, label }: { account: InstagramAccount; 
     setTimes(next);
   };
 
+  const buildSeqIso = (): string | null => {
+    if (!seqDate || !seqTime) return null;
+    const [y, mo, d] = seqDate.split("-").map(Number);
+    const [h, mi] = seqTime.split(":").map(Number);
+    const dt = new Date(y, (mo ?? 1) - 1, d ?? 1, h ?? 0, mi ?? 0, 0, 0);
+    if (isNaN(dt.getTime())) return null;
+    return dt.toISOString();
+  };
+
   const save = async () => {
     setSaving(true);
     try {
-      await upsertSchedule({ account, times, posts_per_day: perDay });
-      toast.success(`Horários salvos: ${label}`);
+      const sequence_start_at = buildSeqIso();
+      await upsertSchedule({ account, times, posts_per_day: perDay, sequence_start_at });
+      setSeqStartAt(sequence_start_at);
+      await loadNextSlot();
+      toast.success(`Configurações salvas: ${label}`);
     } catch (e: any) {
       toast.error(e?.message ?? "Erro ao salvar");
     } finally {
@@ -84,7 +115,24 @@ function AccountScheduleEditor({ account, label }: { account: InstagramAccount; 
     }
   };
 
+  const resetSequence = async () => {
+    setSaving(true);
+    try {
+      await upsertSchedule({ account, times, posts_per_day: perDay, sequence_start_at: null });
+      setSeqDate("");
+      setSeqTime("");
+      setSeqStartAt(null);
+      await loadNextSlot();
+      toast.success("Início da sequência removido");
+    } catch (e: any) {
+      toast.error(e?.message ?? "Erro ao redefinir");
+    } finally {
+      setSaving(false);
+    }
+  };
+
   if (loading) return null;
+
 
   return (
     <div className="rounded-lg border border-border/50 p-4 space-y-4">
