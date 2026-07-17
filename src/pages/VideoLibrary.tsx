@@ -351,27 +351,53 @@ export default function VideoLibrary() {
     const idSet = new Set(ids);
     const snapshot = videos;
     try {
-      const targets = (videos ?? []).filter((v) => idSet.has(v.id));
+      const visibleTargets = (videos ?? []).filter((v) => idSet.has(v.id));
       // 1) Optimistic UI: remove immediately from the list.
       setVideos((prev) => (prev ? prev.filter((v) => !idSet.has(v.id)) : prev));
 
-      // 2) Clean up related render_jobs (FK is SET NULL, so purge explicitly).
+      // 2) Expand deletion to include duplicate rows sharing the same file_hash
+      //    within the same project. Without this, dedup on load() resurfaces a
+      //    sibling upload and the video appears to "come back" after refresh.
+      const hashes = Array.from(
+        new Set(visibleTargets.map((v) => v.file_hash).filter(Boolean) as string[])
+      );
+      const projectIds = Array.from(
+        new Set(visibleTargets.map((v) => v.project_id).filter(Boolean) as string[])
+      );
+      let allIds = new Set(ids);
+      let allTargets = [...visibleTargets];
+      if (hashes.length > 0 && projectIds.length > 0) {
+        const { data: siblings } = await supabase
+          .from("videos")
+          .select("id, original_path, thumbnail_path, file_hash, project_id")
+          .in("file_hash", hashes)
+          .in("project_id", projectIds);
+        (siblings ?? []).forEach((s: any) => {
+          if (!allIds.has(s.id)) {
+            allIds.add(s.id);
+            allTargets.push(s as Video);
+          }
+        });
+      }
+      const finalIds = Array.from(allIds);
+
+      // 3) Clean up related render_jobs (FK is SET NULL, so purge explicitly).
       try {
-        await (supabase as any).from("render_jobs").delete().in("video_id", ids);
+        await (supabase as any).from("render_jobs").delete().in("video_id", finalIds);
       } catch (e) {
         console.warn("[VideoLibrary] render_jobs cleanup failed", e);
       }
 
-      // 3) Delete DB rows first (cascades edits + processing_queue).
+      // 4) Delete DB rows (cascades edits + processing_queue).
       const chunk = 100;
-      for (let i = 0; i < ids.length; i += chunk) {
-        const slice = ids.slice(i, i + chunk);
+      for (let i = 0; i < finalIds.length; i += chunk) {
+        const slice = finalIds.slice(i, i + chunk);
         const { error } = await supabase.from("videos").delete().in("id", slice);
         if (error) throw error;
       }
 
-      // 4) Best-effort storage cleanup (originals + thumbnails).
-      const paths = targets
+      // 5) Best-effort storage cleanup (originals + thumbnails).
+      const paths = allTargets
         .flatMap((v) => [v.original_path, v.thumbnail_path])
         .filter(Boolean) as string[];
       for (let i = 0; i < paths.length; i += chunk) {
@@ -381,8 +407,9 @@ export default function VideoLibrary() {
         if (sErr) console.warn("[VideoLibrary] storage remove failed", sErr);
       }
 
-      targets.forEach((v) => v.file_hash && seenHashes.current.delete(v.file_hash));
-      toast.success(ids.length === 1 ? "Vídeo excluído" : `${ids.length} vídeos excluídos`);
+      allTargets.forEach((v) => v.file_hash && seenHashes.current.delete(v.file_hash));
+      const shown = visibleTargets.length;
+      toast.success(shown === 1 ? "Vídeo excluído" : `${shown} vídeos excluídos`);
       setSelected(new Set());
       // Refresh in background to reconcile counts.
       void load();
