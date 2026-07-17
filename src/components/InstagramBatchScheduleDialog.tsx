@@ -171,6 +171,51 @@ export default function InstagramBatchScheduleDialog({ open, onOpenChange, video
             </Select>
           </div>
 
+          <div className="space-y-2 rounded-lg border border-border/50 bg-background/40 p-3">
+            <div className="flex items-center gap-1">
+              <Button
+                type="button" size="sm"
+                variant={startMode === "auto" ? "default" : "ghost"}
+                className={startMode === "auto" ? "bg-gold-gradient text-black h-8" : "h-8"}
+                onClick={() => setStartMode("auto")}
+                disabled={busy}
+              >
+                <Wand2 size={12} className="mr-1" /> Automático
+              </Button>
+              <Button
+                type="button" size="sm"
+                variant={startMode === "manual" ? "default" : "ghost"}
+                className={startMode === "manual" ? "bg-gold-gradient text-black h-8" : "h-8"}
+                onClick={() => setStartMode("manual")}
+                disabled={busy}
+              >
+                <Hand size={12} className="mr-1" /> Começar em…
+              </Button>
+            </div>
+            {startMode === "auto" ? (
+              <div className="text-[11px] text-muted-foreground">
+                O sistema encontra sozinho o próximo horário livre da grade.
+              </div>
+            ) : (
+              <>
+                <div className="grid grid-cols-2 gap-2">
+                  <div className="space-y-1.5">
+                    <Label className="text-xs">Data inicial</Label>
+                    <Input type="date" value={startDate} onChange={(e) => setStartDate(e.target.value)} disabled={busy} />
+                  </div>
+                  <div className="space-y-1.5">
+                    <Label className="text-xs">Hora inicial</Label>
+                    <Input type="time" value={startTime} onChange={(e) => setStartTime(e.target.value)} disabled={busy} />
+                  </div>
+                </div>
+                <div className="text-[11px] text-muted-foreground">
+                  Este é o primeiro slot. Os próximos vídeos seguem a grade a partir daqui, pulando horários já ocupados.
+                </div>
+              </>
+            )}
+          </div>
+
+
           <div className="rounded-lg border border-border/50 bg-background/40 p-3 space-y-2 text-xs">
             <div className="flex items-center justify-between">
               <span className="font-medium">Resumo do lote</span>
