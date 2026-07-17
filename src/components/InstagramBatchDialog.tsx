@@ -1,13 +1,14 @@
 import { useState } from "react";
-import { Loader2, Layers, Instagram } from "lucide-react";
+import { Loader2, Layers, Instagram, Lock } from "lucide-react";
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter, DialogDescription } from "@/components/ui/dialog";
 import { Button } from "@/components/ui/button";
 import { Label } from "@/components/ui/label";
 import { Textarea } from "@/components/ui/textarea";
+import { Badge } from "@/components/ui/badge";
 import { Progress } from "@/components/ui/progress";
-import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { toast } from "sonner";
-import { ACCOUNTS, InstagramAccount, publishInstagram, friendlyError } from "@/lib/instagram";
+import { publishInstagram, friendlyError, platformFromProject, PLATFORM_LABEL, InstagramAccount } from "@/lib/instagram";
+import { useActiveProject } from "@/context/ProjectContext";
 
 type Props = {
   open: boolean;
@@ -17,7 +18,16 @@ type Props = {
 };
 
 export default function InstagramBatchDialog({ open, onOpenChange, videoIds, onDone }: Props) {
-  const [account, setAccount] = useState<InstagramAccount>("resenha");
+  const { activeProject } = useActiveProject();
+  const account: InstagramAccount | null = platformFromProject(activeProject);
+  const platformLabel = account ? PLATFORM_LABEL[account] : "—";
+  const platformClass =
+    account === "frame"
+      ? "bg-blue-500/15 text-blue-300 border-blue-400/40"
+      : account === "resenha"
+      ? "bg-purple-500/15 text-purple-300 border-purple-400/40"
+      : "bg-muted text-muted-foreground border-border";
+
   const [caption, setCaption] = useState("");
   const [hashtags, setHashtags] = useState("");
   const [busy, setBusy] = useState(false);
@@ -25,7 +35,9 @@ export default function InstagramBatchDialog({ open, onOpenChange, videoIds, onD
   const [errors, setErrors] = useState<string[]>([]);
 
   const run = async () => {
+    if (!account) { toast.error("Selecione um projeto ativo (Frame ou Resenha)."); return; }
     if (videoIds.length === 0) return;
+    if (!confirm(`Estas ${videoIds.length} publicações serão enviadas agora ao projeto ${platformLabel}. Confirmar?`)) return;
     setBusy(true); setDone(0); setErrors([]);
     for (let i = 0; i < videoIds.length; i++) {
       const id = videoIds[i];
@@ -51,21 +63,27 @@ export default function InstagramBatchDialog({ open, onOpenChange, videoIds, onD
             <Layers size={16} className="text-gold" /> Publicação em lote
           </DialogTitle>
           <DialogDescription>
-            {videoIds.length} vídeo(s) serão publicados um por vez na conta escolhida.
+            {videoIds.length} vídeo(s) serão publicados um por vez no projeto ativo.
           </DialogDescription>
         </DialogHeader>
 
         <div className="space-y-3">
           <div className="space-y-1.5">
-            <Label className="text-xs">Conta</Label>
-            <Select value={account} onValueChange={(v) => setAccount(v as InstagramAccount)} disabled={busy}>
-              <SelectTrigger><SelectValue /></SelectTrigger>
-              <SelectContent>
-                {ACCOUNTS.map((a) => (
-                  <SelectItem key={a.value} value={a.value}>{a.label}</SelectItem>
-                ))}
-              </SelectContent>
-            </Select>
+            <Label className="text-xs flex items-center gap-1"><Lock size={10} /> Publicando em</Label>
+            <div className="flex items-center gap-2 rounded-md border border-border/60 bg-background/40 px-3 py-2">
+              <Instagram size={14} className={account === "frame" ? "text-blue-300" : account === "resenha" ? "text-purple-300" : "text-muted-foreground"} />
+              <Badge variant="outline" className={`text-[10px] font-semibold ${platformClass}`}>
+                📱 {platformLabel}
+              </Badge>
+              <span className="text-[11px] text-muted-foreground ml-1">
+                {activeProject ? `Projeto ativo: ${activeProject.name}` : "Nenhum projeto ativo selecionado"}
+              </span>
+            </div>
+            {!account && (
+              <p className="text-[11px] text-destructive">
+                Selecione um projeto ativo (Frame ou Resenha) no menu superior para publicar.
+              </p>
+            )}
           </div>
           <div className="space-y-1.5">
             <Label className="text-xs">Legenda (aplicada a todos)</Label>
@@ -95,9 +113,9 @@ export default function InstagramBatchDialog({ open, onOpenChange, videoIds, onD
 
         <DialogFooter>
           <Button variant="ghost" disabled={busy} onClick={() => onOpenChange(false)}>Fechar</Button>
-          <Button onClick={run} disabled={busy || videoIds.length === 0} className="bg-gold-gradient text-black">
+          <Button onClick={run} disabled={busy || !account || videoIds.length === 0} className="bg-gold-gradient text-black">
             {busy ? <Loader2 size={14} className="mr-1.5 animate-spin" /> : <Instagram size={14} className="mr-1.5" />}
-            Iniciar
+            Confirmar publicação
           </Button>
         </DialogFooter>
       </DialogContent>
