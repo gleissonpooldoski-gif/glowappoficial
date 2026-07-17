@@ -1,8 +1,9 @@
 import { useEffect, useMemo, useState } from "react";
-import { Loader2, CalendarClock, RefreshCw, Sparkles } from "lucide-react";
+import { Loader2, CalendarClock, RefreshCw, Sparkles, Wand2, Hand } from "lucide-react";
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter, DialogDescription } from "@/components/ui/dialog";
 import { Button } from "@/components/ui/button";
 import { Label } from "@/components/ui/label";
+import { Input } from "@/components/ui/input";
 import { Progress } from "@/components/ui/progress";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { toast } from "sonner";
@@ -43,11 +44,31 @@ export default function InstagramBatchScheduleDialog({ open, onOpenChange, video
   const [busy, setBusy] = useState(false);
   const [done, setDone] = useState(0);
   const [errors, setErrors] = useState<string[]>([]);
+  const [startMode, setStartMode] = useState<"auto" | "manual">("auto");
+  const initial = useMemo(() => new Date(Date.now() + 60 * 60 * 1000), []);
+  const [startDate, setStartDate] = useState(initial.toISOString().slice(0, 10));
+  const [startTime, setStartTime] = useState(initial.toTimeString().slice(0, 5));
+
+  const parseStart = (): Date | null => {
+    if (startMode !== "manual") return null;
+    if (!startDate || !startTime) return null;
+    const [y, m, d] = startDate.split("-").map(Number);
+    const [hh, mm] = startTime.split(":").map(Number);
+    const dt = new Date(y, (m ?? 1) - 1, d ?? 1, hh ?? 0, mm ?? 0, 0, 0);
+    if (isNaN(dt.getTime())) return null;
+    return dt;
+  };
 
   const compute = async () => {
     setSlotBusy(true);
     try {
-      const s = await findNextSlots(account, videos.length);
+      const startFrom = parseStart();
+      if (startMode === "manual" && startFrom && startFrom.getTime() < Date.now() + 60_000) {
+        toast.error("Selecione uma data/hora futura para começar.");
+        setSlots([]);
+        return;
+      }
+      const s = await findNextSlots(account, videos.length, { startFrom });
       setSlots(s);
     } catch (e: any) {
       toast.error(e?.message ?? "Falha ao calcular horários");
@@ -61,7 +82,7 @@ export default function InstagramBatchScheduleDialog({ open, onOpenChange, video
     setDone(0); setErrors([]);
     void compute();
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [open, account, videos.length]);
+  }, [open, account, videos.length, startMode, startDate, startTime]);
 
   const first = slots[0];
   const last = slots[slots.length - 1];
@@ -149,6 +170,51 @@ export default function InstagramBatchScheduleDialog({ open, onOpenChange, video
               </SelectContent>
             </Select>
           </div>
+
+          <div className="space-y-2 rounded-lg border border-border/50 bg-background/40 p-3">
+            <div className="flex items-center gap-1">
+              <Button
+                type="button" size="sm"
+                variant={startMode === "auto" ? "default" : "ghost"}
+                className={startMode === "auto" ? "bg-gold-gradient text-black h-8" : "h-8"}
+                onClick={() => setStartMode("auto")}
+                disabled={busy}
+              >
+                <Wand2 size={12} className="mr-1" /> Automático
+              </Button>
+              <Button
+                type="button" size="sm"
+                variant={startMode === "manual" ? "default" : "ghost"}
+                className={startMode === "manual" ? "bg-gold-gradient text-black h-8" : "h-8"}
+                onClick={() => setStartMode("manual")}
+                disabled={busy}
+              >
+                <Hand size={12} className="mr-1" /> Começar em…
+              </Button>
+            </div>
+            {startMode === "auto" ? (
+              <div className="text-[11px] text-muted-foreground">
+                O sistema encontra sozinho o próximo horário livre da grade.
+              </div>
+            ) : (
+              <>
+                <div className="grid grid-cols-2 gap-2">
+                  <div className="space-y-1.5">
+                    <Label className="text-xs">Data inicial</Label>
+                    <Input type="date" value={startDate} onChange={(e) => setStartDate(e.target.value)} disabled={busy} />
+                  </div>
+                  <div className="space-y-1.5">
+                    <Label className="text-xs">Hora inicial</Label>
+                    <Input type="time" value={startTime} onChange={(e) => setStartTime(e.target.value)} disabled={busy} />
+                  </div>
+                </div>
+                <div className="text-[11px] text-muted-foreground">
+                  Este é o primeiro slot. Os próximos vídeos seguem a grade a partir daqui, pulando horários já ocupados.
+                </div>
+              </>
+            )}
+          </div>
+
 
           <div className="rounded-lg border border-border/50 bg-background/40 p-3 space-y-2 text-xs">
             <div className="flex items-center justify-between">
