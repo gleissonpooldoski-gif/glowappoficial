@@ -350,7 +350,7 @@ export default function InstagramPublishDialog({
 
         <DialogFooter>
           <Button variant="ghost" disabled={busy} onClick={() => onOpenChange(false)}>Cancelar</Button>
-          <Button onClick={submit} disabled={busy || genBusy} className="bg-gold-gradient text-black">
+          <Button onClick={submit} disabled={busy || genBusy || !account} className="bg-gold-gradient text-black">
             {busy ? <Loader2 size={14} className="mr-1.5 animate-spin" /> :
               mode === "now" ? <Send size={14} className="mr-1.5" /> : <CalendarClock size={14} className="mr-1.5" />}
             {mode === "now" ? "Publicar" : "Agendar"}
