@@ -148,7 +148,13 @@ export async function findNextSlot(
 export async function findNextSlots(
   account: InstagramAccount,
   count: number,
-  opts: { category?: string | null; horizonDays?: number } = {},
+  opts: {
+    category?: string | null;
+    horizonDays?: number;
+    /** Se informado, o primeiro slot será exatamente este horário (se livre) e os
+     *  demais seguirão a grade a partir dele. */
+    startFrom?: Date | null;
+  } = {},
 ): Promise<Date[]> {
   if (count <= 0) return [];
   const schedule = await getSchedule(account, opts.category ?? null)
@@ -179,12 +185,32 @@ export async function findNextSlots(
   }
 
   const results: Date[] = [];
-  const minStart = Date.now() + 60_000;
+  const startBase = opts.startFrom ?? null;
+  // Mínimo é 1min à frente. Se o usuário forneceu um startFrom, ele passa a ser
+  // o piso — nenhum slot pode ser anterior a ele.
+  let minStart = Date.now() + 60_000;
+  if (startBase) minStart = Math.max(minStart, startBase.getTime());
+
+  // Se houver startFrom, o primeiro slot da sequência é exatamente esse horário
+  // (desde que não conflite com algo já reservado).
+  if (startBase) {
+    const occupied = bookedTimes.some(
+      (ts) => Math.abs(ts - startBase.getTime()) < 5 * 60_000,
+    );
+    if (!occupied) {
+      results.push(new Date(startBase));
+      bookedTimes.push(startBase.getTime());
+      const key = ymd(startBase);
+      bookedPerDay.set(key, (bookedPerDay.get(key) ?? 0) + 1);
+    }
+  }
+
+  const startDay = new Date(startBase ?? new Date());
+  startDay.setHours(0, 0, 0, 0);
 
   for (let dayOffset = 0; dayOffset < horizon && results.length < count; dayOffset++) {
-    const day = new Date();
+    const day = new Date(startDay);
     day.setDate(day.getDate() + dayOffset);
-    day.setHours(0, 0, 0, 0);
     const key = ymd(day);
     let used = bookedPerDay.get(key) ?? 0;
     if (used >= perDay) continue;
@@ -195,6 +221,8 @@ export async function findNextSlots(
       const [h, m] = t.split(":").map(Number);
       const slot = new Date(day);
       slot.setHours(h, m, 0, 0);
+      // Com startFrom, os slots subsequentes devem vir ESTRITAMENTE depois dele.
+      if (startBase && slot.getTime() <= startBase.getTime()) continue;
       if (slot.getTime() < minStart) continue;
       const occupied = bookedTimes.some(
         (ts) => Math.abs(ts - slot.getTime()) < 5 * 60_000,
