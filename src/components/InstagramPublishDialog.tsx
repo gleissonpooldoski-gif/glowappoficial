@@ -192,15 +192,21 @@ export default function InstagramPublishDialog({
 
         <div className="space-y-3">
           <div className="space-y-1.5">
-            <Label className="text-xs">Conta</Label>
-            <Select value={account} onValueChange={(v) => setAccount(v as InstagramAccount)}>
-              <SelectTrigger><SelectValue /></SelectTrigger>
-              <SelectContent>
-                {ACCOUNTS.map((a) => (
-                  <SelectItem key={a.value} value={a.value}>{a.label}</SelectItem>
-                ))}
-              </SelectContent>
-            </Select>
+            <Label className="text-xs flex items-center gap-1"><Lock size={10} /> Publicando em</Label>
+            <div className="flex items-center gap-2 rounded-md border border-border/60 bg-background/40 px-3 py-2">
+              <Instagram size={14} className={account === "frame" ? "text-blue-300" : account === "resenha" ? "text-purple-300" : "text-muted-foreground"} />
+              <Badge variant="outline" className={`text-[10px] font-semibold ${platformClass}`}>
+                📱 {platformLabel}
+              </Badge>
+              <span className="text-[11px] text-muted-foreground ml-1">
+                {activeProject ? `Projeto ativo: ${activeProject.name}` : "Nenhum projeto ativo selecionado"}
+              </span>
+            </div>
+            {!account && (
+              <p className="text-[11px] text-destructive">
+                Selecione um projeto ativo (Frame ou Resenha) no menu superior para publicar.
+              </p>
+            )}
           </div>
 
           <div className="space-y-1.5">
