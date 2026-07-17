@@ -484,7 +484,7 @@ export default function Finished() {
                       size="sm"
                       variant="outline"
                       className="h-7 flex-1 text-[11px]"
-                      onClick={() => setIgDialog({ open: true, mode: "schedule", videoId: v.id, caption: cap?.caption, hashtags: cap ? flatHashtags(cap) : "", meta: { filename: v.filename, templateName: v.templateName ?? null, projectName: v.projectName ?? null, projectCategory: v.projectCategory ?? null } })}
+                      onClick={() => setIgDialog({ open: true, mode: "schedule", videoId: v.id, caption: cap?.caption, hashtags: cap ? flatHashtags(cap) : "", meta: { filename: v.filename, templateName: v.templateName ?? null, projectName: v.projectName ?? null, projectCategory: v.projectCategory ?? null, videoUrl: urls[v.id] ?? null } })}
                     >
                       <CalendarClock size={12} className="mr-1" /> Agendar
                     </Button>
