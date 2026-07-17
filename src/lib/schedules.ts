@@ -116,19 +116,37 @@ export async function findNextSlot(
     bookedPerDay.set(key, (bookedPerDay.get(key) ?? 0) + 1);
   }
 
-  const minStart = Date.now() + 60_000; // pelo menos 1 min no futuro
+  // Âncora automática: continua a partir do ÚLTIMO agendado da conta.
+  let anchor = Date.now() + 60_000;
+  const { data: lastRow } = await supabase
+    .from("instagram_posts" as any)
+    .select("scheduled_at")
+    .eq("account", account)
+    .in("status", ["AGENDADO", "PUBLICANDO"])
+    .not("scheduled_at", "is", null)
+    .order("scheduled_at", { ascending: false })
+    .limit(1)
+    .maybeSingle();
+  const lastIso = (lastRow as any)?.scheduled_at as string | undefined;
+  const hasAnchor = !!(lastIso && new Date(lastIso).getTime() > Date.now());
+  if (hasAnchor) anchor = Math.max(anchor, new Date(lastIso!).getTime());
+
+  const startDay = new Date(hasAnchor ? new Date(lastIso!) : new Date());
+  startDay.setHours(0, 0, 0, 0);
+
   for (let dayOffset = 0; dayOffset < horizon; dayOffset++) {
-    const day = new Date();
+    const day = new Date(startDay);
     day.setDate(day.getDate() + dayOffset);
-    day.setHours(0, 0, 0, 0);
     const key = ymd(day);
-    if ((bookedPerDay.get(key) ?? 0) >= perDay) continue;
+    // Com âncora, ignoramos o cap de posts_per_day.
+    if (!hasAnchor && (bookedPerDay.get(key) ?? 0) >= perDay) continue;
+
 
     for (const t of times) {
       const [h, m] = t.split(":").map(Number);
       const slot = new Date(day);
       slot.setHours(h, m, 0, 0);
-      if (slot.getTime() < minStart) continue;
+      if (slot.getTime() <= anchor) continue;
       // Considera ocupado se houver algo em janela de ±5min.
       const occupied = Array.from(bookedTimes).some(
         (ts) => Math.abs(ts - slot.getTime()) < 5 * 60_000,
@@ -185,22 +203,45 @@ export async function findNextSlots(
   }
 
   const results: Date[] = [];
-  const startBase = opts.startFrom ?? null;
-  // Mínimo é 1min à frente. Se o usuário forneceu um startFrom, ele passa a ser
-  // o piso — nenhum slot pode ser anterior a ele.
+  let startBase = opts.startFrom ?? null;
+
+  // MODO AUTOMÁTICO: se não veio startFrom, usa como âncora o ÚLTIMO post já
+  // agendado/publicando da conta. Assim o próximo vídeo cai no slot da grade
+  // logo depois do último agendamento, respeitando a sequência que o usuário
+  // já definiu — mesmo que existam "buracos" livres no meio.
+  if (!startBase) {
+    const { data: lastRow } = await supabase
+      .from("instagram_posts" as any)
+      .select("scheduled_at")
+      .eq("account", account)
+      .in("status", ["AGENDADO", "PUBLICANDO"])
+      .not("scheduled_at", "is", null)
+      .order("scheduled_at", { ascending: false })
+      .limit(1)
+      .maybeSingle();
+    const lastIso = (lastRow as any)?.scheduled_at as string | undefined;
+    if (lastIso) {
+      const lastDate = new Date(lastIso);
+      if (lastDate.getTime() > Date.now()) startBase = lastDate;
+    }
+  }
+
+  // Mínimo é 1min à frente. Se há uma âncora (manual ou último agendado),
+  // nenhum slot pode ser anterior/igual a ela.
   let minStart = Date.now() + 60_000;
   if (startBase) minStart = Math.max(minStart, startBase.getTime());
 
-  // Se houver startFrom, o primeiro slot da sequência é exatamente esse horário
-  // (desde que não conflite com algo já reservado).
-  if (startBase) {
+  // Se veio startFrom EXPLÍCITO (modo manual), o primeiro slot é exatamente
+  // esse horário. No modo automático (âncora derivada do último post), a
+  // âncora NÃO ocupa um slot — apenas define de onde continuar.
+  if (opts.startFrom) {
     const occupied = bookedTimes.some(
-      (ts) => Math.abs(ts - startBase.getTime()) < 5 * 60_000,
+      (ts) => Math.abs(ts - opts.startFrom!.getTime()) < 5 * 60_000,
     );
     if (!occupied) {
-      results.push(new Date(startBase));
-      bookedTimes.push(startBase.getTime());
-      const key = ymd(startBase);
+      results.push(new Date(opts.startFrom));
+      bookedTimes.push(opts.startFrom.getTime());
+      const key = ymd(opts.startFrom);
       bookedPerDay.set(key, (bookedPerDay.get(key) ?? 0) + 1);
     }
   }
@@ -208,9 +249,8 @@ export async function findNextSlots(
   const startDay = new Date(startBase ?? new Date());
   startDay.setHours(0, 0, 0, 0);
 
-  // Quando o usuário define um startFrom, ele quer preencher a grade a partir
-  // dali — ignoramos o cap de posts_per_day para não pular dias que já estejam
-  // "cheios" por esse limite (o que importa são os slots realmente ocupados).
+  // Quando há âncora, preenchemos a grade ignorando o cap de posts_per_day
+  // — o que importa são os slots realmente ocupados.
   const ignorePerDayCap = !!startBase;
 
   for (let dayOffset = 0; dayOffset < horizon && results.length < count; dayOffset++) {
