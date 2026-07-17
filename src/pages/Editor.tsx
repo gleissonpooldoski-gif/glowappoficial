@@ -632,11 +632,31 @@ export default function Editor() {
         },
       });
 
-      toast.success("Renderização iniciada em segundo plano. Você já pode começar outro vídeo.");
+      toast.success("Renderização iniciada em segundo plano. Abrindo próximo vídeo…");
       setExporting(false);
       setExportPhase("idle");
       setExportPercent(0);
-      navigate("/videos");
+
+      // Procura o próximo projeto de edição em aberto e abre direto no editor.
+      try {
+        const { data: nextEdits } = await (supabase as any)
+          .from("edits")
+          .select("id, updated_at")
+          .eq("project_id", edit.project_id)
+          .in("status", ["draft", "editing", "failed"])
+          .neq("id", id)
+          .order("updated_at", { ascending: false })
+          .limit(1);
+        const nextId = nextEdits?.[0]?.id;
+        if (nextId) {
+          navigate(`/editor/${nextId}`);
+        } else {
+          toast.info("Nenhum outro vídeo para editar. Voltando para Meus Projetos.");
+          navigate("/edits");
+        }
+      } catch {
+        navigate("/edits");
+      }
     } catch (e: any) {
       console.error("[Editor] export failed", e);
       toast.error(e?.message ?? "Não foi possível iniciar a renderização.");
