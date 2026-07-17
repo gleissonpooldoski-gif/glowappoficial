@@ -1,24 +1,48 @@
+import { useState } from "react";
 import { useNavigate } from "react-router-dom";
 import { useRenderQueue } from "@/context/RenderQueueContext";
-import { Loader2, CheckCircle2, AlertCircle, X, Rocket } from "lucide-react";
+import { Loader2, CheckCircle2, AlertCircle, X, Rocket, ChevronLeft, ChevronRight } from "lucide-react";
 import { cn } from "@/lib/utils";
 
 export default function RenderQueueIndicator() {
   const { jobs, dismiss } = useRenderQueue();
   const navigate = useNavigate();
+  const [collapsed, setCollapsed] = useState(false);
+
   if (jobs.length === 0) return null;
 
   const active = jobs.filter((j) => j.phase !== "completed" && j.phase !== "failed").length;
 
+  if (collapsed) {
+    return (
+      <button
+        onClick={() => setCollapsed(false)}
+        className="fixed left-0 top-1/2 z-[60] -translate-y-1/2 flex items-center gap-1.5 rounded-r-lg border border-l-0 border-border/60 bg-background/95 px-2 py-3 backdrop-blur hover:bg-muted"
+        title="Mostrar renderizações"
+      >
+        <Rocket size={14} className="text-gold" />
+        <span className="rounded-full bg-gold/20 px-1.5 py-0.5 text-[10px] text-gold">{active || jobs.length}</span>
+        <ChevronRight size={12} className="text-muted-foreground" />
+      </button>
+    );
+  }
+
   return (
-    <div className="pointer-events-none fixed bottom-4 right-4 z-[60] flex w-[320px] flex-col gap-2">
+    <div className="pointer-events-none fixed bottom-4 left-4 z-[60] flex w-[280px] flex-col gap-2">
       <div className="pointer-events-auto rounded-t-lg border border-border/60 bg-background/95 px-3 py-2 backdrop-blur">
         <div className="flex items-center gap-2 text-xs font-medium">
           <Rocket size={13} className="text-gold" />
-          Renderizações em andamento
+          Renderizações
           <span className="ml-auto rounded-full bg-gold/20 px-2 py-0.5 text-[10px] text-gold">
             {active} ativo{active === 1 ? "" : "s"}
           </span>
+          <button
+            onClick={() => setCollapsed(true)}
+            className="rounded p-0.5 text-muted-foreground hover:bg-muted"
+            title="Recolher"
+          >
+            <ChevronLeft size={12} />
+          </button>
         </div>
       </div>
       <div className="pointer-events-auto max-h-[50vh] space-y-1.5 overflow-y-auto rounded-b-lg border border-t-0 border-border/60 bg-background/95 p-2 backdrop-blur">
