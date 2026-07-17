@@ -44,11 +44,31 @@ export default function InstagramBatchScheduleDialog({ open, onOpenChange, video
   const [busy, setBusy] = useState(false);
   const [done, setDone] = useState(0);
   const [errors, setErrors] = useState<string[]>([]);
+  const [startMode, setStartMode] = useState<"auto" | "manual">("auto");
+  const initial = useMemo(() => new Date(Date.now() + 60 * 60 * 1000), []);
+  const [startDate, setStartDate] = useState(initial.toISOString().slice(0, 10));
+  const [startTime, setStartTime] = useState(initial.toTimeString().slice(0, 5));
+
+  const parseStart = (): Date | null => {
+    if (startMode !== "manual") return null;
+    if (!startDate || !startTime) return null;
+    const [y, m, d] = startDate.split("-").map(Number);
+    const [hh, mm] = startTime.split(":").map(Number);
+    const dt = new Date(y, (m ?? 1) - 1, d ?? 1, hh ?? 0, mm ?? 0, 0, 0);
+    if (isNaN(dt.getTime())) return null;
+    return dt;
+  };
 
   const compute = async () => {
     setSlotBusy(true);
     try {
-      const s = await findNextSlots(account, videos.length);
+      const startFrom = parseStart();
+      if (startMode === "manual" && startFrom && startFrom.getTime() < Date.now() + 60_000) {
+        toast.error("Selecione uma data/hora futura para começar.");
+        setSlots([]);
+        return;
+      }
+      const s = await findNextSlots(account, videos.length, { startFrom });
       setSlots(s);
     } catch (e: any) {
       toast.error(e?.message ?? "Falha ao calcular horários");
@@ -62,7 +82,7 @@ export default function InstagramBatchScheduleDialog({ open, onOpenChange, video
     setDone(0); setErrors([]);
     void compute();
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [open, account, videos.length]);
+  }, [open, account, videos.length, startMode, startDate, startTime]);
 
   const first = slots[0];
   const last = slots[slots.length - 1];
