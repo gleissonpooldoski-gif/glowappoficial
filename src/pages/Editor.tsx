@@ -203,6 +203,20 @@ export default function Editor() {
   const [templateUrl, setTemplateUrl] = useState<string | null>(null);
   const [loadError, setLoadError] = useState<LoadError | null>(null);
   const [videoReady, setVideoReady] = useState(false);
+  const [changeTplOpen, setChangeTplOpen] = useState(false);
+
+  const applyTemplateChange = async ({ template: tpl, url }: ChangeTemplateResult) => {
+    if (!id) return;
+    const { error } = await (supabase as any).from("edits").update({
+      template_id: tpl.id,
+      template_url: url,
+    }).eq("id", id);
+    if (error) throw new Error(error.message);
+    setTemplate(tpl);
+    setTemplateUrl(url);
+    setEdit((prev: any) => prev ? { ...prev, template_id: tpl.id, template_url: url } : prev);
+    toast.success(`Template alterado para "${tpl.name}"`);
+  };
 
   // Áudio / playback do vídeo original
   const videoRef = useRef<HTMLVideoElement>(null);
