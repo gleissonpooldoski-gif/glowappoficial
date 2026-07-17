@@ -737,6 +737,14 @@ export default function Editor() {
               {video?.filename ?? "—"} · Template: {template?.name ?? "—"}
             </p>
           </div>
+          <Button
+            variant="outline"
+            size="sm"
+            className="ml-2 border-gold/40 text-gold hover:bg-gold/10"
+            onClick={() => setChangeTplOpen(true)}
+          >
+            <RefreshCw size={14} className="mr-1" /> Trocar Template
+          </Button>
         </div>
         <div className="flex items-center gap-2">
           <Select value={ratio} onValueChange={setRatio}>
