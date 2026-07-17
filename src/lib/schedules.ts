@@ -208,16 +208,21 @@ export async function findNextSlots(
   const startDay = new Date(startBase ?? new Date());
   startDay.setHours(0, 0, 0, 0);
 
+  // Quando o usuário define um startFrom, ele quer preencher a grade a partir
+  // dali — ignoramos o cap de posts_per_day para não pular dias que já estejam
+  // "cheios" por esse limite (o que importa são os slots realmente ocupados).
+  const ignorePerDayCap = !!startBase;
+
   for (let dayOffset = 0; dayOffset < horizon && results.length < count; dayOffset++) {
     const day = new Date(startDay);
     day.setDate(day.getDate() + dayOffset);
     const key = ymd(day);
     let used = bookedPerDay.get(key) ?? 0;
-    if (used >= perDay) continue;
+    if (!ignorePerDayCap && used >= perDay) continue;
 
     for (const t of times) {
       if (results.length >= count) break;
-      if (used >= perDay) break;
+      if (!ignorePerDayCap && used >= perDay) break;
       const [h, m] = t.split(":").map(Number);
       const slot = new Date(day);
       slot.setHours(h, m, 0, 0);
