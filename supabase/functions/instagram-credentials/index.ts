@@ -72,6 +72,7 @@ async function validateAccount(token: string, igId: string): Promise<ValidationR
     const ig = await readMeta(igRes);
     if (ig.data?.error) {
       const code = ig.data.error.code;
+      if (isApiBlocked(ig.data.error)) return { ok: false, status: "API_BLOCKED", message: `${BLOCKED_MSG} (${ig.data.error.message ?? ""})` };
       if (code === 190) return { ok: false, status: "TOKEN_EXPIRED", message: ig.data.error.message ?? "Token expirado." };
       if (code === 100 || code === 803) return { ok: false, status: "IG_ID_INVALID", message: ig.data.error.message ?? "Instagram Business ID inválido." };
       return { ok: false, status: "IG_ID_INVALID", message: ig.data.error.message ?? "Falha ao ler o Business ID." };
