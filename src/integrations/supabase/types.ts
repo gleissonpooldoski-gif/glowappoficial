@@ -374,6 +374,39 @@ export type Database = {
         }
         Relationships: []
       }
+      publish_schedules: {
+        Row: {
+          account: string
+          category: string | null
+          created_at: string
+          id: string
+          posts_per_day: number
+          times: Json
+          timezone: string
+          updated_at: string
+        }
+        Insert: {
+          account: string
+          category?: string | null
+          created_at?: string
+          id?: string
+          posts_per_day?: number
+          times?: Json
+          timezone?: string
+          updated_at?: string
+        }
+        Update: {
+          account?: string
+          category?: string | null
+          created_at?: string
+          id?: string
+          posts_per_day?: number
+          times?: Json
+          timezone?: string
+          updated_at?: string
+        }
+        Relationships: []
+      }
       render_jobs: {
         Row: {
           completed_at: string | null
