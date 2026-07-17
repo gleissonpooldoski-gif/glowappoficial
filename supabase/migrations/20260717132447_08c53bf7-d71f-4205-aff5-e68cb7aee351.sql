@@ -1,0 +1,1 @@
+ALTER TABLE public.publish_schedules ADD COLUMN IF NOT EXISTS sequence_start_at timestamptz;

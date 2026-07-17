@@ -1,5 +1,5 @@
 import { useEffect, useState } from "react";
-import { Clock, Plus, Trash2, Save, Loader2, CalendarClock } from "lucide-react";
+import { Clock, Plus, Trash2, Save, Loader2, CalendarClock, RotateCcw, Sparkles } from "lucide-react";
 import { Card, CardContent } from "@/components/ui/card";
 import { Label } from "@/components/ui/label";
 import { Input } from "@/components/ui/input";
@@ -7,7 +7,28 @@ import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
 import { toast } from "sonner";
 import { ACCOUNTS, InstagramAccount } from "@/lib/instagram";
-import { DEFAULT_TIMES, PublishSchedule, getSchedule, upsertSchedule } from "@/lib/schedules";
+import { DEFAULT_TIMES, PublishSchedule, getSchedule, upsertSchedule, findNextSlot } from "@/lib/schedules";
+
+function formatDateTimeBR(d: Date) {
+  return d.toLocaleString("pt-BR", {
+    day: "2-digit",
+    month: "2-digit",
+    year: "numeric",
+    hour: "2-digit",
+    minute: "2-digit",
+    timeZone: "America/Sao_Paulo",
+  });
+}
+
+function toLocalInputValue(iso: string | null): { date: string; time: string } {
+  if (!iso) return { date: "", time: "" };
+  const d = new Date(iso);
+  const pad = (n: number) => String(n).padStart(2, "0");
+  return {
+    date: `${d.getFullYear()}-${pad(d.getMonth() + 1)}-${pad(d.getDate())}`,
+    time: `${pad(d.getHours())}:${pad(d.getMinutes())}`,
+  };
+}
 
 function AccountScheduleEditor({ account, label }: { account: InstagramAccount; label: string }) {
   const [times, setTimes] = useState<string[]>(DEFAULT_TIMES);
@@ -15,6 +36,19 @@ function AccountScheduleEditor({ account, label }: { account: InstagramAccount; 
   const [newTime, setNewTime] = useState("");
   const [loading, setLoading] = useState(true);
   const [saving, setSaving] = useState(false);
+  const [seqDate, setSeqDate] = useState("");
+  const [seqTime, setSeqTime] = useState("");
+  const [seqStartAt, setSeqStartAt] = useState<string | null>(null);
+  const [nextSlot, setNextSlot] = useState<Date | null>(null);
+
+  const loadNextSlot = async () => {
+    try {
+      const n = await findNextSlot(account);
+      setNextSlot(n);
+    } catch {
+      setNextSlot(null);
+    }
+  };
 
   useEffect(() => {
     (async () => {
@@ -23,13 +57,19 @@ function AccountScheduleEditor({ account, label }: { account: InstagramAccount; 
         if (sched) {
           setTimes(sched.times.length ? sched.times : DEFAULT_TIMES);
           setPerDay(sched.posts_per_day || 5);
+          setSeqStartAt(sched.sequence_start_at);
+          const { date, time } = toLocalInputValue(sched.sequence_start_at);
+          setSeqDate(date);
+          setSeqTime(time);
         }
+        await loadNextSlot();
       } catch (e: any) {
         console.error(e);
       } finally {
         setLoading(false);
       }
     })();
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [account]);
 
   const add = () => {
@@ -51,11 +91,23 @@ function AccountScheduleEditor({ account, label }: { account: InstagramAccount; 
     setTimes(next);
   };
 
+  const buildSeqIso = (): string | null => {
+    if (!seqDate || !seqTime) return null;
+    const [y, mo, d] = seqDate.split("-").map(Number);
+    const [h, mi] = seqTime.split(":").map(Number);
+    const dt = new Date(y, (mo ?? 1) - 1, d ?? 1, h ?? 0, mi ?? 0, 0, 0);
+    if (isNaN(dt.getTime())) return null;
+    return dt.toISOString();
+  };
+
   const save = async () => {
     setSaving(true);
     try {
-      await upsertSchedule({ account, times, posts_per_day: perDay });
-      toast.success(`Horários salvos: ${label}`);
+      const sequence_start_at = buildSeqIso();
+      await upsertSchedule({ account, times, posts_per_day: perDay, sequence_start_at });
+      setSeqStartAt(sequence_start_at);
+      await loadNextSlot();
+      toast.success(`Configurações salvas: ${label}`);
     } catch (e: any) {
       toast.error(e?.message ?? "Erro ao salvar");
     } finally {
@@ -63,7 +115,24 @@ function AccountScheduleEditor({ account, label }: { account: InstagramAccount; 
     }
   };
 
+  const resetSequence = async () => {
+    setSaving(true);
+    try {
+      await upsertSchedule({ account, times, posts_per_day: perDay, sequence_start_at: null });
+      setSeqDate("");
+      setSeqTime("");
+      setSeqStartAt(null);
+      await loadNextSlot();
+      toast.success("Início da sequência removido");
+    } catch (e: any) {
+      toast.error(e?.message ?? "Erro ao redefinir");
+    } finally {
+      setSaving(false);
+    }
+  };
+
   if (loading) return null;
+
 
   return (
     <div className="rounded-lg border border-border/50 p-4 space-y-4">
@@ -135,6 +204,58 @@ function AccountScheduleEditor({ account, label }: { account: InstagramAccount; 
             {saving ? <Loader2 size={12} className="mr-1 animate-spin" /> : <Save size={12} className="mr-1" />}
             Salvar
           </Button>
+        </div>
+      </div>
+
+      <div className="rounded-md border border-border/50 bg-background/30 p-3 space-y-3">
+        <div className="flex items-center gap-2">
+          <Sparkles size={14} className="text-gold" />
+          <p className="text-sm font-medium">Sequência de publicações</p>
+        </div>
+        <p className="text-[11px] text-muted-foreground">
+          Defina o ponto de partida da fila. O sistema seguirá esta grade automaticamente
+          e nunca sugerirá horários anteriores ao último agendamento.
+        </p>
+
+        <div className="flex flex-wrap items-end gap-2">
+          <div className="space-y-1">
+            <Label className="text-[11px] text-muted-foreground">Começar em (data)</Label>
+            <Input
+              type="date"
+              value={seqDate}
+              onChange={(e) => setSeqDate(e.target.value)}
+              className="h-8 w-40"
+            />
+          </div>
+          <div className="space-y-1">
+            <Label className="text-[11px] text-muted-foreground">Horário</Label>
+            <Input
+              type="time"
+              value={seqTime}
+              onChange={(e) => setSeqTime(e.target.value)}
+              className="h-8 w-28"
+            />
+          </div>
+          {seqStartAt && (
+            <Button size="sm" variant="ghost" onClick={resetSequence} disabled={saving} className="h-8">
+              <RotateCcw size={12} className="mr-1" /> Redefinir
+            </Button>
+          )}
+        </div>
+
+        <div className="grid grid-cols-1 gap-1 rounded-md bg-muted/30 p-2 text-[11px] sm:grid-cols-2">
+          <div>
+            <span className="text-muted-foreground">Início configurado: </span>
+            <span className="font-medium">
+              {seqStartAt ? formatDateTimeBR(new Date(seqStartAt)) : "—"}
+            </span>
+          </div>
+          <div>
+            <span className="text-muted-foreground">Próxima publicação: </span>
+            <span className="font-medium text-gold">
+              {nextSlot ? formatDateTimeBR(nextSlot) : "—"}
+            </span>
+          </div>
         </div>
       </div>
     </div>

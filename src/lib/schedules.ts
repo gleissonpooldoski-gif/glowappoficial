@@ -9,6 +9,7 @@ export type PublishSchedule = {
   times: string[];         // ["09:00","12:30", ...] em ordem
   posts_per_day: number;
   timezone: string;
+  sequence_start_at: string | null;
   created_at: string;
   updated_at: string;
 };
@@ -43,13 +44,17 @@ export async function upsertSchedule(input: {
   category?: string | null;
   times: string[];
   posts_per_day: number;
+  sequence_start_at?: string | null;
 }) {
-  const payload = {
+  const payload: Record<string, unknown> = {
     account: input.account,
     category: input.category ?? null,
     times: normalizeTimes(input.times),
     posts_per_day: Math.max(1, Math.min(50, Math.round(input.posts_per_day))),
   };
+  if (input.sequence_start_at !== undefined) {
+    payload.sequence_start_at = input.sequence_start_at;
+  }
   const existing = await getSchedule(input.account, input.category ?? null);
   if (existing) {
     const { error } = await T().update(payload).eq("id", existing.id);
@@ -116,7 +121,8 @@ export async function findNextSlot(
     bookedPerDay.set(key, (bookedPerDay.get(key) ?? 0) + 1);
   }
 
-  // Âncora automática: continua a partir do ÚLTIMO agendado da conta.
+  // Âncora automática: usa o MAIOR entre o último post agendado da conta
+  // e o "início de sequência" configurado manualmente pelo usuário.
   let anchor = Date.now() + 60_000;
   const { data: lastRow } = await supabase
     .from("instagram_posts" as any)
@@ -128,10 +134,15 @@ export async function findNextSlot(
     .limit(1)
     .maybeSingle();
   const lastIso = (lastRow as any)?.scheduled_at as string | undefined;
-  const hasAnchor = !!(lastIso && new Date(lastIso).getTime() > Date.now());
-  if (hasAnchor) anchor = Math.max(anchor, new Date(lastIso!).getTime());
+  const lastTs = lastIso ? new Date(lastIso).getTime() : 0;
+  const seqStartTs = schedule?.sequence_start_at
+    ? new Date(schedule.sequence_start_at).getTime()
+    : 0;
+  const anchorTs = Math.max(lastTs, seqStartTs);
+  const hasAnchor = anchorTs > Date.now();
+  if (hasAnchor) anchor = Math.max(anchor, anchorTs);
 
-  const startDay = new Date(hasAnchor ? new Date(lastIso!) : new Date());
+  const startDay = new Date(hasAnchor ? anchorTs : Date.now());
   startDay.setHours(0, 0, 0, 0);
 
   for (let dayOffset = 0; dayOffset < horizon; dayOffset++) {
@@ -205,10 +216,8 @@ export async function findNextSlots(
   const results: Date[] = [];
   let startBase = opts.startFrom ?? null;
 
-  // MODO AUTOMÁTICO: se não veio startFrom, usa como âncora o ÚLTIMO post já
-  // agendado/publicando da conta. Assim o próximo vídeo cai no slot da grade
-  // logo depois do último agendamento, respeitando a sequência que o usuário
-  // já definiu — mesmo que existam "buracos" livres no meio.
+  // MODO AUTOMÁTICO: se não veio startFrom, ancora no MAIOR entre o último
+  // post agendado/publicando da conta e o "início de sequência" configurado.
   if (!startBase) {
     const { data: lastRow } = await supabase
       .from("instagram_posts" as any)
@@ -220,10 +229,12 @@ export async function findNextSlots(
       .limit(1)
       .maybeSingle();
     const lastIso = (lastRow as any)?.scheduled_at as string | undefined;
-    if (lastIso) {
-      const lastDate = new Date(lastIso);
-      if (lastDate.getTime() > Date.now()) startBase = lastDate;
-    }
+    const lastTs = lastIso ? new Date(lastIso).getTime() : 0;
+    const seqStartTs = schedule?.sequence_start_at
+      ? new Date(schedule.sequence_start_at).getTime()
+      : 0;
+    const anchorTs = Math.max(lastTs, seqStartTs);
+    if (anchorTs > Date.now()) startBase = new Date(anchorTs);
   }
 
   // Mínimo é 1min à frente. Se há uma âncora (manual ou último agendado),
