@@ -53,6 +53,7 @@ async function validateAccount(token: string, igId: string): Promise<ValidationR
     const perm = await readMeta(permRes);
     if (perm.data?.error) {
       const code = perm.data.error.code;
+      if (isApiBlocked(perm.data.error)) return { ok: false, status: "API_BLOCKED", message: `${BLOCKED_MSG} (${perm.data.error.message ?? ""})` };
       if (code === 190) return { ok: false, status: "TOKEN_EXPIRED", message: perm.data.error.message ?? "Token expirado." };
       return { ok: false, status: "TOKEN_INVALID", message: perm.data.error.message ?? "Token inválido." };
     }
