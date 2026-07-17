@@ -76,6 +76,7 @@ export default function Finished() {
   const [zipBusy, setZipBusy] = useState(false);
   const [igDialog, setIgDialog] = useState<{ open: boolean; mode: "now" | "schedule"; videoId: string | null; caption?: string; hashtags?: string; meta?: { filename?: string; templateName?: string | null; projectName?: string | null; projectCategory?: string | null } }>({ open: false, mode: "now", videoId: null });
   const [igBatchOpen, setIgBatchOpen] = useState(false);
+  const [igBatchScheduleOpen, setIgBatchScheduleOpen] = useState(false);
 
   const load = async () => {
     if (!activeProject) { setVideos([]); setJobs([]); return; }
