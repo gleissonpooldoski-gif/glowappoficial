@@ -116,13 +116,31 @@ export async function findNextSlot(
     bookedPerDay.set(key, (bookedPerDay.get(key) ?? 0) + 1);
   }
 
-  const minStart = Date.now() + 60_000; // pelo menos 1 min no futuro
+  // Âncora automática: continua a partir do ÚLTIMO agendado da conta.
+  let anchor = Date.now() + 60_000;
+  const { data: lastRow } = await supabase
+    .from("instagram_posts" as any)
+    .select("scheduled_at")
+    .eq("account", account)
+    .in("status", ["AGENDADO", "PUBLICANDO"])
+    .not("scheduled_at", "is", null)
+    .order("scheduled_at", { ascending: false })
+    .limit(1)
+    .maybeSingle();
+  const lastIso = (lastRow as any)?.scheduled_at as string | undefined;
+  const hasAnchor = !!(lastIso && new Date(lastIso).getTime() > Date.now());
+  if (hasAnchor) anchor = Math.max(anchor, new Date(lastIso!).getTime());
+
+  const startDay = new Date(hasAnchor ? new Date(lastIso!) : new Date());
+  startDay.setHours(0, 0, 0, 0);
+
   for (let dayOffset = 0; dayOffset < horizon; dayOffset++) {
-    const day = new Date();
+    const day = new Date(startDay);
     day.setDate(day.getDate() + dayOffset);
-    day.setHours(0, 0, 0, 0);
     const key = ymd(day);
-    if ((bookedPerDay.get(key) ?? 0) >= perDay) continue;
+    // Com âncora, ignoramos o cap de posts_per_day.
+    if (!hasAnchor && (bookedPerDay.get(key) ?? 0) >= perDay) continue;
+
 
     for (const t of times) {
       const [h, m] = t.split(":").map(Number);
