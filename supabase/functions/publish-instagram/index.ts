@@ -372,10 +372,15 @@ Deno.serve(async (req) => {
     return new Response(JSON.stringify({ success: true, accepted: true, creation_id: containerId, post_id: post.id, status: "PUBLICANDO" }),
       { status: 202, headers: { ...corsHeaders, "Content-Type": "application/json" } });
   } catch (e: any) {
-    const message = e?.message ?? "Erro desconhecido.";
-    console.error("[publish-instagram]", message);
-    await failPost(activePostId ?? body?.postId ?? null, message, { error: e?.cause ?? null });
-    return new Response(JSON.stringify({ error: message, status: "ERRO" }),
+    const rawMessage = e?.message ?? "Erro desconhecido.";
+    const blocked = isApiBlockedError(e?.metaData, rawMessage);
+    const message = blocked ? FRIENDLY_BLOCKED_MESSAGE : rawMessage;
+    console.error("[publish-instagram]", rawMessage);
+    if (blocked && body?.account && ["resenha", "frame"].includes(body.account)) {
+      await markCredentialsBlocked(supabase, body.account as Account, rawMessage);
+    }
+    await failPost(activePostId ?? body?.postId ?? null, message, { raw: rawMessage, blocked, meta: e?.metaData ?? null });
+    return new Response(JSON.stringify({ error: message, blocked, status: "ERRO" }),
       { status: 200, headers: { ...corsHeaders, "Content-Type": "application/json" } });
   }
 });
