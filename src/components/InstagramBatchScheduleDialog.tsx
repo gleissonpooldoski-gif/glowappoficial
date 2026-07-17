@@ -69,6 +69,7 @@ export default function InstagramBatchScheduleDialog({ open, onOpenChange, video
   };
 
   const compute = async () => {
+    if (!account) { setSlots([]); return; }
     setSlotBusy(true);
     try {
       const startFrom = parseStart();
