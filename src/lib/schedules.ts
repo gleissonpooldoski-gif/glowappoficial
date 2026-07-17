@@ -44,13 +44,17 @@ export async function upsertSchedule(input: {
   category?: string | null;
   times: string[];
   posts_per_day: number;
+  sequence_start_at?: string | null;
 }) {
-  const payload = {
+  const payload: Record<string, unknown> = {
     account: input.account,
     category: input.category ?? null,
     times: normalizeTimes(input.times),
     posts_per_day: Math.max(1, Math.min(50, Math.round(input.posts_per_day))),
   };
+  if (input.sequence_start_at !== undefined) {
+    payload.sequence_start_at = input.sequence_start_at;
+  }
   const existing = await getSchedule(input.account, input.category ?? null);
   if (existing) {
     const { error } = await T().update(payload).eq("id", existing.id);
