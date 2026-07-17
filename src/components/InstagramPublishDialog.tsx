@@ -11,12 +11,14 @@ import { supabase } from "@/integrations/supabase/client";
 import { InstagramAccount, publishInstagram, friendlyError, platformFromProject, PLATFORM_LABEL } from "@/lib/instagram";
 import { findNextSlot } from "@/lib/schedules";
 import { useActiveProject } from "@/context/ProjectContext";
+import { extractVideoFrames } from "@/lib/videoFrames";
 
 type VideoMeta = {
   filename?: string;
   templateName?: string | null;
   projectName?: string | null;
   projectCategory?: string | null;
+  videoUrl?: string | null;
 };
 
 type Props = {
@@ -108,19 +110,24 @@ export default function InstagramPublishDialog({
     if (!videoMeta) return;
     setGenBusy(true);
     try {
+      const frames = videoMeta.videoUrl ? await extractVideoFrames(videoMeta.videoUrl, 4).catch(() => []) : [];
       const { data, error } = await supabase.functions.invoke("generate-caption", {
         body: {
           filename: videoMeta.filename,
           templateName: videoMeta.templateName ?? null,
           projectName: videoMeta.projectName ?? null,
           projectCategory: videoMeta.projectCategory ?? null,
+          frames,
         },
       });
       if (error) throw error;
       if ((data as any)?.error) throw new Error((data as any).error);
       setCaption(String((data as any)?.caption ?? ""));
       setHashtags(flattenHashtags((data as any)?.hashtags));
-      if (!silent) toast.success("Nova opção gerada");
+      if (!silent) {
+        if ((data as any)?.validated === false) toast.warning("Gerada, mas revise: validação apontou possíveis inconsistências.");
+        else toast.success("Nova opção gerada");
+      }
     } catch (e: any) {
       if (!silent) toast.error(e?.message ?? "Falha ao gerar legenda");
     } finally {
@@ -132,12 +139,14 @@ export default function InstagramPublishDialog({
     if (!videoMeta) return;
     setGenBusy(true);
     try {
+      const frames = videoMeta.videoUrl ? await extractVideoFrames(videoMeta.videoUrl, 4).catch(() => []) : [];
       const { data, error } = await supabase.functions.invoke("generate-caption", {
         body: {
           filename: videoMeta.filename,
           templateName: videoMeta.templateName ?? null,
           projectName: videoMeta.projectName ?? null,
           projectCategory: videoMeta.projectCategory ?? null,
+          frames,
         },
       });
       if (error) throw error;

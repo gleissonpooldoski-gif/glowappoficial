@@ -11,6 +11,7 @@ import { supabase } from "@/integrations/supabase/client";
 import { InstagramAccount, publishInstagram, friendlyError, platformFromProject, PLATFORM_LABEL } from "@/lib/instagram";
 import { findNextSlots } from "@/lib/schedules";
 import { useActiveProject } from "@/context/ProjectContext";
+import { extractVideoFrames } from "@/lib/videoFrames";
 
 type VideoMeta = {
   id: string;
@@ -100,12 +101,27 @@ export default function InstagramBatchScheduleDialog({ open, onOpenChange, video
 
   const genCaption = async (v: VideoMeta) => {
     try {
+      // Busca signed URL do vídeo para extrair frames
+      let frames: string[] = [];
+      try {
+        const { data: row } = await supabase
+          .from("videos")
+          .select("processed_path")
+          .eq("id", v.id)
+          .maybeSingle();
+        const path = (row as any)?.processed_path as string | null;
+        if (path) {
+          const { data: s } = await supabase.storage.from("videos-processed").createSignedUrl(path, 60 * 30);
+          if (s?.signedUrl) frames = await extractVideoFrames(s.signedUrl, 3).catch(() => []);
+        }
+      } catch {}
       const { data, error } = await supabase.functions.invoke("generate-caption", {
         body: {
           filename: v.filename,
           templateName: v.templateName ?? null,
           projectName: v.projectName ?? null,
           projectCategory: v.projectCategory ?? null,
+          frames,
         },
       });
       if (error || (data as any)?.error) throw new Error((data as any)?.error ?? error?.message);

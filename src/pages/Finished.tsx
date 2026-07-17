@@ -16,6 +16,7 @@ import { ptBR } from "date-fns/locale";
 import { useActiveProject } from "@/context/ProjectContext";
 import { cn } from "@/lib/utils";
 import JSZip from "jszip";
+import { extractVideoFrames } from "@/lib/videoFrames";
 import {
   AlertDialog, AlertDialogAction, AlertDialogCancel, AlertDialogContent,
   AlertDialogDescription, AlertDialogFooter, AlertDialogHeader, AlertDialogTitle,
@@ -74,7 +75,7 @@ export default function Finished() {
   const [pendingRemoveId, setPendingRemoveId] = useState<string | null>(null);
   const [bulkBusy, setBulkBusy] = useState(false);
   const [zipBusy, setZipBusy] = useState(false);
-  const [igDialog, setIgDialog] = useState<{ open: boolean; mode: "now" | "schedule"; videoId: string | null; caption?: string; hashtags?: string; meta?: { filename?: string; templateName?: string | null; projectName?: string | null; projectCategory?: string | null } }>({ open: false, mode: "now", videoId: null });
+  const [igDialog, setIgDialog] = useState<{ open: boolean; mode: "now" | "schedule"; videoId: string | null; caption?: string; hashtags?: string; meta?: { filename?: string; templateName?: string | null; projectName?: string | null; projectCategory?: string | null; videoUrl?: string | null } }>({ open: false, mode: "now", videoId: null });
   const [igBatchOpen, setIgBatchOpen] = useState(false);
   const [igBatchScheduleOpen, setIgBatchScheduleOpen] = useState(false);
 
@@ -274,17 +275,23 @@ export default function Finished() {
     setCaptionOpen((s) => ({ ...s, [v.id]: true }));
     setCaptionLoading((s) => ({ ...s, [v.id]: true }));
     try {
+      const url = urls[v.id];
+      const frames = url ? await extractVideoFrames(url, 4).catch(() => []) : [];
       const { data, error } = await supabase.functions.invoke("generate-caption", {
         body: {
           filename: v.filename,
           templateName: v.templateName ?? null,
           projectName: v.projectName ?? null,
           projectCategory: v.projectCategory ?? null,
+          frames,
         },
       });
       if (error) throw error;
       if ((data as any)?.error) throw new Error((data as any).error);
       setCaptions((s) => ({ ...s, [v.id]: data as CaptionResult }));
+      if ((data as any)?.validated === false) {
+        toast.warning("Legenda gerada, mas não passou 100% na validação. Revise antes de publicar.");
+      }
     } catch (e: any) {
       toast.error(e?.message ?? "Falha ao gerar legenda");
     } finally {
@@ -469,7 +476,7 @@ export default function Finished() {
                       size="sm"
                       variant="outline"
                       className="h-7 flex-1 text-[11px] border-gold/40 text-gold hover:bg-gold/10"
-                      onClick={() => setIgDialog({ open: true, mode: "now", videoId: v.id, caption: cap?.caption, hashtags: cap ? flatHashtags(cap) : "", meta: { filename: v.filename, templateName: v.templateName ?? null, projectName: v.projectName ?? null, projectCategory: v.projectCategory ?? null } })}
+                      onClick={() => setIgDialog({ open: true, mode: "now", videoId: v.id, caption: cap?.caption, hashtags: cap ? flatHashtags(cap) : "", meta: { filename: v.filename, templateName: v.templateName ?? null, projectName: v.projectName ?? null, projectCategory: v.projectCategory ?? null, videoUrl: urls[v.id] ?? null } })}
                     >
                       <Instagram size={12} className="mr-1" /> Publicar
                     </Button>
@@ -477,7 +484,7 @@ export default function Finished() {
                       size="sm"
                       variant="outline"
                       className="h-7 flex-1 text-[11px]"
-                      onClick={() => setIgDialog({ open: true, mode: "schedule", videoId: v.id, caption: cap?.caption, hashtags: cap ? flatHashtags(cap) : "", meta: { filename: v.filename, templateName: v.templateName ?? null, projectName: v.projectName ?? null, projectCategory: v.projectCategory ?? null } })}
+                      onClick={() => setIgDialog({ open: true, mode: "schedule", videoId: v.id, caption: cap?.caption, hashtags: cap ? flatHashtags(cap) : "", meta: { filename: v.filename, templateName: v.templateName ?? null, projectName: v.projectName ?? null, projectCategory: v.projectCategory ?? null, videoUrl: urls[v.id] ?? null } })}
                     >
                       <CalendarClock size={12} className="mr-1" /> Agendar
                     </Button>
