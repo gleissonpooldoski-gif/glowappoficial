@@ -26,6 +26,8 @@ import { TEXT_CATEGORIES, TEXT_PRESETS, type TextPreset, type TextPresetCategory
 import TextLibraryDialog from "@/components/TextLibraryDialog";
 import { cn } from "@/lib/utils";
 import { useRenderQueue } from "@/context/RenderQueueContext";
+import ChangeTemplateDialog, { type ChangeTemplateResult } from "@/components/ChangeTemplateDialog";
+import { RefreshCw } from "lucide-react";
 
 type TextTransform = "none" | "uppercase" | "lowercase" | "capitalize";
 type TextAlign = "left" | "center" | "right";
