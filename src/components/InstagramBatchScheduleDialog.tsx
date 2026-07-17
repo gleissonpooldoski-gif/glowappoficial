@@ -119,11 +119,13 @@ export default function InstagramBatchScheduleDialog({ open, onOpenChange, video
   };
 
   const run = async () => {
+    if (!account) { toast.error("Selecione um projeto ativo (Frame ou Resenha)."); return; }
     if (videos.length === 0 || slots.length === 0) return;
     if (insufficient) {
       toast.error(`Só há ${slots.length} slots livres para ${videos.length} vídeos. Adicione mais horários.`);
       return;
     }
+    if (!confirm(`Estas ${videos.length} publicações serão agendadas no projeto ${platformLabel}. Confirmar?`)) return;
     setBusy(true); setDone(0); setErrors([]);
     const errs: string[] = [];
     for (let i = 0; i < videos.length; i++) {
