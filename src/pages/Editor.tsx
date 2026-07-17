@@ -1486,11 +1486,19 @@ export default function Editor() {
                       onClick={() => setDoc((d) => ({ ...d, template: { opacity: 1, blend: "normal", fit: "contain", x: 0, y: 0 } }))}>
                       Resetar overlay
                     </Button>
+                    <Button variant="outline" size="sm" className="w-full border-gold/40 text-gold hover:bg-gold/10"
+                      onClick={() => setChangeTplOpen(true)}>
+                      <RefreshCw size={12} className="mr-1" /> Trocar Template
+                    </Button>
                   </>
                 ) : (
-                  <p className="py-8 text-center text-xs text-muted-foreground">
-                    Nenhum template aplicado.
-                  </p>
+                  <div className="space-y-3 py-4 text-center">
+                    <p className="text-xs text-muted-foreground">Nenhum template aplicado.</p>
+                    <Button variant="outline" size="sm" className="border-gold/40 text-gold hover:bg-gold/10"
+                      onClick={() => setChangeTplOpen(true)}>
+                      <RefreshCw size={12} className="mr-1" /> Escolher Template
+                    </Button>
+                  </div>
                 )}
               </TabsContent>
 
