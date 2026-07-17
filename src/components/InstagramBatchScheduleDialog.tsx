@@ -39,7 +39,15 @@ function fmt(d: Date) {
 }
 
 export default function InstagramBatchScheduleDialog({ open, onOpenChange, videos, onDone }: Props) {
-  const [account, setAccount] = useState<InstagramAccount>("resenha");
+  const { activeProject } = useActiveProject();
+  const account: InstagramAccount | null = platformFromProject(activeProject);
+  const platformLabel = account ? PLATFORM_LABEL[account] : "—";
+  const platformClass =
+    account === "frame"
+      ? "bg-blue-500/15 text-blue-300 border-blue-400/40"
+      : account === "resenha"
+      ? "bg-purple-500/15 text-purple-300 border-purple-400/40"
+      : "bg-muted text-muted-foreground border-border";
   const [slots, setSlots] = useState<Date[]>([]);
   const [slotBusy, setSlotBusy] = useState(false);
   const [busy, setBusy] = useState(false);
