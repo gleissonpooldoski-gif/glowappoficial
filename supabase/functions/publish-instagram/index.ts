@@ -94,7 +94,9 @@ async function metaPost(url: string, body: Record<string, string>) {
   });
   const payload = await readMetaResponse(res);
   if (!res.ok || payload.data?.error) {
-    throw new Error(metaErrorMessage(payload.data, `HTTP ${res.status}: ${payload.text.slice(0, 500)}`));
+    const err: any = new Error(metaErrorMessage(payload.data, `HTTP ${res.status}: ${payload.text.slice(0, 500)}`));
+    err.metaData = payload.data;
+    throw err;
   }
   return { status: res.status, data: payload.data };
 }
@@ -103,10 +105,13 @@ async function metaGet(url: string) {
   const res = await fetch(url);
   const payload = await readMetaResponse(res);
   if (!res.ok || payload.data?.error) {
-    throw new Error(metaErrorMessage(payload.data, `HTTP ${res.status}: ${payload.text.slice(0, 500)}`));
+    const err: any = new Error(metaErrorMessage(payload.data, `HTTP ${res.status}: ${payload.text.slice(0, 500)}`));
+    err.metaData = payload.data;
+    throw err;
   }
   return { status: res.status, data: payload.data };
 }
+
 
 async function checkPublicVideoUrl(videoUrl: string) {
   const res = await fetch(videoUrl, { headers: { Range: "bytes=0-0" } });
