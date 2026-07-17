@@ -474,6 +474,8 @@ export default function Editor() {
     };
     setDoc((d) => ({ ...d, texts: [...d.texts, t] }));
     setSelectedTextId(t.id);
+    // Abre em modo de edição inline para o usuário digitar imediatamente.
+    setEditingTextId(t.id);
   };
 
   const addPreset = (p: TextPreset) => {
@@ -491,6 +493,7 @@ export default function Editor() {
     };
     setDoc((d) => ({ ...d, texts: [...d.texts, t] }));
     setSelectedTextId(t.id);
+    setEditingTextId(null);
     toast.success("Texto adicionado ao vídeo");
   };
 
@@ -1510,7 +1513,9 @@ export default function Editor() {
         open={libraryOpen}
         onOpenChange={setLibraryOpen}
         onSelect={(p) => addPreset(p)}
+        closeOnSelect
       />
+
 
       {/* Progresso de exportação — não bloqueia interação */}
       {exporting && (
