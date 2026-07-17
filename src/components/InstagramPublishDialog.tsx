@@ -211,15 +211,67 @@ export default function InstagramPublishDialog({
           </div>
 
           {mode === "schedule" && (
-            <div className="grid grid-cols-2 gap-2">
-              <div className="space-y-1.5">
-                <Label className="text-xs">Data</Label>
-                <Input type="date" value={date} onChange={(e) => setDate(e.target.value)} />
+            <div className="space-y-2 rounded-lg border border-border/50 bg-background/40 p-3">
+              <div className="flex items-center gap-1">
+                <Button
+                  type="button"
+                  size="sm"
+                  variant={scheduleMode === "auto" ? "default" : "ghost"}
+                  className={scheduleMode === "auto" ? "bg-gold-gradient text-black h-8" : "h-8"}
+                  onClick={() => setScheduleMode("auto")}
+                >
+                  <Wand2 size={12} className="mr-1" /> Automático
+                </Button>
+                <Button
+                  type="button"
+                  size="sm"
+                  variant={scheduleMode === "manual" ? "default" : "ghost"}
+                  className={scheduleMode === "manual" ? "bg-gold-gradient text-black h-8" : "h-8"}
+                  onClick={() => setScheduleMode("manual")}
+                >
+                  <Hand size={12} className="mr-1" /> Manual
+                </Button>
+                {scheduleMode === "auto" && (
+                  <Button
+                    type="button"
+                    size="sm"
+                    variant="ghost"
+                    className="ml-auto h-8 text-[11px]"
+                    onClick={computeAutoSlot}
+                    disabled={slotBusy}
+                  >
+                    {slotBusy ? <Loader2 size={12} className="mr-1 animate-spin" /> : <RefreshCw size={12} className="mr-1" />}
+                    Recalcular
+                  </Button>
+                )}
               </div>
-              <div className="space-y-1.5">
-                <Label className="text-xs">Hora</Label>
-                <Input type="time" value={time} onChange={(e) => setTime(e.target.value)} />
-              </div>
+
+              {scheduleMode === "auto" ? (
+                <div className="text-xs text-muted-foreground">
+                  {slotBusy && "Buscando próximo espaço livre…"}
+                  {!slotBusy && autoSlot && (
+                    <>Próximo slot: <span className="text-foreground font-medium">
+                      {autoSlot.toLocaleString("pt-BR", { dateStyle: "short", timeStyle: "short" })}
+                    </span></>
+                  )}
+                  {!slotBusy && !autoSlot && (
+                    <span className="text-destructive">
+                      Nenhum horário configurado. Vá em Configurações → Horários de publicação.
+                    </span>
+                  )}
+                </div>
+              ) : (
+                <div className="grid grid-cols-2 gap-2">
+                  <div className="space-y-1.5">
+                    <Label className="text-xs">Data</Label>
+                    <Input type="date" value={date} onChange={(e) => setDate(e.target.value)} />
+                  </div>
+                  <div className="space-y-1.5">
+                    <Label className="text-xs">Hora</Label>
+                    <Input type="time" value={time} onChange={(e) => setTime(e.target.value)} />
+                  </div>
+                </div>
+              )}
             </div>
           )}
 
