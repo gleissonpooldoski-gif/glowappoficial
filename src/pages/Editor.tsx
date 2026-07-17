@@ -26,6 +26,8 @@ import { TEXT_CATEGORIES, TEXT_PRESETS, type TextPreset, type TextPresetCategory
 import TextLibraryDialog from "@/components/TextLibraryDialog";
 import { cn } from "@/lib/utils";
 import { useRenderQueue } from "@/context/RenderQueueContext";
+import ChangeTemplateDialog, { type ChangeTemplateResult } from "@/components/ChangeTemplateDialog";
+import { RefreshCw } from "lucide-react";
 
 type TextTransform = "none" | "uppercase" | "lowercase" | "capitalize";
 type TextAlign = "left" | "center" | "right";
@@ -201,6 +203,20 @@ export default function Editor() {
   const [templateUrl, setTemplateUrl] = useState<string | null>(null);
   const [loadError, setLoadError] = useState<LoadError | null>(null);
   const [videoReady, setVideoReady] = useState(false);
+  const [changeTplOpen, setChangeTplOpen] = useState(false);
+
+  const applyTemplateChange = async ({ template: tpl, url }: ChangeTemplateResult) => {
+    if (!id) return;
+    const { error } = await (supabase as any).from("edits").update({
+      template_id: tpl.id,
+      template_url: url,
+    }).eq("id", id);
+    if (error) throw new Error(error.message);
+    setTemplate(tpl);
+    setTemplateUrl(url);
+    setEdit((prev: any) => prev ? { ...prev, template_id: tpl.id, template_url: url } : prev);
+    toast.success(`Template alterado para "${tpl.name}"`);
+  };
 
   // Áudio / playback do vídeo original
   const videoRef = useRef<HTMLVideoElement>(null);
@@ -721,6 +737,14 @@ export default function Editor() {
               {video?.filename ?? "—"} · Template: {template?.name ?? "—"}
             </p>
           </div>
+          <Button
+            variant="outline"
+            size="sm"
+            className="ml-2 border-gold/40 text-gold hover:bg-gold/10"
+            onClick={() => setChangeTplOpen(true)}
+          >
+            <RefreshCw size={14} className="mr-1" /> Trocar Template
+          </Button>
         </div>
         <div className="flex items-center gap-2">
           <Select value={ratio} onValueChange={setRatio}>
@@ -1462,11 +1486,19 @@ export default function Editor() {
                       onClick={() => setDoc((d) => ({ ...d, template: { opacity: 1, blend: "normal", fit: "contain", x: 0, y: 0 } }))}>
                       Resetar overlay
                     </Button>
+                    <Button variant="outline" size="sm" className="w-full border-gold/40 text-gold hover:bg-gold/10"
+                      onClick={() => setChangeTplOpen(true)}>
+                      <RefreshCw size={12} className="mr-1" /> Trocar Template
+                    </Button>
                   </>
                 ) : (
-                  <p className="py-8 text-center text-xs text-muted-foreground">
-                    Nenhum template aplicado.
-                  </p>
+                  <div className="space-y-3 py-4 text-center">
+                    <p className="text-xs text-muted-foreground">Nenhum template aplicado.</p>
+                    <Button variant="outline" size="sm" className="border-gold/40 text-gold hover:bg-gold/10"
+                      onClick={() => setChangeTplOpen(true)}>
+                      <RefreshCw size={12} className="mr-1" /> Escolher Template
+                    </Button>
+                  </div>
                 )}
               </TabsContent>
 
@@ -1562,6 +1594,14 @@ export default function Editor() {
           </div>
         </div>
       )}
+
+      <ChangeTemplateDialog
+        open={changeTplOpen}
+        onOpenChange={setChangeTplOpen}
+        projectId={edit?.project_id ?? null}
+        currentTemplateId={edit?.template_id ?? template?.id ?? null}
+        onApply={applyTemplateChange}
+      />
     </div>
   );
 }
