@@ -207,9 +207,18 @@ Deno.serve(async (req) => {
       await appendLog(postId, { event: "publish_id_saved", publish_id: publishId });
       await appendLog(postId, { event: "published", publish_id: publishId, published_at: nowIso });
     } catch (e: any) {
-      const message = e?.message ?? "Erro desconhecido ao finalizar publicação.";
-      console.error("[publish-instagram/background]", message);
-      await failPost(postId, message, { error: e?.cause ?? null });
+      const rawMessage = e?.message ?? "Erro desconhecido ao finalizar publicação.";
+      const blocked = isApiBlockedError(e?.metaData, rawMessage);
+      const message = blocked ? FRIENDLY_BLOCKED_MESSAGE : rawMessage;
+      console.error("[publish-instagram/background]", rawMessage);
+      await appendLog(postId, { event: "meta_api_error", blocked, raw_message: rawMessage, meta: e?.metaData ?? null });
+      if (blocked) {
+        try {
+          const { data: cur } = await supabase.from("instagram_posts").select("account").eq("id", postId).maybeSingle();
+          if (cur?.account) await markCredentialsBlocked(supabase, cur.account, rawMessage);
+        } catch (_) { /* noop */ }
+      }
+      await failPost(postId, message, { raw: rawMessage, meta: e?.metaData ?? null });
     }
   };
 
