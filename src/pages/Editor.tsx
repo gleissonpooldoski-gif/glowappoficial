@@ -1510,7 +1510,9 @@ export default function Editor() {
         open={libraryOpen}
         onOpenChange={setLibraryOpen}
         onSelect={(p) => addPreset(p)}
+        closeOnSelect
       />
+
 
       {/* Progresso de exportação — não bloqueia interação */}
       {exporting && (
