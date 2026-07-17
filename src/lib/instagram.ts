@@ -8,6 +8,24 @@ export const ACCOUNTS: { value: InstagramAccount; label: string }[] = [
   { value: "frame", label: "Sessão da Frame" },
 ];
 
+/**
+ * Deriva a plataforma de publicação a partir do projeto ativo.
+ * O nome/categoria do projeto define automaticamente a conta (frame/resenha).
+ */
+export function platformFromProject(
+  p?: { name?: string | null; category?: string | null } | null,
+): InstagramAccount | null {
+  const raw = `${p?.category ?? ""} ${p?.name ?? ""}`.toLowerCase();
+  if (raw.includes("frame")) return "frame";
+  if (raw.includes("resenha")) return "resenha";
+  return null;
+}
+
+export const PLATFORM_LABEL: Record<InstagramAccount, string> = {
+  frame: "FRAME",
+  resenha: "RESENHA",
+};
+
 export type InstagramPost = {
   id: string;
   video_id: string | null;
