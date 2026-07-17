@@ -59,7 +59,6 @@ export default function TextLibraryDialog({ open, onOpenChange, onSelect, closeO
   const [query, setQuery] = useState("");
   const [openGroups, setOpenGroups] = useState<Record<string, boolean>>({ general: true, memes: false, movies: false });
   const [openCats, setOpenCats] = useState<Record<string, boolean>>({});
-  const scrollRef = useRef<HTMLDivElement>(null);
 
   const q = query.trim().toLowerCase();
 
