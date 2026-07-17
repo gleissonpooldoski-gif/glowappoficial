@@ -55,6 +55,29 @@ function metaErrorMessage(data: any, fallback: string) {
     .join(" | ");
 }
 
+const FRIENDLY_BLOCKED_MESSAGE =
+  "Acesso bloqueado pela Meta. Verifique as permissões do seu aplicativo no painel do Facebook Developer ou reconecte a conta do Instagram.";
+
+export function isApiBlockedError(data: any, message?: string): boolean {
+  const err = data?.error;
+  const msg = `${err?.message ?? ""} ${message ?? ""}`.toLowerCase();
+  const code = Number(err?.code);
+  if (code === 200) return true;
+  if (msg.includes("api access blocked")) return true;
+  if (msg.includes("access blocked") && msg.includes("api")) return true;
+  return false;
+}
+
+async function markCredentialsBlocked(supabase: any, account: Account, message: string) {
+  try {
+    await supabase.from("instagram_credentials").update({
+      last_validated_at: new Date().toISOString(),
+      last_validation_status: "API_BLOCKED",
+      last_validation_detail: message,
+    }).eq("account", account);
+  } catch (_) { /* noop */ }
+}
+
 async function readMetaResponse(res: Response) {
   const text = await res.text();
   let data: any = {};
@@ -71,7 +94,9 @@ async function metaPost(url: string, body: Record<string, string>) {
   });
   const payload = await readMetaResponse(res);
   if (!res.ok || payload.data?.error) {
-    throw new Error(metaErrorMessage(payload.data, `HTTP ${res.status}: ${payload.text.slice(0, 500)}`));
+    const err: any = new Error(metaErrorMessage(payload.data, `HTTP ${res.status}: ${payload.text.slice(0, 500)}`));
+    err.metaData = payload.data;
+    throw err;
   }
   return { status: res.status, data: payload.data };
 }
@@ -80,10 +105,13 @@ async function metaGet(url: string) {
   const res = await fetch(url);
   const payload = await readMetaResponse(res);
   if (!res.ok || payload.data?.error) {
-    throw new Error(metaErrorMessage(payload.data, `HTTP ${res.status}: ${payload.text.slice(0, 500)}`));
+    const err: any = new Error(metaErrorMessage(payload.data, `HTTP ${res.status}: ${payload.text.slice(0, 500)}`));
+    err.metaData = payload.data;
+    throw err;
   }
   return { status: res.status, data: payload.data };
 }
+
 
 async function checkPublicVideoUrl(videoUrl: string) {
   const res = await fetch(videoUrl, { headers: { Range: "bytes=0-0" } });
@@ -179,9 +207,18 @@ Deno.serve(async (req) => {
       await appendLog(postId, { event: "publish_id_saved", publish_id: publishId });
       await appendLog(postId, { event: "published", publish_id: publishId, published_at: nowIso });
     } catch (e: any) {
-      const message = e?.message ?? "Erro desconhecido ao finalizar publicação.";
-      console.error("[publish-instagram/background]", message);
-      await failPost(postId, message, { error: e?.cause ?? null });
+      const rawMessage = e?.message ?? "Erro desconhecido ao finalizar publicação.";
+      const blocked = isApiBlockedError(e?.metaData, rawMessage);
+      const message = blocked ? FRIENDLY_BLOCKED_MESSAGE : rawMessage;
+      console.error("[publish-instagram/background]", rawMessage);
+      await appendLog(postId, { event: "meta_api_error", blocked, raw_message: rawMessage, meta: e?.metaData ?? null });
+      if (blocked) {
+        try {
+          const { data: cur } = await supabase.from("instagram_posts").select("account").eq("id", postId).maybeSingle();
+          if (cur?.account) await markCredentialsBlocked(supabase, cur.account, rawMessage);
+        } catch (_) { /* noop */ }
+      }
+      await failPost(postId, message, { raw: rawMessage, meta: e?.metaData ?? null });
     }
   };
 
@@ -335,10 +372,15 @@ Deno.serve(async (req) => {
     return new Response(JSON.stringify({ success: true, accepted: true, creation_id: containerId, post_id: post.id, status: "PUBLICANDO" }),
       { status: 202, headers: { ...corsHeaders, "Content-Type": "application/json" } });
   } catch (e: any) {
-    const message = e?.message ?? "Erro desconhecido.";
-    console.error("[publish-instagram]", message);
-    await failPost(activePostId ?? body?.postId ?? null, message, { error: e?.cause ?? null });
-    return new Response(JSON.stringify({ error: message, status: "ERRO" }),
+    const rawMessage = e?.message ?? "Erro desconhecido.";
+    const blocked = isApiBlockedError(e?.metaData, rawMessage);
+    const message = blocked ? FRIENDLY_BLOCKED_MESSAGE : rawMessage;
+    console.error("[publish-instagram]", rawMessage);
+    if (blocked && body?.account && ["resenha", "frame"].includes(body.account)) {
+      await markCredentialsBlocked(supabase, body.account as Account, rawMessage);
+    }
+    await failPost(activePostId ?? body?.postId ?? null, message, { raw: rawMessage, blocked, meta: e?.metaData ?? null });
+    return new Response(JSON.stringify({ error: message, blocked, status: "ERRO" }),
       { status: 200, headers: { ...corsHeaders, "Content-Type": "application/json" } });
   }
 });

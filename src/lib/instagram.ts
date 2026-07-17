@@ -88,6 +88,8 @@ export async function listInstagramPosts() {
 
 export function friendlyError(e: any): string {
   const msg = (e?.message ?? String(e ?? "")).toLowerCase();
+  if (msg.includes("access blocked") || msg.includes("acesso bloqueado") || msg.includes("code=200"))
+    return "Acesso bloqueado pela Meta. Verifique as permissões do app no Facebook Developer ou reconecte a conta do Instagram.";
   if (msg.includes("token")) return "Token do Instagram inválido ou expirado.";
   if (msg.includes("timeout")) return "Tempo esgotado aguardando a Meta processar o vídeo.";
   if (msg.includes("credenciais")) return "Credenciais da conta não configuradas nos Secrets.";
