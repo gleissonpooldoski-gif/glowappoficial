@@ -1,15 +1,16 @@
 import { useEffect, useState } from "react";
-import { Loader2, Instagram, CalendarClock, Send, Sparkles, RefreshCw, Wand2, Hand } from "lucide-react";
+import { Loader2, Instagram, CalendarClock, Send, Sparkles, RefreshCw, Wand2, Hand, Lock } from "lucide-react";
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter, DialogDescription } from "@/components/ui/dialog";
 import { Button } from "@/components/ui/button";
 import { Label } from "@/components/ui/label";
 import { Input } from "@/components/ui/input";
 import { Textarea } from "@/components/ui/textarea";
-import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
+import { Badge } from "@/components/ui/badge";
 import { toast } from "sonner";
 import { supabase } from "@/integrations/supabase/client";
-import { ACCOUNTS, InstagramAccount, publishInstagram, friendlyError } from "@/lib/instagram";
+import { InstagramAccount, publishInstagram, friendlyError, platformFromProject, PLATFORM_LABEL } from "@/lib/instagram";
 import { findNextSlot } from "@/lib/schedules";
+import { useActiveProject } from "@/context/ProjectContext";
 
 type VideoMeta = {
   filename?: string;
