@@ -146,7 +146,7 @@ export async function findNextSlot(
       const [h, m] = t.split(":").map(Number);
       const slot = new Date(day);
       slot.setHours(h, m, 0, 0);
-      if (slot.getTime() < minStart) continue;
+      if (slot.getTime() <= anchor) continue;
       // Considera ocupado se houver algo em janela de ±5min.
       const occupied = Array.from(bookedTimes).some(
         (ts) => Math.abs(ts - slot.getTime()) < 5 * 60_000,
