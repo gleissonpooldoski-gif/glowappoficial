@@ -55,6 +55,29 @@ function metaErrorMessage(data: any, fallback: string) {
     .join(" | ");
 }
 
+const FRIENDLY_BLOCKED_MESSAGE =
+  "Acesso bloqueado pela Meta. Verifique as permissões do seu aplicativo no painel do Facebook Developer ou reconecte a conta do Instagram.";
+
+export function isApiBlockedError(data: any, message?: string): boolean {
+  const err = data?.error;
+  const msg = `${err?.message ?? ""} ${message ?? ""}`.toLowerCase();
+  const code = Number(err?.code);
+  if (code === 200) return true;
+  if (msg.includes("api access blocked")) return true;
+  if (msg.includes("access blocked") && msg.includes("api")) return true;
+  return false;
+}
+
+async function markCredentialsBlocked(supabase: any, account: Account, message: string) {
+  try {
+    await supabase.from("instagram_credentials").update({
+      last_validated_at: new Date().toISOString(),
+      last_validation_status: "API_BLOCKED",
+      last_validation_detail: message,
+    }).eq("account", account);
+  } catch (_) { /* noop */ }
+}
+
 async function readMetaResponse(res: Response) {
   const text = await res.text();
   let data: any = {};
