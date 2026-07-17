@@ -95,19 +95,8 @@ export default function TextLibraryDialog({ open, onOpenChange, onSelect, closeO
     return out;
   }, [q, openGroups, openCats]);
 
-  const virtualizer = useVirtualizer({
-    count: rows.length,
-    getScrollElement: () => scrollRef.current,
-    estimateSize: (i) => {
-      const r = rows[i];
-      if (!r) return 44;
-      if (r.kind === "group") return 44;
-      if (r.kind === "category" || r.kind === "search-cat") return 32;
-      if (r.kind === "empty") return 120;
-      return 44;
-    },
-    overscan: 8,
-  });
+
+
 
   const handleClick = (p: TextPreset) => {
     onSelect(p);
