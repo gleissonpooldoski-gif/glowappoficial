@@ -9,6 +9,7 @@ export type PublishSchedule = {
   times: string[];         // ["09:00","12:30", ...] em ordem
   posts_per_day: number;
   timezone: string;
+  sequence_start_at: string | null;
   created_at: string;
   updated_at: string;
 };
