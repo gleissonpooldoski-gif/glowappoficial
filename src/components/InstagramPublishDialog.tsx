@@ -56,6 +56,9 @@ export default function InstagramPublishDialog({
   const [time, setTime] = useState(plus1h.toTimeString().slice(0, 5));
   const [busy, setBusy] = useState(false);
   const [genBusy, setGenBusy] = useState(false);
+  const [scheduleMode, setScheduleMode] = useState<"auto" | "manual">("auto");
+  const [slotBusy, setSlotBusy] = useState(false);
+  const [autoSlot, setAutoSlot] = useState<Date | null>(null);
 
   // Auto-gera legenda/hashtags ao abrir se não vieram prontos
   useEffect(() => {
@@ -67,6 +70,29 @@ export default function InstagramPublishDialog({
     }
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [open, videoId]);
+
+  // Ao abrir em modo agendar OU quando trocar conta em modo auto, calcula próximo slot
+  useEffect(() => {
+    if (!open || mode !== "schedule" || scheduleMode !== "auto") return;
+    void computeAutoSlot();
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [open, mode, scheduleMode, account]);
+
+  const computeAutoSlot = async () => {
+    setSlotBusy(true);
+    try {
+      const slot = await findNextSlot(account);
+      setAutoSlot(slot);
+      if (slot) {
+        setDate(`${slot.getFullYear()}-${String(slot.getMonth() + 1).padStart(2, "0")}-${String(slot.getDate()).padStart(2, "0")}`);
+        setTime(slot.toTimeString().slice(0, 5));
+      }
+    } catch (e: any) {
+      console.error(e);
+    } finally {
+      setSlotBusy(false);
+    }
+  };
 
   const generate = async (silent = false) => {
     if (!videoMeta) return;
