@@ -1,5 +1,5 @@
 import { useEffect, useState } from "react";
-import { Loader2, Instagram, CalendarClock, Send, Sparkles, RefreshCw } from "lucide-react";
+import { Loader2, Instagram, CalendarClock, Send, Sparkles, RefreshCw, Wand2, Hand } from "lucide-react";
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter, DialogDescription } from "@/components/ui/dialog";
 import { Button } from "@/components/ui/button";
 import { Label } from "@/components/ui/label";
@@ -9,6 +9,7 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@
 import { toast } from "sonner";
 import { supabase } from "@/integrations/supabase/client";
 import { ACCOUNTS, InstagramAccount, publishInstagram, friendlyError } from "@/lib/instagram";
+import { findNextSlot } from "@/lib/schedules";
 
 type VideoMeta = {
   filename?: string;
@@ -55,6 +56,9 @@ export default function InstagramPublishDialog({
   const [time, setTime] = useState(plus1h.toTimeString().slice(0, 5));
   const [busy, setBusy] = useState(false);
   const [genBusy, setGenBusy] = useState(false);
+  const [scheduleMode, setScheduleMode] = useState<"auto" | "manual">("auto");
+  const [slotBusy, setSlotBusy] = useState(false);
+  const [autoSlot, setAutoSlot] = useState<Date | null>(null);
 
   // Auto-gera legenda/hashtags ao abrir se não vieram prontos
   useEffect(() => {
@@ -66,6 +70,29 @@ export default function InstagramPublishDialog({
     }
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [open, videoId]);
+
+  // Ao abrir em modo agendar OU quando trocar conta em modo auto, calcula próximo slot
+  useEffect(() => {
+    if (!open || mode !== "schedule" || scheduleMode !== "auto") return;
+    void computeAutoSlot();
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [open, mode, scheduleMode, account]);
+
+  const computeAutoSlot = async () => {
+    setSlotBusy(true);
+    try {
+      const slot = await findNextSlot(account);
+      setAutoSlot(slot);
+      if (slot) {
+        setDate(`${slot.getFullYear()}-${String(slot.getMonth() + 1).padStart(2, "0")}-${String(slot.getDate()).padStart(2, "0")}`);
+        setTime(slot.toTimeString().slice(0, 5));
+      }
+    } catch (e: any) {
+      console.error(e);
+    } finally {
+      setSlotBusy(false);
+    }
+  };
 
   const generate = async (silent = false) => {
     if (!videoMeta) return;
@@ -184,15 +211,67 @@ export default function InstagramPublishDialog({
           </div>
 
           {mode === "schedule" && (
-            <div className="grid grid-cols-2 gap-2">
-              <div className="space-y-1.5">
-                <Label className="text-xs">Data</Label>
-                <Input type="date" value={date} onChange={(e) => setDate(e.target.value)} />
+            <div className="space-y-2 rounded-lg border border-border/50 bg-background/40 p-3">
+              <div className="flex items-center gap-1">
+                <Button
+                  type="button"
+                  size="sm"
+                  variant={scheduleMode === "auto" ? "default" : "ghost"}
+                  className={scheduleMode === "auto" ? "bg-gold-gradient text-black h-8" : "h-8"}
+                  onClick={() => setScheduleMode("auto")}
+                >
+                  <Wand2 size={12} className="mr-1" /> Automático
+                </Button>
+                <Button
+                  type="button"
+                  size="sm"
+                  variant={scheduleMode === "manual" ? "default" : "ghost"}
+                  className={scheduleMode === "manual" ? "bg-gold-gradient text-black h-8" : "h-8"}
+                  onClick={() => setScheduleMode("manual")}
+                >
+                  <Hand size={12} className="mr-1" /> Manual
+                </Button>
+                {scheduleMode === "auto" && (
+                  <Button
+                    type="button"
+                    size="sm"
+                    variant="ghost"
+                    className="ml-auto h-8 text-[11px]"
+                    onClick={computeAutoSlot}
+                    disabled={slotBusy}
+                  >
+                    {slotBusy ? <Loader2 size={12} className="mr-1 animate-spin" /> : <RefreshCw size={12} className="mr-1" />}
+                    Recalcular
+                  </Button>
+                )}
               </div>
-              <div className="space-y-1.5">
-                <Label className="text-xs">Hora</Label>
-                <Input type="time" value={time} onChange={(e) => setTime(e.target.value)} />
-              </div>
+
+              {scheduleMode === "auto" ? (
+                <div className="text-xs text-muted-foreground">
+                  {slotBusy && "Buscando próximo espaço livre…"}
+                  {!slotBusy && autoSlot && (
+                    <>Próximo slot: <span className="text-foreground font-medium">
+                      {autoSlot.toLocaleString("pt-BR", { dateStyle: "short", timeStyle: "short" })}
+                    </span></>
+                  )}
+                  {!slotBusy && !autoSlot && (
+                    <span className="text-destructive">
+                      Nenhum horário configurado. Vá em Configurações → Horários de publicação.
+                    </span>
+                  )}
+                </div>
+              ) : (
+                <div className="grid grid-cols-2 gap-2">
+                  <div className="space-y-1.5">
+                    <Label className="text-xs">Data</Label>
+                    <Input type="date" value={date} onChange={(e) => setDate(e.target.value)} />
+                  </div>
+                  <div className="space-y-1.5">
+                    <Label className="text-xs">Hora</Label>
+                    <Input type="time" value={time} onChange={(e) => setTime(e.target.value)} />
+                  </div>
+                </div>
+              )}
             </div>
           )}
 

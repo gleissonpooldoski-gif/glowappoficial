@@ -14,6 +14,7 @@ import {
   SelectValue,
 } from "@/components/ui/select";
 import InstagramCredentialsCard from "@/components/InstagramCredentialsCard";
+import PublishSchedulesCard from "@/components/PublishSchedulesCard";
 
 type App = {
   id?: string;
@@ -145,6 +146,8 @@ export default function Settings() {
       </Card>
 
       <InstagramCredentialsCard />
+
+      <PublishSchedulesCard />
 
       <Card className="glass border-border/50">
         <CardContent className="flex items-start gap-3 p-5 text-xs text-muted-foreground">
