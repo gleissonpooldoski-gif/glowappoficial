@@ -381,6 +381,7 @@ export type Database = {
           created_at: string
           id: string
           posts_per_day: number
+          sequence_start_at: string | null
           times: Json
           timezone: string
           updated_at: string
@@ -391,6 +392,7 @@ export type Database = {
           created_at?: string
           id?: string
           posts_per_day?: number
+          sequence_start_at?: string | null
           times?: Json
           timezone?: string
           updated_at?: string
@@ -401,6 +403,7 @@ export type Database = {
           created_at?: string
           id?: string
           posts_per_day?: number
+          sequence_start_at?: string | null
           times?: Json
           timezone?: string
           updated_at?: string
