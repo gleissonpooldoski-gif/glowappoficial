@@ -147,6 +147,8 @@ export default function Settings() {
 
       <InstagramCredentialsCard />
 
+      <PublishSchedulesCard />
+
       <Card className="glass border-border/50">
         <CardContent className="flex items-start gap-3 p-5 text-xs text-muted-foreground">
           <HardDrive size={16} className="mt-0.5 text-gold" />
