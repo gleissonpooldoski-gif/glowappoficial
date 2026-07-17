@@ -200,7 +200,24 @@ export default function InstagramPublishDialog({
           </div>
 
           <div className="space-y-1.5">
-            <Label className="text-xs">Hashtags</Label>
+            <div className="flex items-center justify-between">
+              <Label className="text-xs">Hashtags</Label>
+              {videoMeta && (
+                <Button
+                  type="button"
+                  size="sm"
+                  variant="ghost"
+                  className="h-7 gap-1 text-[11px] text-gold hover:bg-gold/10"
+                  onClick={() => regenerateHashtags(false)}
+                  disabled={genBusy || busy}
+                >
+                  {genBusy
+                    ? <Loader2 size={12} className="animate-spin" />
+                    : <RefreshCw size={12} />}
+                  Gerar outras hashtags
+                </Button>
+              )}
+            </div>
             <Textarea
               value={hashtags}
               onChange={(e) => setHashtags(e.target.value)}
