@@ -88,6 +88,7 @@ export default function InstagramPublishDialog({
   }, [open, mode, scheduleMode, account]);
 
   const computeAutoSlot = async () => {
+    if (!account) return;
     setSlotBusy(true);
     try {
       const slot = await findNextSlot(account);
