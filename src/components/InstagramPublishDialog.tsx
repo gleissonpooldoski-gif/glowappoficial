@@ -118,6 +118,29 @@ export default function InstagramPublishDialog({
     }
   };
 
+  const regenerateHashtags = async (silent = false) => {
+    if (!videoMeta) return;
+    setGenBusy(true);
+    try {
+      const { data, error } = await supabase.functions.invoke("generate-caption", {
+        body: {
+          filename: videoMeta.filename,
+          templateName: videoMeta.templateName ?? null,
+          projectName: videoMeta.projectName ?? null,
+          projectCategory: videoMeta.projectCategory ?? null,
+        },
+      });
+      if (error) throw error;
+      if ((data as any)?.error) throw new Error((data as any).error);
+      setHashtags(flattenHashtags((data as any)?.hashtags));
+      if (!silent) toast.success("Novas hashtags geradas");
+    } catch (e: any) {
+      if (!silent) toast.error(e?.message ?? "Falha ao gerar hashtags");
+    } finally {
+      setGenBusy(false);
+    }
+  };
+
   const submit = async () => {
     if (!videoId) { toast.error("Vídeo inválido."); return; }
     setBusy(true);
