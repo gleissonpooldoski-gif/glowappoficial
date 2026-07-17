@@ -1,5 +1,5 @@
 import { useEffect, useState } from "react";
-import { Clock, Plus, Trash2, Save, Loader2, CalendarClock } from "lucide-react";
+import { Clock, Plus, Trash2, Save, Loader2, CalendarClock, RotateCcw, Sparkles } from "lucide-react";
 import { Card, CardContent } from "@/components/ui/card";
 import { Label } from "@/components/ui/label";
 import { Input } from "@/components/ui/input";
@@ -7,7 +7,28 @@ import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
 import { toast } from "sonner";
 import { ACCOUNTS, InstagramAccount } from "@/lib/instagram";
-import { DEFAULT_TIMES, PublishSchedule, getSchedule, upsertSchedule } from "@/lib/schedules";
+import { DEFAULT_TIMES, PublishSchedule, getSchedule, upsertSchedule, findNextSlot } from "@/lib/schedules";
+
+function formatDateTimeBR(d: Date) {
+  return d.toLocaleString("pt-BR", {
+    day: "2-digit",
+    month: "2-digit",
+    year: "numeric",
+    hour: "2-digit",
+    minute: "2-digit",
+    timeZone: "America/Sao_Paulo",
+  });
+}
+
+function toLocalInputValue(iso: string | null): { date: string; time: string } {
+  if (!iso) return { date: "", time: "" };
+  const d = new Date(iso);
+  const pad = (n: number) => String(n).padStart(2, "0");
+  return {
+    date: `${d.getFullYear()}-${pad(d.getMonth() + 1)}-${pad(d.getDate())}`,
+    time: `${pad(d.getHours())}:${pad(d.getMinutes())}`,
+  };
+}
 
 function AccountScheduleEditor({ account, label }: { account: InstagramAccount; label: string }) {
   const [times, setTimes] = useState<string[]>(DEFAULT_TIMES);
