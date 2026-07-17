@@ -1578,6 +1578,14 @@ export default function Editor() {
           </div>
         </div>
       )}
+
+      <ChangeTemplateDialog
+        open={changeTplOpen}
+        onOpenChange={setChangeTplOpen}
+        projectId={edit?.project_id ?? null}
+        currentTemplateId={edit?.template_id ?? template?.id ?? null}
+        onApply={applyTemplateChange}
+      />
     </div>
   );
 }
