@@ -310,6 +310,16 @@ export default function Finished() {
               variant="outline"
               className="border-gold/40 text-gold hover:bg-gold/10"
               disabled={selected.size === 0}
+              onClick={() => setIgBatchScheduleOpen(true)}
+            >
+              <CalendarClock size={14} className="mr-1.5" />
+              Agendar selecionados ({selected.size})
+            </Button>
+            <Button
+              size="sm"
+              variant="outline"
+              className="border-gold/40 text-gold hover:bg-gold/10"
+              disabled={selected.size === 0}
               onClick={() => setIgBatchOpen(true)}
             >
               <Layers size={14} className="mr-1.5" />
