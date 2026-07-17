@@ -118,6 +118,29 @@ export default function InstagramPublishDialog({
     }
   };
 
+  const regenerateHashtags = async (silent = false) => {
+    if (!videoMeta) return;
+    setGenBusy(true);
+    try {
+      const { data, error } = await supabase.functions.invoke("generate-caption", {
+        body: {
+          filename: videoMeta.filename,
+          templateName: videoMeta.templateName ?? null,
+          projectName: videoMeta.projectName ?? null,
+          projectCategory: videoMeta.projectCategory ?? null,
+        },
+      });
+      if (error) throw error;
+      if ((data as any)?.error) throw new Error((data as any).error);
+      setHashtags(flattenHashtags((data as any)?.hashtags));
+      if (!silent) toast.success("Novas hashtags geradas");
+    } catch (e: any) {
+      if (!silent) toast.error(e?.message ?? "Falha ao gerar hashtags");
+    } finally {
+      setGenBusy(false);
+    }
+  };
+
   const submit = async () => {
     if (!videoId) { toast.error("Vídeo inválido."); return; }
     setBusy(true);
@@ -200,7 +223,24 @@ export default function InstagramPublishDialog({
           </div>
 
           <div className="space-y-1.5">
-            <Label className="text-xs">Hashtags</Label>
+            <div className="flex items-center justify-between">
+              <Label className="text-xs">Hashtags</Label>
+              {videoMeta && (
+                <Button
+                  type="button"
+                  size="sm"
+                  variant="ghost"
+                  className="h-7 gap-1 text-[11px] text-gold hover:bg-gold/10"
+                  onClick={() => regenerateHashtags(false)}
+                  disabled={genBusy || busy}
+                >
+                  {genBusy
+                    ? <Loader2 size={12} className="animate-spin" />
+                    : <RefreshCw size={12} />}
+                  Gerar outras hashtags
+                </Button>
+              )}
+            </div>
             <Textarea
               value={hashtags}
               onChange={(e) => setHashtags(e.target.value)}
