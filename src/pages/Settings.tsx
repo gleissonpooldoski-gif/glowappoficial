@@ -14,6 +14,7 @@ import {
   SelectValue,
 } from "@/components/ui/select";
 import InstagramCredentialsCard from "@/components/InstagramCredentialsCard";
+import PublishSchedulesCard from "@/components/PublishSchedulesCard";
 
 type App = {
   id?: string;
