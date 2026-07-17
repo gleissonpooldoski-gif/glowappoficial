@@ -1,15 +1,16 @@
 import { useEffect, useState } from "react";
-import { Loader2, Instagram, CalendarClock, Send, Sparkles, RefreshCw, Wand2, Hand } from "lucide-react";
+import { Loader2, Instagram, CalendarClock, Send, Sparkles, RefreshCw, Wand2, Hand, Lock } from "lucide-react";
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter, DialogDescription } from "@/components/ui/dialog";
 import { Button } from "@/components/ui/button";
 import { Label } from "@/components/ui/label";
 import { Input } from "@/components/ui/input";
 import { Textarea } from "@/components/ui/textarea";
-import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
+import { Badge } from "@/components/ui/badge";
 import { toast } from "sonner";
 import { supabase } from "@/integrations/supabase/client";
-import { ACCOUNTS, InstagramAccount, publishInstagram, friendlyError } from "@/lib/instagram";
+import { InstagramAccount, publishInstagram, friendlyError, platformFromProject, PLATFORM_LABEL } from "@/lib/instagram";
 import { findNextSlot } from "@/lib/schedules";
+import { useActiveProject } from "@/context/ProjectContext";
 
 type VideoMeta = {
   filename?: string;
@@ -47,7 +48,15 @@ function flattenHashtags(h: any): string {
 export default function InstagramPublishDialog({
   open, onOpenChange, mode, videoId, defaultCaption = "", defaultHashtags = "", videoMeta, onDone,
 }: Props) {
-  const [account, setAccount] = useState<InstagramAccount>("resenha");
+  const { activeProject } = useActiveProject();
+  const account: InstagramAccount | null = platformFromProject(activeProject);
+  const platformLabel = account ? PLATFORM_LABEL[account] : "—";
+  const platformClass =
+    account === "frame"
+      ? "bg-blue-500/15 text-blue-300 border-blue-400/40"
+      : account === "resenha"
+      ? "bg-purple-500/15 text-purple-300 border-purple-400/40"
+      : "bg-muted text-muted-foreground border-border";
   const [caption, setCaption] = useState(defaultCaption);
   const [hashtags, setHashtags] = useState(defaultHashtags);
   const now = new Date();
@@ -79,6 +88,7 @@ export default function InstagramPublishDialog({
   }, [open, mode, scheduleMode, account]);
 
   const computeAutoSlot = async () => {
+    if (!account) return;
     setSlotBusy(true);
     try {
       const slot = await findNextSlot(account);
@@ -143,6 +153,15 @@ export default function InstagramPublishDialog({
 
   const submit = async () => {
     if (!videoId) { toast.error("Vídeo inválido."); return; }
+    if (!account) {
+      toast.error("Selecione um projeto ativo (Frame ou Resenha) no menu superior.");
+      return;
+    }
+    const confirmMsg =
+      mode === "schedule"
+        ? `Esta publicação será agendada no projeto ${platformLabel}. Confirmar?`
+        : `Esta publicação será enviada agora ao ${platformLabel}. Confirmar?`;
+    if (!confirm(confirmMsg)) return;
     setBusy(true);
     try {
       if (mode === "schedule") {
@@ -183,15 +202,21 @@ export default function InstagramPublishDialog({
 
         <div className="space-y-3">
           <div className="space-y-1.5">
-            <Label className="text-xs">Conta</Label>
-            <Select value={account} onValueChange={(v) => setAccount(v as InstagramAccount)}>
-              <SelectTrigger><SelectValue /></SelectTrigger>
-              <SelectContent>
-                {ACCOUNTS.map((a) => (
-                  <SelectItem key={a.value} value={a.value}>{a.label}</SelectItem>
-                ))}
-              </SelectContent>
-            </Select>
+            <Label className="text-xs flex items-center gap-1"><Lock size={10} /> Publicando em</Label>
+            <div className="flex items-center gap-2 rounded-md border border-border/60 bg-background/40 px-3 py-2">
+              <Instagram size={14} className={account === "frame" ? "text-blue-300" : account === "resenha" ? "text-purple-300" : "text-muted-foreground"} />
+              <Badge variant="outline" className={`text-[10px] font-semibold ${platformClass}`}>
+                📱 {platformLabel}
+              </Badge>
+              <span className="text-[11px] text-muted-foreground ml-1">
+                {activeProject ? `Projeto ativo: ${activeProject.name}` : "Nenhum projeto ativo selecionado"}
+              </span>
+            </div>
+            {!account && (
+              <p className="text-[11px] text-destructive">
+                Selecione um projeto ativo (Frame ou Resenha) no menu superior para publicar.
+              </p>
+            )}
           </div>
 
           <div className="space-y-1.5">
@@ -325,7 +350,7 @@ export default function InstagramPublishDialog({
 
         <DialogFooter>
           <Button variant="ghost" disabled={busy} onClick={() => onOpenChange(false)}>Cancelar</Button>
-          <Button onClick={submit} disabled={busy || genBusy} className="bg-gold-gradient text-black">
+          <Button onClick={submit} disabled={busy || genBusy || !account} className="bg-gold-gradient text-black">
             {busy ? <Loader2 size={14} className="mr-1.5 animate-spin" /> :
               mode === "now" ? <Send size={14} className="mr-1.5" /> : <CalendarClock size={14} className="mr-1.5" />}
             {mode === "now" ? "Publicar" : "Agendar"}

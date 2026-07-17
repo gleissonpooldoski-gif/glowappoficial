@@ -1,15 +1,16 @@
 import { useEffect, useMemo, useState } from "react";
-import { Loader2, CalendarClock, RefreshCw, Sparkles, Wand2, Hand } from "lucide-react";
+import { Loader2, CalendarClock, RefreshCw, Sparkles, Wand2, Hand, Lock, Instagram } from "lucide-react";
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter, DialogDescription } from "@/components/ui/dialog";
 import { Button } from "@/components/ui/button";
 import { Label } from "@/components/ui/label";
 import { Input } from "@/components/ui/input";
+import { Badge } from "@/components/ui/badge";
 import { Progress } from "@/components/ui/progress";
-import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { toast } from "sonner";
 import { supabase } from "@/integrations/supabase/client";
-import { ACCOUNTS, InstagramAccount, publishInstagram, friendlyError } from "@/lib/instagram";
+import { InstagramAccount, publishInstagram, friendlyError, platformFromProject, PLATFORM_LABEL } from "@/lib/instagram";
 import { findNextSlots } from "@/lib/schedules";
+import { useActiveProject } from "@/context/ProjectContext";
 
 type VideoMeta = {
   id: string;
@@ -38,7 +39,15 @@ function fmt(d: Date) {
 }
 
 export default function InstagramBatchScheduleDialog({ open, onOpenChange, videos, onDone }: Props) {
-  const [account, setAccount] = useState<InstagramAccount>("resenha");
+  const { activeProject } = useActiveProject();
+  const account: InstagramAccount | null = platformFromProject(activeProject);
+  const platformLabel = account ? PLATFORM_LABEL[account] : "—";
+  const platformClass =
+    account === "frame"
+      ? "bg-blue-500/15 text-blue-300 border-blue-400/40"
+      : account === "resenha"
+      ? "bg-purple-500/15 text-purple-300 border-purple-400/40"
+      : "bg-muted text-muted-foreground border-border";
   const [slots, setSlots] = useState<Date[]>([]);
   const [slotBusy, setSlotBusy] = useState(false);
   const [busy, setBusy] = useState(false);
@@ -60,6 +69,7 @@ export default function InstagramBatchScheduleDialog({ open, onOpenChange, video
   };
 
   const compute = async () => {
+    if (!account) { setSlots([]); return; }
     setSlotBusy(true);
     try {
       const startFrom = parseStart();
@@ -109,11 +119,13 @@ export default function InstagramBatchScheduleDialog({ open, onOpenChange, video
   };
 
   const run = async () => {
+    if (!account) { toast.error("Selecione um projeto ativo (Frame ou Resenha)."); return; }
     if (videos.length === 0 || slots.length === 0) return;
     if (insufficient) {
       toast.error(`Só há ${slots.length} slots livres para ${videos.length} vídeos. Adicione mais horários.`);
       return;
     }
+    if (!confirm(`Estas ${videos.length} publicações serão agendadas no projeto ${platformLabel}. Confirmar?`)) return;
     setBusy(true); setDone(0); setErrors([]);
     const errs: string[] = [];
     for (let i = 0; i < videos.length; i++) {
@@ -160,15 +172,21 @@ export default function InstagramBatchScheduleDialog({ open, onOpenChange, video
 
         <div className="space-y-3">
           <div className="space-y-1.5">
-            <Label className="text-xs">Conta</Label>
-            <Select value={account} onValueChange={(v) => setAccount(v as InstagramAccount)} disabled={busy}>
-              <SelectTrigger><SelectValue /></SelectTrigger>
-              <SelectContent>
-                {ACCOUNTS.map((a) => (
-                  <SelectItem key={a.value} value={a.value}>{a.label}</SelectItem>
-                ))}
-              </SelectContent>
-            </Select>
+            <Label className="text-xs flex items-center gap-1"><Lock size={10} /> Publicando em</Label>
+            <div className="flex items-center gap-2 rounded-md border border-border/60 bg-background/40 px-3 py-2">
+              <Instagram size={14} className={account === "frame" ? "text-blue-300" : account === "resenha" ? "text-purple-300" : "text-muted-foreground"} />
+              <Badge variant="outline" className={`text-[10px] font-semibold ${platformClass}`}>
+                📱 {platformLabel}
+              </Badge>
+              <span className="text-[11px] text-muted-foreground ml-1">
+                {activeProject ? `Projeto ativo: ${activeProject.name}` : "Nenhum projeto ativo selecionado"}
+              </span>
+            </div>
+            {!account && (
+              <p className="text-[11px] text-destructive">
+                Selecione um projeto ativo (Frame ou Resenha) no menu superior para agendar.
+              </p>
+            )}
           </div>
 
           <div className="space-y-2 rounded-lg border border-border/50 bg-background/40 p-3">
@@ -278,7 +296,7 @@ export default function InstagramBatchScheduleDialog({ open, onOpenChange, video
           <Button variant="ghost" disabled={busy} onClick={() => onOpenChange(false)}>Fechar</Button>
           <Button
             onClick={run}
-            disabled={busy || slotBusy || videos.length === 0 || slots.length === 0 || insufficient}
+            disabled={busy || slotBusy || !account || videos.length === 0 || slots.length === 0 || insufficient}
             className="bg-gold-gradient text-black"
           >
             {busy ? <Loader2 size={14} className="mr-1.5 animate-spin" /> : <CalendarClock size={14} className="mr-1.5" />}
