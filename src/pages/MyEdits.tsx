@@ -324,10 +324,10 @@ export default function MyEdits() {
               {confirmMode === "return" && "Retornar vídeo para a Biblioteca?"}
             </AlertDialogTitle>
             <AlertDialogDescription>
-              {confirmMode === "all" && "Tem certeza que deseja excluir todos os projetos de edição? Essa ação não poderá ser desfeita."}
-              {confirmMode === "selection" && `Tem certeza que deseja excluir ${selected.size} projeto(s) selecionado(s)? Essa ação não poderá ser desfeita.`}
-              {confirmMode === "one" && "O projeto de edição será removido. O vídeo original volta para a Biblioteca."}
-              {confirmMode === "return" && "O projeto de edição será removido e o vídeo voltará a aparecer na Biblioteca."}
+              {confirmMode === "all" && "Tem certeza que deseja excluir todos os projetos de edição? Os vídeos originais permanecem na Biblioteca. Essa ação não poderá ser desfeita."}
+              {confirmMode === "selection" && `Tem certeza que deseja excluir ${selected.size} projeto(s) selecionado(s)? Os vídeos originais permanecem na Biblioteca. Essa ação não poderá ser desfeita.`}
+              {confirmMode === "one" && "O projeto de edição será removido, mas o vídeo original permanece salvo na Biblioteca para você criar um novo projeto."}
+              {confirmMode === "return" && "Deseja retornar este vídeo para a Biblioteca? O projeto de edição será removido, mas o vídeo permanecerá disponível para criar um novo projeto."}
             </AlertDialogDescription>
           </AlertDialogHeader>
           <AlertDialogFooter>
