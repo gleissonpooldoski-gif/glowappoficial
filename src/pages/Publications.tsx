@@ -1,10 +1,11 @@
-import { useEffect, useState } from "react";
-import { Instagram, Loader2, CheckCircle2, AlertCircle, Clock, Trash2, Calendar, ScrollText } from "lucide-react";
+import { useEffect, useMemo, useState } from "react";
+import { Instagram, Loader2, CheckCircle2, AlertCircle, Clock, Trash2, Calendar, ScrollText, RotateCcw } from "lucide-react";
 import { Card, CardContent } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogDescription } from "@/components/ui/dialog";
 import { ScrollArea } from "@/components/ui/scroll-area";
+import { Tabs, TabsList, TabsTrigger, TabsContent } from "@/components/ui/tabs";
 import { format } from "date-fns";
 import { ptBR } from "date-fns/locale";
 import { listInstagramPosts, InstagramPost, ACCOUNTS, getInstagramStatus } from "@/lib/instagram";
