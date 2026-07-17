@@ -296,7 +296,7 @@ export default function InstagramBatchScheduleDialog({ open, onOpenChange, video
           <Button variant="ghost" disabled={busy} onClick={() => onOpenChange(false)}>Fechar</Button>
           <Button
             onClick={run}
-            disabled={busy || slotBusy || videos.length === 0 || slots.length === 0 || insufficient}
+            disabled={busy || slotBusy || !account || videos.length === 0 || slots.length === 0 || insufficient}
             className="bg-gold-gradient text-black"
           >
             {busy ? <Loader2 size={14} className="mr-1.5 animate-spin" /> : <CalendarClock size={14} className="mr-1.5" />}
