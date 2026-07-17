@@ -139,6 +139,76 @@ export async function findNextSlot(
   }
   return null;
 }
+
+/**
+ * Encontra os próximos N slots livres em sequência para uma conta.
+ * Considera slots já reservados no banco + os slots que este próprio cálculo
+ * está distribuindo (evita colisão dentro do lote).
+ */
+export async function findNextSlots(
+  account: InstagramAccount,
+  count: number,
+  opts: { category?: string | null; horizonDays?: number } = {},
+): Promise<Date[]> {
+  if (count <= 0) return [];
+  const schedule = await getSchedule(account, opts.category ?? null)
+    ?? (await getSchedule(account, null));
+  const times = schedule?.times?.length ? schedule.times : DEFAULT_TIMES;
+  const perDay = schedule?.posts_per_day ?? times.length;
+  if (times.length === 0) return [];
+
+  const horizon = opts.horizonDays ?? 90;
+  const fromIso = new Date().toISOString();
+  const toIso = new Date(Date.now() + horizon * 86_400_000).toISOString();
+  const { data: booked } = await supabase
+    .from("instagram_posts" as any)
+    .select("scheduled_at,status,account")
+    .eq("account", account)
+    .in("status", ["AGENDADO", "PUBLICANDO"])
+    .gte("scheduled_at", fromIso)
+    .lte("scheduled_at", toIso);
+
+  const bookedTimes: number[] = [];
+  const bookedPerDay = new Map<string, number>();
+  for (const row of (booked ?? []) as any[]) {
+    if (!row.scheduled_at) continue;
+    const d = new Date(row.scheduled_at);
+    bookedTimes.push(d.getTime());
+    const key = ymd(d);
+    bookedPerDay.set(key, (bookedPerDay.get(key) ?? 0) + 1);
+  }
+
+  const results: Date[] = [];
+  const minStart = Date.now() + 60_000;
+
+  for (let dayOffset = 0; dayOffset < horizon && results.length < count; dayOffset++) {
+    const day = new Date();
+    day.setDate(day.getDate() + dayOffset);
+    day.setHours(0, 0, 0, 0);
+    const key = ymd(day);
+    let used = bookedPerDay.get(key) ?? 0;
+    if (used >= perDay) continue;
+
+    for (const t of times) {
+      if (results.length >= count) break;
+      if (used >= perDay) break;
+      const [h, m] = t.split(":").map(Number);
+      const slot = new Date(day);
+      slot.setHours(h, m, 0, 0);
+      if (slot.getTime() < minStart) continue;
+      const occupied = bookedTimes.some(
+        (ts) => Math.abs(ts - slot.getTime()) < 5 * 60_000,
+      );
+      if (occupied) continue;
+      results.push(slot);
+      bookedTimes.push(slot.getTime());
+      used++;
+      bookedPerDay.set(key, used);
+    }
+  }
+  return results;
+}
+
 function ymd(d: Date) {
   return `${d.getFullYear()}-${d.getMonth() + 1}-${d.getDate()}`;
 }

@@ -2,6 +2,7 @@ import { useEffect, useMemo, useState } from "react";
 import { Download, Trash2, Film, Package, Play, Calendar, Clock, LayoutTemplate, CheckCircle2, Loader2, AlertCircle, Sparkles, Copy, ChevronDown, ChevronUp, CheckSquare, Square, Instagram, CalendarClock, Layers } from "lucide-react";
 import InstagramPublishDialog from "@/components/InstagramPublishDialog";
 import InstagramBatchDialog from "@/components/InstagramBatchDialog";
+import InstagramBatchScheduleDialog from "@/components/InstagramBatchScheduleDialog";
 import { supabase } from "@/integrations/supabase/client";
 import { toast } from "sonner";
 import { Card, CardContent } from "@/components/ui/card";
@@ -75,6 +76,7 @@ export default function Finished() {
   const [zipBusy, setZipBusy] = useState(false);
   const [igDialog, setIgDialog] = useState<{ open: boolean; mode: "now" | "schedule"; videoId: string | null; caption?: string; hashtags?: string; meta?: { filename?: string; templateName?: string | null; projectName?: string | null; projectCategory?: string | null } }>({ open: false, mode: "now", videoId: null });
   const [igBatchOpen, setIgBatchOpen] = useState(false);
+  const [igBatchScheduleOpen, setIgBatchScheduleOpen] = useState(false);
 
   const load = async () => {
     if (!activeProject) { setVideos([]); setJobs([]); return; }
@@ -302,6 +304,16 @@ export default function Finished() {
             <Button size="sm" variant="outline" onClick={toggleAll}>
               {allSelected ? <CheckSquare size={14} className="mr-1.5" /> : <Square size={14} className="mr-1.5" />}
               {allSelected ? "Limpar seleção" : "Selecionar todos"}
+            </Button>
+            <Button
+              size="sm"
+              variant="outline"
+              className="border-gold/40 text-gold hover:bg-gold/10"
+              disabled={selected.size === 0}
+              onClick={() => setIgBatchScheduleOpen(true)}
+            >
+              <CalendarClock size={14} className="mr-1.5" />
+              Agendar selecionados ({selected.size})
             </Button>
             <Button
               size="sm"
@@ -597,6 +609,18 @@ export default function Finished() {
         open={igBatchOpen}
         onOpenChange={setIgBatchOpen}
         videoIds={Array.from(selected)}
+        onDone={() => { setSelected(new Set()); load(); }}
+      />
+      <InstagramBatchScheduleDialog
+        open={igBatchScheduleOpen}
+        onOpenChange={setIgBatchScheduleOpen}
+        videos={(videos ?? []).filter((v) => selected.has(v.id)).map((v) => ({
+          id: v.id,
+          filename: v.filename,
+          templateName: v.templateName ?? null,
+          projectName: v.projectName ?? null,
+          projectCategory: v.projectCategory ?? null,
+        }))}
         onDone={() => { setSelected(new Set()); load(); }}
       />
     </div>
