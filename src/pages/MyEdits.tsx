@@ -293,8 +293,8 @@ export default function MyEdits() {
                       <Button
                         size="sm"
                         variant="outline"
-                        className="h-7 w-7 p-0 text-muted-foreground hover:text-gold"
-                        title="Retornar para Biblioteca"
+                        className="h-7 w-7 p-0 border-gold/40 text-gold hover:bg-gold/10"
+                        title="Retornar vídeo para Biblioteca"
                         onClick={() => askReturn(r)}
                       >
                         <Undo2 size={12} />
@@ -302,6 +302,7 @@ export default function MyEdits() {
                     )}
                     <Button size="sm" variant="ghost"
                       className="h-7 w-7 p-0 text-muted-foreground hover:text-destructive"
+                      title="Excluir projeto (mantém o vídeo na Biblioteca)"
                       onClick={() => askRemove(r)}>
                       <Trash2 size={12} />
                     </Button>
