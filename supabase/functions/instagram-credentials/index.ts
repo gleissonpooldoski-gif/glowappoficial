@@ -7,11 +7,22 @@ type Account = "resenha" | "frame";
 
 type ValidationResult = {
   ok: boolean;
-  status: "VALID" | "TOKEN_INVALID" | "TOKEN_EXPIRED" | "IG_ID_INVALID" | "PERMISSION_MISSING" | "UNKNOWN_ERROR" | "EMPTY";
+  status: "VALID" | "TOKEN_INVALID" | "TOKEN_EXPIRED" | "IG_ID_INVALID" | "PERMISSION_MISSING" | "API_BLOCKED" | "UNKNOWN_ERROR" | "EMPTY";
   message: string;
   username?: string | null;
   account_type?: string | null;
 };
+
+function isApiBlocked(err: any): boolean {
+  if (!err) return false;
+  const msg = String(err.message ?? "").toLowerCase();
+  if (Number(err.code) === 200) return true;
+  if (msg.includes("api access blocked")) return true;
+  if (msg.includes("access blocked") && msg.includes("api")) return true;
+  return false;
+}
+
+const BLOCKED_MSG = "Acesso bloqueado pela Meta. Verifique as permissões do app no Facebook Developer ou reconecte a conta do Instagram.";
 
 async function readMeta(res: Response) {
   const text = await res.text();
