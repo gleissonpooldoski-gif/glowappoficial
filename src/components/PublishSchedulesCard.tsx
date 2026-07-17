@@ -206,6 +206,58 @@ function AccountScheduleEditor({ account, label }: { account: InstagramAccount; 
           </Button>
         </div>
       </div>
+
+      <div className="rounded-md border border-border/50 bg-background/30 p-3 space-y-3">
+        <div className="flex items-center gap-2">
+          <Sparkles size={14} className="text-gold" />
+          <p className="text-sm font-medium">Sequência de publicações</p>
+        </div>
+        <p className="text-[11px] text-muted-foreground">
+          Defina o ponto de partida da fila. O sistema seguirá esta grade automaticamente
+          e nunca sugerirá horários anteriores ao último agendamento.
+        </p>
+
+        <div className="flex flex-wrap items-end gap-2">
+          <div className="space-y-1">
+            <Label className="text-[11px] text-muted-foreground">Começar em (data)</Label>
+            <Input
+              type="date"
+              value={seqDate}
+              onChange={(e) => setSeqDate(e.target.value)}
+              className="h-8 w-40"
+            />
+          </div>
+          <div className="space-y-1">
+            <Label className="text-[11px] text-muted-foreground">Horário</Label>
+            <Input
+              type="time"
+              value={seqTime}
+              onChange={(e) => setSeqTime(e.target.value)}
+              className="h-8 w-28"
+            />
+          </div>
+          {seqStartAt && (
+            <Button size="sm" variant="ghost" onClick={resetSequence} disabled={saving} className="h-8">
+              <RotateCcw size={12} className="mr-1" /> Redefinir
+            </Button>
+          )}
+        </div>
+
+        <div className="grid grid-cols-1 gap-1 rounded-md bg-muted/30 p-2 text-[11px] sm:grid-cols-2">
+          <div>
+            <span className="text-muted-foreground">Início configurado: </span>
+            <span className="font-medium">
+              {seqStartAt ? formatDateTimeBR(new Date(seqStartAt)) : "—"}
+            </span>
+          </div>
+          <div>
+            <span className="text-muted-foreground">Próxima publicação: </span>
+            <span className="font-medium text-gold">
+              {nextSlot ? formatDateTimeBR(nextSlot) : "—"}
+            </span>
+          </div>
+        </div>
+      </div>
     </div>
   );
 }
