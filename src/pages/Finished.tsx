@@ -611,6 +611,18 @@ export default function Finished() {
         videoIds={Array.from(selected)}
         onDone={() => { setSelected(new Set()); load(); }}
       />
+      <InstagramBatchScheduleDialog
+        open={igBatchScheduleOpen}
+        onOpenChange={setIgBatchScheduleOpen}
+        videos={(videos ?? []).filter((v) => selected.has(v.id)).map((v) => ({
+          id: v.id,
+          filename: v.filename,
+          templateName: v.templateName ?? null,
+          projectName: v.projectName ?? null,
+          projectCategory: v.projectCategory ?? null,
+        }))}
+        onDone={() => { setSelected(new Set()); load(); }}
+      />
     </div>
   );
 }
