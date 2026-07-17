@@ -2,6 +2,7 @@ import { useEffect, useMemo, useState } from "react";
 import { Download, Trash2, Film, Package, Play, Calendar, Clock, LayoutTemplate, CheckCircle2, Loader2, AlertCircle, Sparkles, Copy, ChevronDown, ChevronUp, CheckSquare, Square, Instagram, CalendarClock, Layers } from "lucide-react";
 import InstagramPublishDialog from "@/components/InstagramPublishDialog";
 import InstagramBatchDialog from "@/components/InstagramBatchDialog";
+import InstagramBatchScheduleDialog from "@/components/InstagramBatchScheduleDialog";
 import { supabase } from "@/integrations/supabase/client";
 import { toast } from "sonner";
 import { Card, CardContent } from "@/components/ui/card";
