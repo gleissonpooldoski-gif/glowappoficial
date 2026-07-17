@@ -125,105 +125,75 @@ export default function TextLibraryDialog({ open, onOpenChange, onSelect, closeO
           </div>
         </DialogHeader>
 
-        <div
-          ref={scrollRef}
-          className="lib-scroll min-h-0 flex-1 overflow-y-auto px-3 py-2"
-        >
-          <div style={{ height: virtualizer.getTotalSize(), width: "100%", position: "relative" }}>
-            {virtualizer.getVirtualItems().map((v) => {
-              const r = rows[v.index];
-              const style: React.CSSProperties = {
-                position: "absolute",
-                top: 0,
-                left: 0,
-                width: "100%",
-                transform: `translateY(${v.start}px)`,
-                height: v.size,
-                padding: "3px 4px",
-              };
-              if (!r) return <div key={v.key} style={style} />;
-
-              if (r.kind === "group") {
-                return (
-                  <div key={v.key} style={style}>
-                    <button
-                      onClick={() => setOpenGroups((s) => ({ ...s, [r.groupId]: !s[r.groupId] }))}
-                      className="flex h-full w-full items-center gap-2 rounded-md border border-border/40 bg-secondary/40 px-3 text-left text-sm font-semibold hover:border-gold/40 hover:bg-secondary/70"
-                    >
-                      <ChevronRight
-                        size={14}
-                        className={cn("transition-transform text-muted-foreground", r.open && "rotate-90 text-gold")}
-                      />
-                      <span className="text-base">{r.icon}</span>
-                      <span className="flex-1">{r.label}</span>
-                      <span className="text-[10px] font-normal text-muted-foreground">{r.count}</span>
-                    </button>
-                  </div>
-                );
-              }
-
-              if (r.kind === "category") {
-                const key = `${r.groupId}:${r.category}`;
-                return (
-                  <div key={v.key} style={style}>
-                    <button
-                      onClick={() => setOpenCats((s) => ({ ...s, [key]: !(s[key] ?? false) }))}
-                      className="ml-4 flex h-full w-[calc(100%-1rem)] items-center gap-2 rounded border-l-2 border-border/30 pl-3 pr-2 text-left text-xs text-muted-foreground hover:border-gold/50 hover:text-foreground"
-                    >
-                      <ChevronRight
-                        size={12}
-                        className={cn("transition-transform", r.open && "rotate-90 text-gold")}
-                      />
-                      <span className="flex-1 uppercase tracking-wider">{r.label}</span>
-                      <span className="text-[10px]">{r.count}</span>
-                    </button>
-                  </div>
-                );
-              }
-
-              if (r.kind === "search-cat") {
-                return (
-                  <div key={v.key} style={style}>
-                    <div className="flex h-full items-center px-2 text-[10px] font-semibold uppercase tracking-wider text-muted-foreground">
-                      {r.label} <span className="ml-2 opacity-60">({r.count})</span>
-                    </div>
-                  </div>
-                );
-              }
-
-              if (r.kind === "empty") {
-                return (
-                  <div key={v.key} style={style}>
-                    <div className="flex h-full flex-col items-center justify-center rounded-md border border-dashed border-border/40 text-xs text-muted-foreground">
-                      Nenhuma frase encontrada para “{query}”.
-                    </div>
-                  </div>
-                );
-              }
-
-              const p = r.preset;
+        <div className="lib-scroll min-h-0 flex-1 overflow-y-auto px-3 py-2 space-y-1">
+          {rows.map((r, idx) => {
+            if (r.kind === "group") {
               return (
-                <div key={v.key} style={style}>
-                  <button
-                    onClick={() => handleClick(p)}
-                    className="group ml-8 flex h-full w-[calc(100%-2rem)] items-center gap-2 rounded-md border border-border/40 bg-card/60 px-3 text-left text-xs transition hover:border-gold/60 hover:bg-gold/5"
-                    title="Adicionar ao vídeo"
-                  >
-                    <span
-                      className="flex-1 truncate"
-                      style={{ fontWeight: p.weight ?? 600 }}
-                    >
-                      {p.text}
-                    </span>
-                    <span className="flex h-6 w-6 shrink-0 items-center justify-center rounded-full bg-gold/10 text-gold opacity-0 transition group-hover:opacity-100">
-                      <Plus size={12} />
-                    </span>
-                  </button>
+                <button
+                  key={`g-${r.groupId}`}
+                  onClick={() => setOpenGroups((s) => ({ ...s, [r.groupId]: !s[r.groupId] }))}
+                  className="flex h-11 w-full items-center gap-2 rounded-md border border-border/40 bg-secondary/40 px-3 text-left text-sm font-semibold hover:border-gold/40 hover:bg-secondary/70"
+                >
+                  <ChevronRight
+                    size={14}
+                    className={cn("transition-transform text-muted-foreground", r.open && "rotate-90 text-gold")}
+                  />
+                  <span className="text-base">{r.icon}</span>
+                  <span className="flex-1">{r.label}</span>
+                  <span className="text-[10px] font-normal text-muted-foreground">{r.count}</span>
+                </button>
+              );
+            }
+            if (r.kind === "category") {
+              const key = `${r.groupId}:${r.category}`;
+              return (
+                <button
+                  key={`c-${key}`}
+                  onClick={() => setOpenCats((s) => ({ ...s, [key]: !(s[key] ?? false) }))}
+                  className="ml-4 flex h-8 w-[calc(100%-1rem)] items-center gap-2 rounded border-l-2 border-border/30 pl-3 pr-2 text-left text-xs text-muted-foreground hover:border-gold/50 hover:text-foreground"
+                >
+                  <ChevronRight
+                    size={12}
+                    className={cn("transition-transform", r.open && "rotate-90 text-gold")}
+                  />
+                  <span className="flex-1 uppercase tracking-wider">{r.label}</span>
+                  <span className="text-[10px]">{r.count}</span>
+                </button>
+              );
+            }
+            if (r.kind === "search-cat") {
+              return (
+                <div key={`sc-${idx}`} className="flex h-8 items-center px-2 text-[10px] font-semibold uppercase tracking-wider text-muted-foreground">
+                  {r.label} <span className="ml-2 opacity-60">({r.count})</span>
                 </div>
               );
-            })}
-          </div>
+            }
+            if (r.kind === "empty") {
+              return (
+                <div key="empty" className="flex h-32 flex-col items-center justify-center rounded-md border border-dashed border-border/40 text-xs text-muted-foreground">
+                  Nenhuma frase encontrada para “{query}”.
+                </div>
+              );
+            }
+            const p = r.preset;
+            return (
+              <button
+                key={`p-${p.id}-${idx}`}
+                onClick={() => handleClick(p)}
+                className="group ml-8 flex h-10 w-[calc(100%-2rem)] items-center gap-2 rounded-md border border-border/40 bg-card/60 px-3 text-left text-xs transition hover:border-gold/60 hover:bg-gold/5"
+                title="Adicionar ao vídeo"
+              >
+                <span className="flex-1 truncate" style={{ fontWeight: p.weight ?? 600 }}>
+                  {p.text}
+                </span>
+                <span className="flex h-6 w-6 shrink-0 items-center justify-center rounded-full bg-gold/10 text-gold opacity-0 transition group-hover:opacity-100">
+                  <Plus size={12} />
+                </span>
+              </button>
+            );
+          })}
         </div>
+
 
         <div className="shrink-0 border-t border-border/50 bg-background/60 px-4 py-2">
           <Button
