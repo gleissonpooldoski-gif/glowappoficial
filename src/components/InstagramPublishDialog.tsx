@@ -153,6 +153,15 @@ export default function InstagramPublishDialog({
 
   const submit = async () => {
     if (!videoId) { toast.error("Vídeo inválido."); return; }
+    if (!account) {
+      toast.error("Selecione um projeto ativo (Frame ou Resenha) no menu superior.");
+      return;
+    }
+    const confirmMsg =
+      mode === "schedule"
+        ? `Esta publicação será agendada no projeto ${platformLabel}. Confirmar?`
+        : `Esta publicação será enviada agora ao ${platformLabel}. Confirmar?`;
+    if (!confirm(confirmMsg)) return;
     setBusy(true);
     try {
       if (mode === "schedule") {
