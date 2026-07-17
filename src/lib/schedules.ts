@@ -121,7 +121,8 @@ export async function findNextSlot(
     bookedPerDay.set(key, (bookedPerDay.get(key) ?? 0) + 1);
   }
 
-  // Âncora automática: continua a partir do ÚLTIMO agendado da conta.
+  // Âncora automática: usa o MAIOR entre o último post agendado da conta
+  // e o "início de sequência" configurado manualmente pelo usuário.
   let anchor = Date.now() + 60_000;
   const { data: lastRow } = await supabase
     .from("instagram_posts" as any)
@@ -133,10 +134,15 @@ export async function findNextSlot(
     .limit(1)
     .maybeSingle();
   const lastIso = (lastRow as any)?.scheduled_at as string | undefined;
-  const hasAnchor = !!(lastIso && new Date(lastIso).getTime() > Date.now());
-  if (hasAnchor) anchor = Math.max(anchor, new Date(lastIso!).getTime());
+  const lastTs = lastIso ? new Date(lastIso).getTime() : 0;
+  const seqStartTs = schedule?.sequence_start_at
+    ? new Date(schedule.sequence_start_at).getTime()
+    : 0;
+  const anchorTs = Math.max(lastTs, seqStartTs);
+  const hasAnchor = anchorTs > Date.now();
+  if (hasAnchor) anchor = Math.max(anchor, anchorTs);
 
-  const startDay = new Date(hasAnchor ? new Date(lastIso!) : new Date());
+  const startDay = new Date(hasAnchor ? anchorTs : Date.now());
   startDay.setHours(0, 0, 0, 0);
 
   for (let dayOffset = 0; dayOffset < horizon; dayOffset++) {
