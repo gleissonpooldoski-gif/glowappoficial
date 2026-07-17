@@ -216,10 +216,8 @@ export async function findNextSlots(
   const results: Date[] = [];
   let startBase = opts.startFrom ?? null;
 
-  // MODO AUTOMÁTICO: se não veio startFrom, usa como âncora o ÚLTIMO post já
-  // agendado/publicando da conta. Assim o próximo vídeo cai no slot da grade
-  // logo depois do último agendamento, respeitando a sequência que o usuário
-  // já definiu — mesmo que existam "buracos" livres no meio.
+  // MODO AUTOMÁTICO: se não veio startFrom, ancora no MAIOR entre o último
+  // post agendado/publicando da conta e o "início de sequência" configurado.
   if (!startBase) {
     const { data: lastRow } = await supabase
       .from("instagram_posts" as any)
@@ -231,10 +229,12 @@ export async function findNextSlots(
       .limit(1)
       .maybeSingle();
     const lastIso = (lastRow as any)?.scheduled_at as string | undefined;
-    if (lastIso) {
-      const lastDate = new Date(lastIso);
-      if (lastDate.getTime() > Date.now()) startBase = lastDate;
-    }
+    const lastTs = lastIso ? new Date(lastIso).getTime() : 0;
+    const seqStartTs = schedule?.sequence_start_at
+      ? new Date(schedule.sequence_start_at).getTime()
+      : 0;
+    const anchorTs = Math.max(lastTs, seqStartTs);
+    if (anchorTs > Date.now()) startBase = new Date(anchorTs);
   }
 
   // Mínimo é 1min à frente. Se há uma âncora (manual ou último agendado),
