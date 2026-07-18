@@ -1,5 +1,6 @@
 import { useEffect, useMemo, useState } from "react";
-import { Download, Trash2, Film, Package, Play, Calendar, Clock, LayoutTemplate, CheckCircle2, Loader2, AlertCircle, Sparkles, Copy, ChevronDown, ChevronUp, CheckSquare, Square, Instagram, CalendarClock, Layers } from "lucide-react";
+import { useNavigate } from "react-router-dom";
+import { Download, Trash2, Film, Package, Play, Calendar, Clock, LayoutTemplate, CheckCircle2, Loader2, AlertCircle, Sparkles, Copy, ChevronDown, ChevronUp, CheckSquare, Square, Instagram, CalendarClock, Layers, Pencil, Eye } from "lucide-react";
 import InstagramPublishDialog from "@/components/InstagramPublishDialog";
 import InstagramBatchDialog from "@/components/InstagramBatchDialog";
 import InstagramBatchScheduleDialog from "@/components/InstagramBatchScheduleDialog";
