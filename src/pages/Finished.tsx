@@ -357,9 +357,9 @@ export default function Finished() {
       let templateUrl: string | null = null;
       if (v.template_id) {
         const { data: tmpl } = await (supabase as any)
-          .from("templates").select("storage_path").eq("id", v.template_id).maybeSingle();
-        if (tmpl?.storage_path) {
-          const { data: tUrl } = await supabase.storage.from("brand-assets").createSignedUrl(tmpl.storage_path, 60 * 60 * 8);
+          .from("templates").select("file_path").eq("id", v.template_id).maybeSingle();
+        if (tmpl?.file_path) {
+          const { data: tUrl } = await supabase.storage.from("brand-assets").createSignedUrl(tmpl.file_path, 60 * 60 * 8);
           templateUrl = tUrl?.signedUrl ?? null;
         }
       }
