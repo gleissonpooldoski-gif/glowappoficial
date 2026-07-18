@@ -57,6 +57,7 @@ import {
   QueueItem,
   processItem,
   validateFile,
+  probeDurationAndThumbnail,
 } from "@/lib/uploadQueue";
 import { useActiveProject } from "@/context/ProjectContext";
 
