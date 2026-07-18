@@ -55,9 +55,11 @@ type TextEl = {
 type BlendMode =
   | "normal" | "multiply" | "screen" | "overlay" | "lighten" | "darken" | "soft-light" | "hard-light";
 
+type CropRect = { top: number; right: number; bottom: number; left: number };
+
 type EditDoc = {
   video: { zoom: number; x: number; y: number };
-  template: { opacity: number; blend: BlendMode; fit: "contain" | "cover"; x: number; y: number; scale: number };
+  template: { opacity: number; blend: BlendMode; fit: "contain" | "cover"; x: number; y: number; scale: number; crop?: CropRect | null };
   texts: TextEl[];
   colors: { primary: string; secondary: string };
   logo_url?: string | null;
