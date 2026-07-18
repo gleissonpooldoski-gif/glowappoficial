@@ -209,6 +209,82 @@ export default function Editor() {
   const [cropMode, setCropMode] = useState(false);
   const [cropDraft, setCropDraft] = useState<CropRect>({ top: 0, right: 0, bottom: 0, left: 0 });
   const cropDragRef = useRef<{ edge: "top" | "right" | "bottom" | "left"; startX: number; startY: number; startVal: number; stageW: number; stageH: number } | null>(null);
+  const [saveCopyOpen, setSaveCopyOpen] = useState(false);
+  const [saveCopyForm, setSaveCopyForm] = useState({ name: "", category: "Geral", tags: "" });
+  const [savingCopy, setSavingCopy] = useState(false);
+  const TEMPLATE_CATEGORIES = ["Geral", "Intro", "Outro", "Overlay", "Transição", "Legenda", "Chamada", "Vinheta"];
+
+  async function renderCroppedOverlayBlob(crop: CropRect): Promise<Blob> {
+    if (!templateSrc) throw new Error("Sem imagem original do overlay");
+    const img = new Image();
+    img.crossOrigin = "anonymous";
+    await new Promise<void>((res, rej) => {
+      img.onload = () => res();
+      img.onerror = () => rej(new Error("Falha ao carregar imagem do overlay"));
+      img.src = templateSrc;
+    });
+    const W = img.naturalWidth, H = img.naturalHeight;
+    const sx = W * (crop.left / 100);
+    const sy = H * (crop.top / 100);
+    const sw = Math.max(1, W * (1 - (crop.left + crop.right) / 100));
+    const sh = Math.max(1, H * (1 - (crop.top + crop.bottom) / 100));
+    const canvas = document.createElement("canvas");
+    canvas.width = Math.round(sw);
+    canvas.height = Math.round(sh);
+    const ctx = canvas.getContext("2d");
+    if (!ctx) throw new Error("Canvas indisponível");
+    ctx.drawImage(img, sx, sy, sw, sh, 0, 0, canvas.width, canvas.height);
+    return await new Promise<Blob>((res, rej) =>
+      canvas.toBlob((b) => (b ? res(b) : rej(new Error("Falha ao gerar PNG"))), "image/png")
+    );
+  }
+
+  const openSaveCopyDialog = () => {
+    const base = (template?.name as string) || "Overlay";
+    setSaveCopyForm({ name: `${base} (Recorte)`, category: (template?.category as string) || "Overlay", tags: "" });
+    setSaveCopyOpen(true);
+  };
+
+  const saveCropAsCopy = async () => {
+    const crop = cropMode ? cropDraft : doc.template.crop;
+    if (!crop) return toast.error("Nenhum recorte definido");
+    if (!saveCopyForm.name.trim()) return toast.error("Informe o nome");
+    const isImage = (template?.file_type as string | undefined)?.startsWith("image/");
+    if (!isImage) return toast.error("Apenas overlays de imagem podem ser salvos como cópia");
+    setSavingCopy(true);
+    try {
+      const blob = await renderCroppedOverlayBlob(crop);
+      const safeName = saveCopyForm.name.trim().replace(/[^a-zA-Z0-9._-]/g, "_");
+      const path = `templates/${Date.now()}-${safeName}.png`;
+      const { error: upErr } = await supabase.storage.from("media").upload(path, blob, {
+        upsert: false,
+        contentType: "image/png",
+      });
+      if (upErr) throw upErr;
+      const { data: signed, error: sErr } = await supabase.storage
+        .from("media").createSignedUrl(path, 60 * 60 * 24 * 365);
+      if (sErr) throw sErr;
+      const tags = saveCopyForm.tags.split(",").map((t) => t.trim()).filter(Boolean);
+      const { error: insErr } = await (supabase as any).from("templates").insert({
+        name: saveCopyForm.name.trim(),
+        description: `Recorte de "${template?.name ?? "overlay"}"`,
+        category: saveCopyForm.category || "Overlay",
+        preview_url: signed.signedUrl,
+        file_path: path,
+        file_type: "image/png",
+        is_builtin: false,
+        settings: { source_template_id: template?.id ?? null, tags, crop_source: crop },
+        project_id: template?.project_id ?? null,
+      });
+      if (insErr) throw insErr;
+      toast.success("Recorte salvo como novo overlay na biblioteca");
+      setSaveCopyOpen(false);
+    } catch (err: any) {
+      toast.error(err?.message || "Falha ao salvar cópia");
+    } finally {
+      setSavingCopy(false);
+    }
+  };
 
   const applyTemplateChange = async ({ template: tpl, url }: ChangeTemplateResult) => {
     if (!id) return;
