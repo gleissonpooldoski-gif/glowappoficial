@@ -335,7 +335,7 @@ export default function Finished() {
     window.open(url, "_blank", "noopener,noreferrer");
   };
 
-
+  return (
     <div className="space-y-6">
       <header className="flex flex-col gap-3 md:flex-row md:items-start md:justify-between">
         <div>
