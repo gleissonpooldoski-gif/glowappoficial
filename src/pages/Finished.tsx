@@ -748,7 +748,32 @@ export default function Finished() {
         }))}
         onDone={() => { setSelected(new Set()); load(); }}
       />
+
+      <AlertDialog open={recoverFor !== null} onOpenChange={(o) => { if (!o && !recovering) setRecoverFor(null); }}>
+        <AlertDialogContent>
+          <AlertDialogHeader>
+            <AlertDialogTitle>Projeto de edição não encontrado</AlertDialogTitle>
+            <AlertDialogDescription>
+              Não localizamos o projeto original deste vídeo. Podemos criar um novo projeto de edição
+              usando este vídeo como base (mantendo o template atual). Você poderá ajustar textos,
+              overlays e cortes normalmente.
+            </AlertDialogDescription>
+          </AlertDialogHeader>
+          <AlertDialogFooter>
+            <AlertDialogCancel disabled={recovering}>Cancelar</AlertDialogCancel>
+            <AlertDialogAction
+              onClick={(e) => { e.preventDefault(); recoverAsNewEdit(); }}
+              disabled={recovering}
+              className="bg-gold-gradient text-black"
+            >
+              {recovering ? <Loader2 size={14} className="mr-1.5 animate-spin" /> : <Pencil size={14} className="mr-1.5" />}
+              Criar novo projeto
+            </AlertDialogAction>
+          </AlertDialogFooter>
+        </AlertDialogContent>
+      </AlertDialog>
     </div>
   );
 }
+
 
