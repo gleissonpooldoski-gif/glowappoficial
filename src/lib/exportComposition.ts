@@ -51,7 +51,7 @@ export type CompositionInput = {
   templateKind?: "image" | "video" | null;
   ratio: { width: number; height: number };
   videoTransform?: { zoom: number; x: number; y: number };
-  templateOpts?: { opacity: number; blend: BlendMode; fit: "contain" | "cover"; x?: number; y?: number; scale?: number };
+  templateOpts?: { opacity: number; blend: BlendMode; fit: "contain" | "cover"; x?: number; y?: number; scale?: number; crop?: { top: number; right: number; bottom: number; left: number } | null };
   texts: CompText[];
   onProgress?: (pct: number, phase: string) => void;
 };
