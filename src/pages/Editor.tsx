@@ -57,7 +57,7 @@ type BlendMode =
 
 type EditDoc = {
   video: { zoom: number; x: number; y: number };
-  template: { opacity: number; blend: BlendMode; fit: "contain" | "cover"; x: number; y: number };
+  template: { opacity: number; blend: BlendMode; fit: "contain" | "cover"; x: number; y: number; scale: number };
   texts: TextEl[];
   colors: { primary: string; secondary: string };
   logo_url?: string | null;
@@ -101,7 +101,7 @@ const TRANSFORM_OPTIONS: { value: TextTransform; label: string; sample: string }
 
 const defaultDoc: EditDoc = {
   video: { zoom: 1, x: 0, y: 0 },
-  template: { opacity: 1, blend: "normal", fit: "contain", x: 0, y: 0 },
+  template: { opacity: 1, blend: "normal", fit: "contain", x: 0, y: 0, scale: 1 },
   texts: [],
   colors: { primary: "#D4AF37", secondary: "#FFFFFF" },
 };
@@ -921,7 +921,7 @@ export default function Editor() {
                   mixBlendMode: doc.template.blend,
                   opacity: doc.template.opacity,
                   background: "transparent",
-                  transform: `translate(${doc.template.x}%, ${doc.template.y}%)`,
+                  transform: `translate(${doc.template.x}%, ${doc.template.y}%) scale(${doc.template.scale ?? 1})`,
                 }}
               />
             )}
@@ -937,7 +937,7 @@ export default function Editor() {
                   mixBlendMode: doc.template.blend,
                   opacity: doc.template.opacity,
                   background: "transparent",
-                  transform: `translate(${doc.template.x}%, ${doc.template.y}%)`,
+                  transform: `translate(${doc.template.x}%, ${doc.template.y}%) scale(${doc.template.scale ?? 1})`,
                 }}
                 autoPlay muted loop playsInline
               />
@@ -1442,6 +1442,17 @@ export default function Editor() {
                       </Select>
                     </div>
                     <div className="space-y-2 rounded-md border border-border/60 p-2">
+                      <div className="flex items-center justify-between">
+                        <Label className="text-xs">📏 Tamanho: {Math.round((doc.template.scale ?? 1) * 100)}%</Label>
+                        <Button variant="ghost" size="sm" className="h-6 px-2 text-[10px]"
+                          onClick={() => setDoc((d) => ({ ...d, template: { ...d.template, scale: 1 } }))}>
+                          Resetar
+                        </Button>
+                      </div>
+                      <Slider min={0.2} max={3} step={0.05} value={[doc.template.scale ?? 1]}
+                        onValueChange={([v]) => setDoc((d) => ({ ...d, template: { ...d.template, scale: v } }))} />
+                    </div>
+                    <div className="space-y-2 rounded-md border border-border/60 p-2">
                       <Label className="text-xs">📍 Posição do overlay</Label>
                       <div className="space-y-1.5">
                         <div className="flex items-center justify-between">
@@ -1483,7 +1494,7 @@ export default function Editor() {
                       </Button>
                     </div>
                     <Button variant="outline" size="sm" className="w-full"
-                      onClick={() => setDoc((d) => ({ ...d, template: { opacity: 1, blend: "normal", fit: "contain", x: 0, y: 0 } }))}>
+                      onClick={() => setDoc((d) => ({ ...d, template: { opacity: 1, blend: "normal", fit: "contain", x: 0, y: 0, scale: 1 } }))}>
                       Resetar overlay
                     </Button>
                     <Button variant="outline" size="sm" className="w-full border-gold/40 text-gold hover:bg-gold/10"
