@@ -21,6 +21,8 @@ export type EnqueuePayload = {
   templateId: string | null;
   name: string;
   composition: CompositionInput;
+  /** When set, updates this existing finished video row instead of inserting a new one. */
+  replaceVideoId?: string | null;
   videoMeta?: {
     filename?: string | null;
     duration_seconds?: number | null;
