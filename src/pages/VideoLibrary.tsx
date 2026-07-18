@@ -114,6 +114,8 @@ export default function VideoLibrary() {
   const activeCount = useRef(0);
   const projectRef = useRef<string>("none");
   const seenHashes = useRef<Set<string>>(new Set());
+  const backfilledRef = useRef<Set<string>>(new Set());
+  const [backfilling, setBackfilling] = useState<Set<string>>(new Set());
 
   useEffect(() => {
     queueRef.current = queue;
