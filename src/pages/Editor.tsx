@@ -1569,8 +1569,59 @@ export default function Editor() {
                         Centralizar
                       </Button>
                     </div>
+                    <div className="space-y-2 rounded-md border border-border/60 p-2">
+                      <div className="flex items-center justify-between">
+                        <Label className="text-xs">✂️ Recorte do overlay</Label>
+                        {doc.template.crop && (doc.template.crop.top || doc.template.crop.right || doc.template.crop.bottom || doc.template.crop.left) ? (
+                          <span className="rounded bg-gold/20 px-1.5 py-0.5 text-[10px] font-medium text-gold">Ativo</span>
+                        ) : null}
+                      </div>
+                      {!cropMode ? (
+                        <div className="grid grid-cols-2 gap-1.5">
+                          <Button variant="outline" size="sm" className="h-7 text-xs"
+                            onClick={() => {
+                              setCropDraft(doc.template.crop ?? { top: 0, right: 0, bottom: 0, left: 0 });
+                              setCropMode(true);
+                            }}>
+                            ✂️ Recortar
+                          </Button>
+                          <Button variant="ghost" size="sm" className="h-7 text-xs"
+                            onClick={() => setDoc((d) => ({ ...d, template: { ...d.template, crop: null } }))}
+                            disabled={!doc.template.crop}>
+                            🔄 Restaurar
+                          </Button>
+                        </div>
+                      ) : (
+                        <div className="space-y-2">
+                          <p className="text-[11px] text-muted-foreground">Arraste as bordas douradas na prévia para ajustar o recorte.</p>
+                          <div className="grid grid-cols-2 gap-1 text-[11px]">
+                            <span>Topo: {Math.round(cropDraft.top)}%</span>
+                            <span>Base: {Math.round(cropDraft.bottom)}%</span>
+                            <span>Esquerda: {Math.round(cropDraft.left)}%</span>
+                            <span>Direita: {Math.round(cropDraft.right)}%</span>
+                          </div>
+                          <div className="grid grid-cols-3 gap-1.5">
+                            <Button size="sm" className="h-7 bg-gold text-xs text-black hover:bg-gold/90"
+                              onClick={() => {
+                                setDoc((d) => ({ ...d, template: { ...d.template, crop: { ...cropDraft } } }));
+                                setCropMode(false);
+                              }}>
+                              ✅ Aplicar
+                            </Button>
+                            <Button variant="outline" size="sm" className="h-7 text-xs"
+                              onClick={() => setCropMode(false)}>
+                              ❌ Cancelar
+                            </Button>
+                            <Button variant="ghost" size="sm" className="h-7 text-xs"
+                              onClick={() => setCropDraft({ top: 0, right: 0, bottom: 0, left: 0 })}>
+                              🔄 Zerar
+                            </Button>
+                          </div>
+                        </div>
+                      )}
+                    </div>
                     <Button variant="outline" size="sm" className="w-full"
-                      onClick={() => setDoc((d) => ({ ...d, template: { opacity: 1, blend: "normal", fit: "contain", x: 0, y: 0, scale: 1 } }))}>
+                      onClick={() => setDoc((d) => ({ ...d, template: { opacity: 1, blend: "normal", fit: "contain", x: 0, y: 0, scale: 1, crop: null } }))}>
                       Resetar overlay
                     </Button>
                     <Button variant="outline" size="sm" className="w-full border-gold/40 text-gold hover:bg-gold/10"
