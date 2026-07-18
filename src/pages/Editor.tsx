@@ -937,7 +937,7 @@ export default function Editor() {
                   mixBlendMode: doc.template.blend,
                   opacity: doc.template.opacity,
                   background: "transparent",
-                  transform: `translate(${doc.template.x}%, ${doc.template.y}%)`,
+                  transform: `translate(${doc.template.x}%, ${doc.template.y}%) scale(${doc.template.scale ?? 1})`,
                 }}
                 autoPlay muted loop playsInline
               />
