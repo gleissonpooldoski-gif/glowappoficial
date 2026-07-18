@@ -1827,6 +1827,55 @@ export default function Editor() {
         currentTemplateId={edit?.template_id ?? template?.id ?? null}
         onApply={applyTemplateChange}
       />
+
+      <Dialog open={saveCopyOpen} onOpenChange={(o) => !savingCopy && setSaveCopyOpen(o)}>
+        <DialogContent className="sm:max-w-md">
+          <DialogHeader>
+            <DialogTitle>💾 Salvar recorte como novo overlay</DialogTitle>
+            <DialogDescription>
+              Uma nova imagem será criada com o recorte atual e salva na Biblioteca de Templates. O overlay original permanece intacto.
+            </DialogDescription>
+          </DialogHeader>
+          <div className="space-y-3 py-2">
+            <div className="space-y-1.5">
+              <Label className="text-xs">Nome *</Label>
+              <Input
+                autoFocus
+                value={saveCopyForm.name}
+                onChange={(e) => setSaveCopyForm((s) => ({ ...s, name: e.target.value }))}
+                placeholder="Ex: Logo Empresa (Recorte)"
+              />
+            </div>
+            <div className="space-y-1.5">
+              <Label className="text-xs">Categoria</Label>
+              <Select value={saveCopyForm.category} onValueChange={(v) => setSaveCopyForm((s) => ({ ...s, category: v }))}>
+                <SelectTrigger><SelectValue /></SelectTrigger>
+                <SelectContent>
+                  {TEMPLATE_CATEGORIES.map((c) => (
+                    <SelectItem key={c} value={c}>{c}</SelectItem>
+                  ))}
+                </SelectContent>
+              </Select>
+            </div>
+            <div className="space-y-1.5">
+              <Label className="text-xs">Tags (opcional, separadas por vírgula)</Label>
+              <Input
+                value={saveCopyForm.tags}
+                onChange={(e) => setSaveCopyForm((s) => ({ ...s, tags: e.target.value }))}
+                placeholder="logo, marca, dourado"
+              />
+            </div>
+          </div>
+          <div className="flex justify-end gap-2">
+            <Button variant="ghost" onClick={() => setSaveCopyOpen(false)} disabled={savingCopy}>
+              Cancelar
+            </Button>
+            <Button onClick={saveCropAsCopy} disabled={savingCopy} className="bg-gold text-black hover:bg-gold/90">
+              {savingCopy ? <><Loader2 size={14} className="mr-1 animate-spin" /> Salvando...</> : "Salvar cópia"}
+            </Button>
+          </div>
+        </DialogContent>
+      </Dialog>
     </div>
   );
 }
