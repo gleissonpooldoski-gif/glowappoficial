@@ -301,32 +301,96 @@ export default function Finished() {
     }
   };
 
-  const openEdit = async (v: FinishedVideo) => {
-    // Try to find the edit project that produced this video.
+  const [recoverFor, setRecoverFor] = useState<FinishedVideo | null>(null);
+  const [recovering, setRecovering] = useState(false);
+
+  const findEditForVideo = async (v: FinishedVideo): Promise<string | null> => {
+    // 1) direct link via output_video_id
     const { data: linked } = await (supabase as any)
       .from("edits").select("id").eq("output_video_id", v.id).maybeSingle();
-    let editId: string | null = linked?.id ?? null;
-    if (!editId) {
-      // Fallback via render_jobs history.
-      const { data: jobRows } = await (supabase as any)
-        .from("render_jobs").select("edit_id").eq("video_id", v.id)
-        .not("edit_id", "is", null).order("created_at", { ascending: false }).limit(1);
-      const candidateEditId = jobRows?.[0]?.edit_id ?? null;
-      if (candidateEditId) {
-        const { data: exists } = await (supabase as any)
-          .from("edits").select("id").eq("id", candidateEditId).maybeSingle();
-        if (exists?.id) {
-          editId = exists.id;
-          // Link it back so subsequent edits are found instantly.
-          await (supabase as any).from("edits").update({ output_video_id: v.id }).eq("id", editId);
-        }
+    if (linked?.id) return linked.id;
+
+    // 2) render_jobs history
+    const { data: jobRows } = await (supabase as any)
+      .from("render_jobs").select("edit_id").eq("video_id", v.id)
+      .not("edit_id", "is", null).order("created_at", { ascending: false }).limit(5);
+    for (const r of jobRows ?? []) {
+      if (!r?.edit_id) continue;
+      const { data: exists } = await (supabase as any)
+        .from("edits").select("id").eq("id", r.edit_id).maybeSingle();
+      if (exists?.id) {
+        await (supabase as any).from("edits").update({ output_video_id: v.id }).eq("id", exists.id);
+        return exists.id;
       }
     }
-    if (!editId) {
-      toast.error("O projeto de edição deste vídeo não está mais disponível.");
-      return;
+
+    // 3) same project + template combo (most recent completed)
+    if (v.project_id && v.template_id) {
+      const { data: byPT } = await (supabase as any)
+        .from("edits").select("id")
+        .eq("project_id", v.project_id).eq("template_id", v.template_id)
+        .order("updated_at", { ascending: false }).limit(1).maybeSingle();
+      if (byPT?.id) {
+        await (supabase as any).from("edits").update({ output_video_id: v.id }).eq("id", byPT.id);
+        return byPT.id;
+      }
     }
-    navigate(`/editor/${editId}`);
+    return null;
+  };
+
+  const openEdit = async (v: FinishedVideo) => {
+    const editId = await findEditForVideo(v);
+    if (editId) { navigate(`/editor/${editId}`); return; }
+    setRecoverFor(v);
+  };
+
+  const recoverAsNewEdit = async () => {
+    const v = recoverFor;
+    if (!v) return;
+    setRecovering(true);
+    try {
+      let videoUrl: string | null = null;
+      if (v.processed_path) {
+        const { data } = await supabase.storage.from(BUCKET).createSignedUrl(v.processed_path, 60 * 60 * 8);
+        videoUrl = data?.signedUrl ?? null;
+      }
+      let templateUrl: string | null = null;
+      if (v.template_id) {
+        const { data: tmpl } = await (supabase as any)
+          .from("templates").select("file_path").eq("id", v.template_id).maybeSingle();
+        if (tmpl?.file_path) {
+          const { data: tUrl } = await supabase.storage.from("brand-assets").createSignedUrl(tmpl.file_path, 60 * 60 * 8);
+          templateUrl = tUrl?.signedUrl ?? null;
+        }
+      }
+      const { data: created, error } = await (supabase as any)
+        .from("edits")
+        .insert({
+          video_id: null,
+          project_id: v.project_id ?? activeProject?.id ?? null,
+          template_id: v.template_id,
+          template_url: templateUrl,
+          video_url: videoUrl,
+          video_filename: v.filename,
+          video_storage_path: v.processed_path,
+          name: v.filename ?? "Recuperação",
+          aspect_ratio: "9:16",
+          status: "editing",
+          user_id: "single-user",
+          owner_user_id: "single-user",
+          output_video_id: v.id,
+          doc: { video: { zoom: 1, x: 0, y: 0 }, texts: [], colors: { primary: "#D4AF37", secondary: "#FFFFFF" } },
+        })
+        .select("id").single();
+      if (error) throw error;
+      toast.success("Novo projeto de edição criado a partir deste vídeo.");
+      setRecoverFor(null);
+      navigate(`/editor/${created.id}`);
+    } catch (e: any) {
+      toast.error(e?.message ?? "Não foi possível recuperar o projeto.");
+    } finally {
+      setRecovering(false);
+    }
   };
 
   const openPreview = (v: FinishedVideo) => {
@@ -684,7 +748,32 @@ export default function Finished() {
         }))}
         onDone={() => { setSelected(new Set()); load(); }}
       />
+
+      <AlertDialog open={recoverFor !== null} onOpenChange={(o) => { if (!o && !recovering) setRecoverFor(null); }}>
+        <AlertDialogContent>
+          <AlertDialogHeader>
+            <AlertDialogTitle>Projeto de edição não encontrado</AlertDialogTitle>
+            <AlertDialogDescription>
+              Não localizamos o projeto original deste vídeo. Podemos criar um novo projeto de edição
+              usando este vídeo como base (mantendo o template atual). Você poderá ajustar textos,
+              overlays e cortes normalmente.
+            </AlertDialogDescription>
+          </AlertDialogHeader>
+          <AlertDialogFooter>
+            <AlertDialogCancel disabled={recovering}>Cancelar</AlertDialogCancel>
+            <AlertDialogAction
+              onClick={(e) => { e.preventDefault(); recoverAsNewEdit(); }}
+              disabled={recovering}
+              className="bg-gold-gradient text-black"
+            >
+              {recovering ? <Loader2 size={14} className="mr-1.5 animate-spin" /> : <Pencil size={14} className="mr-1.5" />}
+              Criar novo projeto
+            </AlertDialogAction>
+          </AlertDialogFooter>
+        </AlertDialogContent>
+      </AlertDialog>
     </div>
   );
 }
+
 
