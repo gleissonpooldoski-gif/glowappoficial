@@ -21,6 +21,8 @@ export type EnqueuePayload = {
   templateId: string | null;
   name: string;
   composition: CompositionInput;
+  /** When set, updates this existing finished video row instead of inserting a new one. */
+  replaceVideoId?: string | null;
   videoMeta?: {
     filename?: string | null;
     duration_seconds?: number | null;
@@ -47,7 +49,7 @@ export function RenderQueueProvider({ children }: { children: ReactNode }) {
   }, []);
 
   const runJob = useCallback(async (jobId: string, payload: EnqueuePayload) => {
-    const { editId, projectId, templateId, name, composition, videoMeta } = payload;
+    const { editId, projectId, templateId, name, composition, videoMeta, replaceVideoId } = payload;
     try {
       // Mark edit as processing right away so it shows up in UI.
       await (supabase as any).from("edits").update({ status: "processing" }).eq("id", editId);
@@ -87,30 +89,58 @@ export function RenderQueueProvider({ children }: { children: ReactNode }) {
         throw new Error("Arquivo enviado mas não foi possível validar a URL.");
       }
 
-      const { data: finishedRow, error: insErr } = await (supabase as any)
-        .from("videos")
-        .insert({
-          filename: finalName,
-          mime_type: result.mime,
-          status: "completed",
-          progress: 100,
-          project_id: projectId,
-          template_id: templateId,
-          duration_seconds: result.durationSeconds || videoMeta?.duration_seconds || null,
-          size_bytes: result.blob.size,
-          processed_path: processedPath,
-          thumbnail_path: videoMeta?.thumbnail_path ?? null,
-          thumbnail_url: videoMeta?.thumbnail_url ?? null,
-        })
-        .select("id")
-        .single();
-      if (insErr) throw new Error(`Falha ao registrar vídeo final: ${insErr.message}`);
+      let finalVideoId: string;
+
+      if (replaceVideoId) {
+        // Re-edit flow: update existing video row and remove the old file.
+        const { data: prev } = await (supabase as any)
+          .from("videos").select("processed_path").eq("id", replaceVideoId).maybeSingle();
+        const { error: updErr } = await (supabase as any)
+          .from("videos")
+          .update({
+            filename: finalName,
+            mime_type: result.mime,
+            status: "completed",
+            progress: 100,
+            template_id: templateId,
+            duration_seconds: result.durationSeconds || videoMeta?.duration_seconds || null,
+            size_bytes: result.blob.size,
+            processed_path: processedPath,
+            updated_at: new Date().toISOString(),
+          })
+          .eq("id", replaceVideoId);
+        if (updErr) throw new Error(`Falha ao atualizar vídeo final: ${updErr.message}`);
+        finalVideoId = replaceVideoId;
+        if (prev?.processed_path && prev.processed_path !== processedPath) {
+          try { await supabase.storage.from("videos-processed").remove([prev.processed_path]); } catch {}
+        }
+      } else {
+        const { data: finishedRow, error: insErr } = await (supabase as any)
+          .from("videos")
+          .insert({
+            filename: finalName,
+            mime_type: result.mime,
+            status: "completed",
+            progress: 100,
+            project_id: projectId,
+            template_id: templateId,
+            duration_seconds: result.durationSeconds || videoMeta?.duration_seconds || null,
+            size_bytes: result.blob.size,
+            processed_path: processedPath,
+            thumbnail_path: videoMeta?.thumbnail_path ?? null,
+            thumbnail_url: videoMeta?.thumbnail_url ?? null,
+          })
+          .select("id")
+          .single();
+        if (insErr) throw new Error(`Falha ao registrar vídeo final: ${insErr.message}`);
+        finalVideoId = finishedRow.id;
+      }
 
       try {
         await (supabase as any).from("render_jobs").insert({
           edit_id: editId,
           project_id: projectId,
-          video_id: finishedRow.id,
+          video_id: finalVideoId,
           user_id: null,
           status: "COMPLETED",
           provider: "client-canvas",
@@ -122,11 +152,18 @@ export function RenderQueueProvider({ children }: { children: ReactNode }) {
         console.warn("[RenderQueue] failed to log render_job", e);
       }
 
-      // Remove edit from "Projetos de Edição" — final video lives in "Vídeos Prontos".
-      await (supabase as any).from("edits").delete().eq("id", editId);
+      // Preserve edit for future re-edits; link it to the final video row.
+      await (supabase as any).from("edits").update({
+        status: "completed",
+        output_video_id: finalVideoId,
+        updated_at: new Date().toISOString(),
+      }).eq("id", editId);
 
       update(jobId, { phase: "completed", progress: 100 });
-      toast.success(`"${name}" pronto! Enviado para Vídeos Prontos.`);
+      toast.success(replaceVideoId
+        ? `"${name}" atualizado em Vídeos Prontos.`
+        : `"${name}" pronto! Enviado para Vídeos Prontos.`);
+
 
       // Auto-dismiss completed after a bit.
       setTimeout(() => {

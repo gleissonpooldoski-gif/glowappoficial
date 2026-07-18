@@ -90,6 +90,7 @@ export type Database = {
           doc: Json
           id: string
           name: string | null
+          output_video_id: string | null
           owner_user_id: string
           project_id: string | null
           queue_id: string | null
@@ -109,6 +110,7 @@ export type Database = {
           doc?: Json
           id?: string
           name?: string | null
+          output_video_id?: string | null
           owner_user_id?: string
           project_id?: string | null
           queue_id?: string | null
@@ -128,6 +130,7 @@ export type Database = {
           doc?: Json
           id?: string
           name?: string | null
+          output_video_id?: string | null
           owner_user_id?: string
           project_id?: string | null
           queue_id?: string | null
@@ -142,6 +145,13 @@ export type Database = {
           video_url?: string | null
         }
         Relationships: [
+          {
+            foreignKeyName: "edits_output_video_id_fkey"
+            columns: ["output_video_id"]
+            isOneToOne: false
+            referencedRelation: "videos"
+            referencedColumns: ["id"]
+          },
           {
             foreignKeyName: "edits_project_id_fkey"
             columns: ["project_id"]

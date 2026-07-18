@@ -1,0 +1,2 @@
+ALTER TABLE public.edits ADD COLUMN IF NOT EXISTS output_video_id uuid REFERENCES public.videos(id) ON DELETE SET NULL;
+CREATE INDEX IF NOT EXISTS edits_output_video_idx ON public.edits(output_video_id);

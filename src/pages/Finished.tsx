@@ -1,5 +1,6 @@
 import { useEffect, useMemo, useState } from "react";
-import { Download, Trash2, Film, Package, Play, Calendar, Clock, LayoutTemplate, CheckCircle2, Loader2, AlertCircle, Sparkles, Copy, ChevronDown, ChevronUp, CheckSquare, Square, Instagram, CalendarClock, Layers } from "lucide-react";
+import { useNavigate } from "react-router-dom";
+import { Download, Trash2, Film, Package, Play, Calendar, Clock, LayoutTemplate, CheckCircle2, Loader2, AlertCircle, Sparkles, Copy, ChevronDown, ChevronUp, CheckSquare, Square, Instagram, CalendarClock, Layers, Pencil, Eye } from "lucide-react";
 import InstagramPublishDialog from "@/components/InstagramPublishDialog";
 import InstagramBatchDialog from "@/components/InstagramBatchDialog";
 import InstagramBatchScheduleDialog from "@/components/InstagramBatchScheduleDialog";
@@ -63,6 +64,7 @@ const formatDuration = (s: number | null) => {
 };
 
 export default function Finished() {
+  const navigate = useNavigate();
   const { activeProject } = useActiveProject();
   const [videos, setVideos] = useState<FinishedVideo[] | null>(null);
   const [jobs, setJobs] = useState<RenderJob[]>([]);
@@ -299,6 +301,40 @@ export default function Finished() {
     }
   };
 
+  const openEdit = async (v: FinishedVideo) => {
+    // Try to find the edit project that produced this video.
+    const { data: linked } = await (supabase as any)
+      .from("edits").select("id").eq("output_video_id", v.id).maybeSingle();
+    let editId: string | null = linked?.id ?? null;
+    if (!editId) {
+      // Fallback via render_jobs history.
+      const { data: jobRows } = await (supabase as any)
+        .from("render_jobs").select("edit_id").eq("video_id", v.id)
+        .not("edit_id", "is", null).order("created_at", { ascending: false }).limit(1);
+      const candidateEditId = jobRows?.[0]?.edit_id ?? null;
+      if (candidateEditId) {
+        const { data: exists } = await (supabase as any)
+          .from("edits").select("id").eq("id", candidateEditId).maybeSingle();
+        if (exists?.id) {
+          editId = exists.id;
+          // Link it back so subsequent edits are found instantly.
+          await (supabase as any).from("edits").update({ output_video_id: v.id }).eq("id", editId);
+        }
+      }
+    }
+    if (!editId) {
+      toast.error("O projeto de edição deste vídeo não está mais disponível.");
+      return;
+    }
+    navigate(`/editor/${editId}`);
+  };
+
+  const openPreview = (v: FinishedVideo) => {
+    const url = urls[v.id];
+    if (!url) return toast.info("Arquivo ainda não disponível.");
+    window.open(url, "_blank", "noopener,noreferrer");
+  };
+
   return (
     <div className="space-y-6">
       <header className="flex flex-col gap-3 md:flex-row md:items-start md:justify-between">
@@ -466,10 +502,28 @@ export default function Finished() {
                     )}
                   </div>
                   <div className="mt-2 flex flex-wrap gap-1">
+                    <Button
+                      size="sm"
+                      variant="outline"
+                      className="h-7 flex-1 text-[11px] border-gold/40 text-gold hover:bg-gold/10"
+                      onClick={() => openEdit(v)}
+                      title="Reabrir no editor e substituir este vídeo"
+                    >
+                      <Pencil size={12} className="mr-1" /> Editar
+                    </Button>
+                    <Button
+                      size="sm"
+                      variant="outline"
+                      className="h-7 flex-1 text-[11px]"
+                      onClick={() => openPreview(v)}
+                      title="Abrir vídeo em nova aba"
+                    >
+                      <Eye size={12} className="mr-1" /> Visualizar
+                    </Button>
                     <Button size="sm" className="h-7 flex-1 bg-gold-gradient text-[11px] text-black" onClick={() => download(v)}>
                       <Download size={12} className="mr-1" /> Baixar
                     </Button>
-                    <Button size="sm" variant="ghost" className="h-7 w-7 p-0 text-muted-foreground hover:text-destructive" onClick={() => askRemoveOne(v.id)}>
+                    <Button size="sm" variant="ghost" className="h-7 w-7 p-0 text-muted-foreground hover:text-destructive" onClick={() => askRemoveOne(v.id)} title="Excluir vídeo">
                       <Trash2 size={12} />
                     </Button>
                     <Button
