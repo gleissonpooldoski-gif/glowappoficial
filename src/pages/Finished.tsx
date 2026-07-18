@@ -301,7 +301,41 @@ export default function Finished() {
     }
   };
 
-  return (
+  const openEdit = async (v: FinishedVideo) => {
+    // Try to find the edit project that produced this video.
+    const { data: linked } = await (supabase as any)
+      .from("edits").select("id").eq("output_video_id", v.id).maybeSingle();
+    let editId: string | null = linked?.id ?? null;
+    if (!editId) {
+      // Fallback via render_jobs history.
+      const { data: jobRows } = await (supabase as any)
+        .from("render_jobs").select("edit_id").eq("video_id", v.id)
+        .not("edit_id", "is", null).order("created_at", { ascending: false }).limit(1);
+      const candidateEditId = jobRows?.[0]?.edit_id ?? null;
+      if (candidateEditId) {
+        const { data: exists } = await (supabase as any)
+          .from("edits").select("id").eq("id", candidateEditId).maybeSingle();
+        if (exists?.id) {
+          editId = exists.id;
+          // Link it back so subsequent edits are found instantly.
+          await (supabase as any).from("edits").update({ output_video_id: v.id }).eq("id", editId);
+        }
+      }
+    }
+    if (!editId) {
+      toast.error("O projeto de edição deste vídeo não está mais disponível.");
+      return;
+    }
+    navigate(`/editor/${editId}`);
+  };
+
+  const openPreview = (v: FinishedVideo) => {
+    const url = urls[v.id];
+    if (!url) return toast.info("Arquivo ainda não disponível.");
+    window.open(url, "_blank", "noopener,noreferrer");
+  };
+
+
     <div className="space-y-6">
       <header className="flex flex-col gap-3 md:flex-row md:items-start md:justify-between">
         <div>
