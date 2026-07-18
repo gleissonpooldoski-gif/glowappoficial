@@ -502,10 +502,28 @@ export default function Finished() {
                     )}
                   </div>
                   <div className="mt-2 flex flex-wrap gap-1">
+                    <Button
+                      size="sm"
+                      variant="outline"
+                      className="h-7 flex-1 text-[11px] border-gold/40 text-gold hover:bg-gold/10"
+                      onClick={() => openEdit(v)}
+                      title="Reabrir no editor e substituir este vídeo"
+                    >
+                      <Pencil size={12} className="mr-1" /> Editar
+                    </Button>
+                    <Button
+                      size="sm"
+                      variant="outline"
+                      className="h-7 flex-1 text-[11px]"
+                      onClick={() => openPreview(v)}
+                      title="Abrir vídeo em nova aba"
+                    >
+                      <Eye size={12} className="mr-1" /> Visualizar
+                    </Button>
                     <Button size="sm" className="h-7 flex-1 bg-gold-gradient text-[11px] text-black" onClick={() => download(v)}>
                       <Download size={12} className="mr-1" /> Baixar
                     </Button>
-                    <Button size="sm" variant="ghost" className="h-7 w-7 p-0 text-muted-foreground hover:text-destructive" onClick={() => askRemoveOne(v.id)}>
+                    <Button size="sm" variant="ghost" className="h-7 w-7 p-0 text-muted-foreground hover:text-destructive" onClick={() => askRemoveOne(v.id)} title="Excluir vídeo">
                       <Trash2 size={12} />
                     </Button>
                     <Button
