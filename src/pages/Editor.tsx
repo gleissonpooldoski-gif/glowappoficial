@@ -55,9 +55,11 @@ type TextEl = {
 type BlendMode =
   | "normal" | "multiply" | "screen" | "overlay" | "lighten" | "darken" | "soft-light" | "hard-light";
 
+type CropRect = { top: number; right: number; bottom: number; left: number };
+
 type EditDoc = {
   video: { zoom: number; x: number; y: number };
-  template: { opacity: number; blend: BlendMode; fit: "contain" | "cover"; x: number; y: number; scale: number };
+  template: { opacity: number; blend: BlendMode; fit: "contain" | "cover"; x: number; y: number; scale: number; crop?: CropRect | null };
   texts: TextEl[];
   colors: { primary: string; secondary: string };
   logo_url?: string | null;
@@ -101,7 +103,7 @@ const TRANSFORM_OPTIONS: { value: TextTransform; label: string; sample: string }
 
 const defaultDoc: EditDoc = {
   video: { zoom: 1, x: 0, y: 0 },
-  template: { opacity: 1, blend: "normal", fit: "contain", x: 0, y: 0, scale: 1 },
+  template: { opacity: 1, blend: "normal", fit: "contain", x: 0, y: 0, scale: 1, crop: null },
   texts: [],
   colors: { primary: "#D4AF37", secondary: "#FFFFFF" },
 };
@@ -204,6 +206,9 @@ export default function Editor() {
   const [loadError, setLoadError] = useState<LoadError | null>(null);
   const [videoReady, setVideoReady] = useState(false);
   const [changeTplOpen, setChangeTplOpen] = useState(false);
+  const [cropMode, setCropMode] = useState(false);
+  const [cropDraft, setCropDraft] = useState<CropRect>({ top: 0, right: 0, bottom: 0, left: 0 });
+  const cropDragRef = useRef<{ edge: "top" | "right" | "bottom" | "left"; startX: number; startY: number; startVal: number; stageW: number; stageH: number } | null>(null);
 
   const applyTemplateChange = async ({ template: tpl, url }: ChangeTemplateResult) => {
     if (!id) return;
@@ -908,40 +913,111 @@ export default function Editor() {
               </div>
             )}
             {/* Layer 2 — Template overlay (acima do vídeo; alpha do arquivo é preservado, sem fundo sólido) */}
-            {templateSrc && (template?.file_type ?? "").startsWith("image/") && (
-              <img
-                src={templateSrc}
-                alt=""
-                className={cn(
-                  "pointer-events-none absolute inset-0 h-full w-full",
-                  doc.template.fit === "cover" ? "object-cover" : "object-contain",
-                )}
-                style={{
-                  zIndex: 2,
-                  mixBlendMode: doc.template.blend,
-                  opacity: doc.template.opacity,
-                  background: "transparent",
-                  transform: `translate(${doc.template.x}%, ${doc.template.y}%) scale(${doc.template.scale ?? 1})`,
-                }}
-              />
-            )}
-            {templateSrc && (template?.file_type ?? "").startsWith("video/") && (
-              <video
-                src={templateSrc}
-                className={cn(
-                  "pointer-events-none absolute inset-0 h-full w-full",
-                  doc.template.fit === "cover" ? "object-cover" : "object-contain",
-                )}
-                style={{
-                  zIndex: 2,
-                  mixBlendMode: doc.template.blend,
-                  opacity: doc.template.opacity,
-                  background: "transparent",
-                  transform: `translate(${doc.template.x}%, ${doc.template.y}%) scale(${doc.template.scale ?? 1})`,
-                }}
-                autoPlay muted loop playsInline
-              />
-            )}
+            {(() => {
+              const activeCrop = cropMode ? cropDraft : (doc.template.crop ?? { top: 0, right: 0, bottom: 0, left: 0 });
+              const clipPath = `inset(${activeCrop.top}% ${activeCrop.right}% ${activeCrop.bottom}% ${activeCrop.left}%)`;
+              const overlayStyle: React.CSSProperties = {
+                zIndex: 2,
+                mixBlendMode: doc.template.blend,
+                opacity: doc.template.opacity,
+                background: "transparent",
+                transform: `translate(${doc.template.x}%, ${doc.template.y}%) scale(${doc.template.scale ?? 1})`,
+                clipPath,
+                WebkitClipPath: clipPath,
+              };
+              if (!templateSrc) return null;
+              if ((template?.file_type ?? "").startsWith("image/")) {
+                return (
+                  <img
+                    src={templateSrc}
+                    alt=""
+                    className={cn(
+                      "pointer-events-none absolute inset-0 h-full w-full",
+                      doc.template.fit === "cover" ? "object-cover" : "object-contain",
+                    )}
+                    style={overlayStyle}
+                  />
+                );
+              }
+              if ((template?.file_type ?? "").startsWith("video/")) {
+                return (
+                  <video
+                    src={templateSrc}
+                    className={cn(
+                      "pointer-events-none absolute inset-0 h-full w-full",
+                      doc.template.fit === "cover" ? "object-cover" : "object-contain",
+                    )}
+                    style={overlayStyle}
+                    autoPlay muted loop playsInline
+                  />
+                );
+              }
+              return null;
+            })()}
+            {cropMode && templateSrc && (() => {
+              const c = cropDraft;
+              const startEdgeDrag = (edge: "top" | "right" | "bottom" | "left") => (e: React.PointerEvent) => {
+                e.stopPropagation();
+                e.preventDefault();
+                const rect = stageRef.current?.getBoundingClientRect();
+                if (!rect) return;
+                (e.currentTarget as HTMLElement).setPointerCapture(e.pointerId);
+                cropDragRef.current = {
+                  edge,
+                  startX: e.clientX,
+                  startY: e.clientY,
+                  startVal: c[edge],
+                  stageW: rect.width,
+                  stageH: rect.height,
+                };
+              };
+              const onDragMove = (e: React.PointerEvent) => {
+                const d = cropDragRef.current;
+                if (!d) return;
+                const dx = e.clientX - d.startX;
+                const dy = e.clientY - d.startY;
+                setCropDraft((prev) => {
+                  const next = { ...prev };
+                  if (d.edge === "top") next.top = Math.max(0, Math.min(100 - prev.bottom - 2, d.startVal + (dy / d.stageH) * 100));
+                  if (d.edge === "bottom") next.bottom = Math.max(0, Math.min(100 - prev.top - 2, d.startVal - (dy / d.stageH) * 100));
+                  if (d.edge === "left") next.left = Math.max(0, Math.min(100 - prev.right - 2, d.startVal + (dx / d.stageW) * 100));
+                  if (d.edge === "right") next.right = Math.max(0, Math.min(100 - prev.left - 2, d.startVal - (dx / d.stageW) * 100));
+                  return next;
+                });
+              };
+              const endDrag = () => { cropDragRef.current = null; };
+              const shadeStyle: React.CSSProperties = { position: "absolute", background: "rgba(0,0,0,0.55)", zIndex: 30, pointerEvents: "none" };
+              return (
+                <div className="absolute inset-0" style={{ zIndex: 30 }} onPointerMove={onDragMove} onPointerUp={endDrag} onPointerCancel={endDrag}>
+                  {/* Dark shades outside crop */}
+                  <div style={{ ...shadeStyle, top: 0, left: 0, right: 0, height: `${c.top}%` }} />
+                  <div style={{ ...shadeStyle, bottom: 0, left: 0, right: 0, height: `${c.bottom}%` }} />
+                  <div style={{ ...shadeStyle, top: `${c.top}%`, bottom: `${c.bottom}%`, left: 0, width: `${c.left}%` }} />
+                  <div style={{ ...shadeStyle, top: `${c.top}%`, bottom: `${c.bottom}%`, right: 0, width: `${c.right}%` }} />
+                  {/* Crop border */}
+                  <div
+                    className="absolute border-2 border-gold"
+                    style={{
+                      top: `${c.top}%`, bottom: `${c.bottom}%`, left: `${c.left}%`, right: `${c.right}%`,
+                      pointerEvents: "none",
+                    }}
+                  />
+                  {/* Edge handles */}
+                  <div onPointerDown={startEdgeDrag("top")} className="absolute cursor-ns-resize" style={{ top: `calc(${c.top}% - 6px)`, left: `${c.left}%`, right: `${c.right}%`, height: 12, zIndex: 31 }}>
+                    <div className="mx-auto h-1.5 w-10 rounded-full bg-gold" style={{ marginTop: 5 }} />
+                  </div>
+                  <div onPointerDown={startEdgeDrag("bottom")} className="absolute cursor-ns-resize" style={{ bottom: `calc(${c.bottom}% - 6px)`, left: `${c.left}%`, right: `${c.right}%`, height: 12, zIndex: 31 }}>
+                    <div className="mx-auto h-1.5 w-10 rounded-full bg-gold" style={{ marginTop: 5 }} />
+                  </div>
+                  <div onPointerDown={startEdgeDrag("left")} className="absolute cursor-ew-resize" style={{ left: `calc(${c.left}% - 6px)`, top: `${c.top}%`, bottom: `${c.bottom}%`, width: 12, zIndex: 31 }}>
+                    <div className="my-auto h-10 w-1.5 rounded-full bg-gold" style={{ marginLeft: 5, marginTop: "50%" }} />
+                  </div>
+                  <div onPointerDown={startEdgeDrag("right")} className="absolute cursor-ew-resize" style={{ right: `calc(${c.right}% - 6px)`, top: `${c.top}%`, bottom: `${c.bottom}%`, width: 12, zIndex: 31 }}>
+                    <div className="my-auto h-10 w-1.5 rounded-full bg-gold" style={{ marginRight: 5, marginTop: "50%" }} />
+                  </div>
+                </div>
+              );
+            })()}
             {doc.texts.map((t) => {
               const isSelected = selectedTextId === t.id;
               const isEditing = editingTextId === t.id;
@@ -1493,8 +1569,59 @@ export default function Editor() {
                         Centralizar
                       </Button>
                     </div>
+                    <div className="space-y-2 rounded-md border border-border/60 p-2">
+                      <div className="flex items-center justify-between">
+                        <Label className="text-xs">✂️ Recorte do overlay</Label>
+                        {doc.template.crop && (doc.template.crop.top || doc.template.crop.right || doc.template.crop.bottom || doc.template.crop.left) ? (
+                          <span className="rounded bg-gold/20 px-1.5 py-0.5 text-[10px] font-medium text-gold">Ativo</span>
+                        ) : null}
+                      </div>
+                      {!cropMode ? (
+                        <div className="grid grid-cols-2 gap-1.5">
+                          <Button variant="outline" size="sm" className="h-7 text-xs"
+                            onClick={() => {
+                              setCropDraft(doc.template.crop ?? { top: 0, right: 0, bottom: 0, left: 0 });
+                              setCropMode(true);
+                            }}>
+                            ✂️ Recortar
+                          </Button>
+                          <Button variant="ghost" size="sm" className="h-7 text-xs"
+                            onClick={() => setDoc((d) => ({ ...d, template: { ...d.template, crop: null } }))}
+                            disabled={!doc.template.crop}>
+                            🔄 Restaurar
+                          </Button>
+                        </div>
+                      ) : (
+                        <div className="space-y-2">
+                          <p className="text-[11px] text-muted-foreground">Arraste as bordas douradas na prévia para ajustar o recorte.</p>
+                          <div className="grid grid-cols-2 gap-1 text-[11px]">
+                            <span>Topo: {Math.round(cropDraft.top)}%</span>
+                            <span>Base: {Math.round(cropDraft.bottom)}%</span>
+                            <span>Esquerda: {Math.round(cropDraft.left)}%</span>
+                            <span>Direita: {Math.round(cropDraft.right)}%</span>
+                          </div>
+                          <div className="grid grid-cols-3 gap-1.5">
+                            <Button size="sm" className="h-7 bg-gold text-xs text-black hover:bg-gold/90"
+                              onClick={() => {
+                                setDoc((d) => ({ ...d, template: { ...d.template, crop: { ...cropDraft } } }));
+                                setCropMode(false);
+                              }}>
+                              ✅ Aplicar
+                            </Button>
+                            <Button variant="outline" size="sm" className="h-7 text-xs"
+                              onClick={() => setCropMode(false)}>
+                              ❌ Cancelar
+                            </Button>
+                            <Button variant="ghost" size="sm" className="h-7 text-xs"
+                              onClick={() => setCropDraft({ top: 0, right: 0, bottom: 0, left: 0 })}>
+                              🔄 Zerar
+                            </Button>
+                          </div>
+                        </div>
+                      )}
+                    </div>
                     <Button variant="outline" size="sm" className="w-full"
-                      onClick={() => setDoc((d) => ({ ...d, template: { opacity: 1, blend: "normal", fit: "contain", x: 0, y: 0, scale: 1 } }))}>
+                      onClick={() => setDoc((d) => ({ ...d, template: { opacity: 1, blend: "normal", fit: "contain", x: 0, y: 0, scale: 1, crop: null } }))}>
                       Resetar overlay
                     </Button>
                     <Button variant="outline" size="sm" className="w-full border-gold/40 text-gold hover:bg-gold/10"

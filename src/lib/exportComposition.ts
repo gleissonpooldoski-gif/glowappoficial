@@ -51,7 +51,7 @@ export type CompositionInput = {
   templateKind?: "image" | "video" | null;
   ratio: { width: number; height: number };
   videoTransform?: { zoom: number; x: number; y: number };
-  templateOpts?: { opacity: number; blend: BlendMode; fit: "contain" | "cover"; x?: number; y?: number; scale?: number };
+  templateOpts?: { opacity: number; blend: BlendMode; fit: "contain" | "cover"; x?: number; y?: number; scale?: number; crop?: { top: number; right: number; bottom: number; left: number } | null };
   texts: CompText[];
   onProgress?: (pct: number, phase: string) => void;
 };
@@ -394,6 +394,16 @@ export async function renderComposition(input: CompositionInput): Promise<Compos
       const ox = ((templateOpts.x ?? 0) / 100) * W;
       const oy = ((templateOpts.y ?? 0) / 100) * H;
       const os = templateOpts.scale ?? 1;
+      const crop = templateOpts.crop;
+      if (crop && (crop.top || crop.right || crop.bottom || crop.left)) {
+        const cx1 = (Math.max(0, Math.min(100, crop.left)) / 100) * W;
+        const cy1 = (Math.max(0, Math.min(100, crop.top)) / 100) * H;
+        const cx2 = W - (Math.max(0, Math.min(100, crop.right)) / 100) * W;
+        const cy2 = H - (Math.max(0, Math.min(100, crop.bottom)) / 100) * H;
+        ctx.beginPath();
+        ctx.rect(cx1, cy1, Math.max(0, cx2 - cx1), Math.max(0, cy2 - cy1));
+        ctx.clip();
+      }
       ctx.translate(W / 2 + ox, H / 2 + oy);
       ctx.scale(os, os);
       ctx.translate(-W / 2, -H / 2);
