@@ -1483,7 +1483,7 @@ export default function Editor() {
                       </Button>
                     </div>
                     <Button variant="outline" size="sm" className="w-full"
-                      onClick={() => setDoc((d) => ({ ...d, template: { opacity: 1, blend: "normal", fit: "contain", x: 0, y: 0 } }))}>
+                      onClick={() => setDoc((d) => ({ ...d, template: { opacity: 1, blend: "normal", fit: "contain", x: 0, y: 0, scale: 1 } }))}>
                       Resetar overlay
                     </Button>
                     <Button variant="outline" size="sm" className="w-full border-gold/40 text-gold hover:bg-gold/10"
