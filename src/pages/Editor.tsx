@@ -709,12 +709,14 @@ export default function Editor() {
         : templateUrl ? "image" : null;
 
       const jobName = edit.name?.trim() || video?.filename || "Vídeo sem nome";
+      const reEditVideoId = edit.output_video_id ?? null;
 
       enqueueRender({
         editId: id,
         projectId: edit.project_id,
         templateId: edit.template_id,
         name: jobName,
+        replaceVideoId: reEditVideoId,
         composition: {
           videoUrl,
           templateUrl: templateUrl ?? null,
@@ -732,10 +734,17 @@ export default function Editor() {
         },
       });
 
-      toast.success("Renderização iniciada em segundo plano. Abrindo próximo vídeo…");
       setExporting(false);
       setExportPhase("idle");
       setExportPercent(0);
+
+      if (reEditVideoId) {
+        toast.success("Alterações enviadas. Atualizando vídeo em Vídeos Prontos…");
+        navigate("/finished");
+        return;
+      }
+
+      toast.success("Renderização iniciada em segundo plano. Abrindo próximo vídeo…");
 
       // Procura o próximo projeto de edição em aberto e abre direto no editor.
       try {
@@ -757,6 +766,7 @@ export default function Editor() {
       } catch {
         navigate("/edits");
       }
+
     } catch (e: any) {
       console.error("[Editor] export failed", e);
       toast.error(e?.message ?? "Não foi possível iniciar a renderização.");
