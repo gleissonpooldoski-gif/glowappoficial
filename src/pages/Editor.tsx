@@ -1666,6 +1666,12 @@ export default function Editor() {
                             disabled={!doc.template.crop}>
                             🔄 Restaurar
                           </Button>
+                          {doc.template.crop && (doc.template.crop.top || doc.template.crop.right || doc.template.crop.bottom || doc.template.crop.left) ? (
+                            <Button variant="outline" size="sm" className="col-span-2 h-7 border-gold/40 text-xs text-gold hover:bg-gold/10"
+                              onClick={openSaveCopyDialog}>
+                              💾 Salvar recorte como cópia
+                            </Button>
+                          ) : null}
                         </div>
                       ) : (
                         <div className="space-y-2">
@@ -1693,6 +1699,11 @@ export default function Editor() {
                               🔄 Zerar
                             </Button>
                           </div>
+                          <Button variant="outline" size="sm" className="h-7 w-full border-gold/40 text-xs text-gold hover:bg-gold/10"
+                            disabled={!(cropDraft.top || cropDraft.right || cropDraft.bottom || cropDraft.left)}
+                            onClick={openSaveCopyDialog}>
+                            💾 Salvar recorte como cópia
+                          </Button>
                         </div>
                       )}
                     </div>
