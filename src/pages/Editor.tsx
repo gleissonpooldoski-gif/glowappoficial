@@ -206,6 +206,9 @@ export default function Editor() {
   const [loadError, setLoadError] = useState<LoadError | null>(null);
   const [videoReady, setVideoReady] = useState(false);
   const [changeTplOpen, setChangeTplOpen] = useState(false);
+  const [cropMode, setCropMode] = useState(false);
+  const [cropDraft, setCropDraft] = useState<CropRect>({ top: 0, right: 0, bottom: 0, left: 0 });
+  const cropDragRef = useRef<{ edge: "top" | "right" | "bottom" | "left"; startX: number; startY: number; startVal: number; stageW: number; stageH: number } | null>(null);
 
   const applyTemplateChange = async ({ template: tpl, url }: ChangeTemplateResult) => {
     if (!id) return;
