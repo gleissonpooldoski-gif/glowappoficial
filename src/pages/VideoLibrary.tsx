@@ -57,6 +57,7 @@ import {
   QueueItem,
   processItem,
   validateFile,
+  probeDurationAndThumbnail,
 } from "@/lib/uploadQueue";
 import { useActiveProject } from "@/context/ProjectContext";
 
@@ -113,6 +114,8 @@ export default function VideoLibrary() {
   const activeCount = useRef(0);
   const projectRef = useRef<string>("none");
   const seenHashes = useRef<Set<string>>(new Set());
+  const backfilledRef = useRef<Set<string>>(new Set());
+  const [backfilling, setBackfilling] = useState<Set<string>>(new Set());
 
   useEffect(() => {
     queueRef.current = queue;
@@ -189,6 +192,75 @@ export default function VideoLibrary() {
       .subscribe();
     return () => { supabase.removeChannel(channel); };
   }, [activeProject?.id]);
+  // Backfill: gera thumbnails para vídeos que ficaram sem miniatura (uploads antigos,
+  // ou casos em que o processamento client-side não completou por fechamento de aba).
+  const backfillMissingThumbs = useCallback(async (list: Video[]) => {
+    const targets = list.filter(
+      (v) => !v.thumbnail_path && v.original_path && !backfilledRef.current.has(v.id),
+    );
+    for (const v of targets) {
+      backfilledRef.current.add(v.id);
+      setBackfilling((s) => { const n = new Set(s); n.add(v.id); return n; });
+      let thumbnail_path: string | null = null;
+      let thumbnail_url: string | null = null;
+      let duration: number | null = v.duration_seconds ?? null;
+      try {
+        const { data: signed } = await supabase.storage
+          .from(BUCKET)
+          .createSignedUrl(v.original_path!, 60 * 10);
+        if (!signed?.signedUrl) throw new Error("no signed url");
+        const resp = await fetch(signed.signedUrl);
+        const blob = await resp.blob();
+        const file = new File([blob], v.filename || "video.mp4", { type: blob.type || "video/mp4" });
+        const probed = await probeDurationAndThumbnail(file);
+        duration = probed.duration ?? duration;
+        if (probed.thumbnail) {
+          thumbnail_path = `thumbnails/backfill/${v.id}.jpg`;
+          const { error: upErr } = await supabase.storage
+            .from(BUCKET)
+            .upload(thumbnail_path, probed.thumbnail, { contentType: "image/jpeg", upsert: true });
+          if (upErr) throw upErr;
+          const { data: signedThumb } = await supabase.storage
+            .from(BUCKET)
+            .createSignedUrl(thumbnail_path, 60 * 60 * 24 * 7);
+          thumbnail_url = signedThumb?.signedUrl ?? null;
+        }
+      } catch (e) {
+        console.warn("[VideoLibrary] thumbnail backfill failed", v.id, e);
+      }
+      try {
+        await supabase
+          .from("videos")
+          .update({
+            thumbnail_path,
+            thumbnail_url,
+            duration_seconds: duration,
+            status: "uploaded" as any,
+          } as any)
+          .eq("id", v.id);
+      } catch (e) {
+        console.warn("[VideoLibrary] update after backfill failed", v.id, e);
+      }
+      setVideos((prev) =>
+        prev
+          ? prev.map((x) =>
+              x.id === v.id
+                ? { ...x, thumbnail_path, thumbnail_url, duration_seconds: duration, status: "uploaded" }
+                : x,
+            )
+          : prev,
+      );
+      if (thumbnail_path && thumbnail_url) {
+        setThumbs((t) => ({ ...t, [thumbnail_path!]: thumbnail_url! }));
+      }
+      setBackfilling((s) => { const n = new Set(s); n.delete(v.id); return n; });
+    }
+  }, []);
+
+  useEffect(() => {
+    if (videos && videos.length > 0) void backfillMissingThumbs(videos);
+  }, [videos, backfillMissingThumbs]);
+
 
   const updateItem = useCallback((id: string, patch: Partial<QueueItem>) => {
     setQueue((q) => q.map((it) => (it.id === id ? { ...it, ...patch } : it)));
@@ -889,10 +961,10 @@ export default function VideoLibrary() {
                     ) : (
                       <Film className="text-gold/40" size={32} />
                     )}
-                    {v.status === "processing" && (
+                    {backfilling.has(v.id) && !thumb && (
                       <span className="absolute inset-0 flex flex-col items-center justify-center gap-1 bg-black/60 text-[10px] text-white">
                         <Loader2 size={18} className="animate-spin text-gold" />
-                        Processando...
+                        Gerando capa...
                       </span>
                     )}
                     <span className="absolute inset-0 flex items-center justify-center bg-black/40 opacity-0 transition group-hover:opacity-100">
