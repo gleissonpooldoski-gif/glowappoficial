@@ -64,6 +64,7 @@ const formatDuration = (s: number | null) => {
 };
 
 export default function Finished() {
+  const navigate = useNavigate();
   const { activeProject } = useActiveProject();
   const [videos, setVideos] = useState<FinishedVideo[] | null>(null);
   const [jobs, setJobs] = useState<RenderJob[]>([]);
