@@ -1442,6 +1442,17 @@ export default function Editor() {
                       </Select>
                     </div>
                     <div className="space-y-2 rounded-md border border-border/60 p-2">
+                      <div className="flex items-center justify-between">
+                        <Label className="text-xs">📏 Tamanho: {Math.round((doc.template.scale ?? 1) * 100)}%</Label>
+                        <Button variant="ghost" size="sm" className="h-6 px-2 text-[10px]"
+                          onClick={() => setDoc((d) => ({ ...d, template: { ...d.template, scale: 1 } }))}>
+                          Resetar
+                        </Button>
+                      </div>
+                      <Slider min={0.2} max={3} step={0.05} value={[doc.template.scale ?? 1]}
+                        onValueChange={([v]) => setDoc((d) => ({ ...d, template: { ...d.template, scale: v } }))} />
+                    </div>
+                    <div className="space-y-2 rounded-md border border-border/60 p-2">
                       <Label className="text-xs">📍 Posição do overlay</Label>
                       <div className="space-y-1.5">
                         <div className="flex items-center justify-between">
