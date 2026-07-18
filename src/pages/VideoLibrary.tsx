@@ -961,10 +961,10 @@ export default function VideoLibrary() {
                     ) : (
                       <Film className="text-gold/40" size={32} />
                     )}
-                    {v.status === "processing" && (
+                    {backfilling.has(v.id) && !thumb && (
                       <span className="absolute inset-0 flex flex-col items-center justify-center gap-1 bg-black/60 text-[10px] text-white">
                         <Loader2 size={18} className="animate-spin text-gold" />
-                        Processando...
+                        Gerando capa...
                       </span>
                     )}
                     <span className="absolute inset-0 flex items-center justify-center bg-black/40 opacity-0 transition group-hover:opacity-100">
