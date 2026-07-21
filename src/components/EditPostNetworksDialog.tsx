@@ -87,32 +87,17 @@ export default function EditPostNetworksDialog({ post, open, onOpenChange, onSav
 
       // 1) YouTube: adicionar
       if (wantYT && !linkedYT) {
-        const captionRaw = post.caption ?? "";
-        const hashtagsFromCaption = (captionRaw.match(/#[\p{L}\p{N}_]+/gu) ?? []) as string[];
-        const hashtagsFromField = (post.hashtags ?? "").split(/\s+/).filter((s) => s.startsWith("#"));
-        const allHashtags = Array.from(new Set([...hashtagsFromCaption, ...hashtagsFromField]));
-        const captionNoTags = captionRaw.replace(/#[\p{L}\p{N}_]+/gu, "").replace(/\s+/g, " ").trim();
-
-        let title = "";
-        try {
-          const { data: t } = await supabase.functions.invoke("generate-youtube-title", {
-            body: { caption: captionNoTags },
-          });
-          title = String((t as any)?.title ?? "").trim();
-        } catch { /* fallback */ }
-        if (!title) {
-          title = (captionNoTags.split(/[.!?\n]/)[0] || captionNoTags || "Novo vídeo").trim();
-        }
-        title = title.replace(/#[\p{L}\p{N}_]+/gu, "").trim().slice(0, 100);
-
-        const desc = [captionNoTags, allHashtags.join(" ")].filter(Boolean).join("\n\n").slice(0, 5000);
-        const tags = allHashtags.map((t) => t.replace(/^#/, "")).filter(Boolean).slice(0, 15);
+        // Título sempre da legenda (nunca do nome do arquivo).
+        const { buildYoutubeMetaFromCaption } = await import("@/lib/youtube-meta");
+        const { title, description, tags } = await buildYoutubeMetaFromCaption(
+          post.caption ?? "", post.hashtags ?? "",
+        );
 
         const { error } = await supabase.from("youtube_posts" as any).insert({
           video_id: post.video_id,
           account: "default",
           title,
-          description: desc,
+          description,
           tags,
           category_id: "22",
           privacy_status: "public",
