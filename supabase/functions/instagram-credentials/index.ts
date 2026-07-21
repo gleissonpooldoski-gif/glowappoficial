@@ -51,13 +51,13 @@ async function validateAccount(token: string, igId: string): Promise<ValidationR
     }
   } catch (_) { /* segue validação */ }
 
-  // 2) Permissões — checa todas as necessárias para publicar
-  const REQUIRED_PERMS = [
-    "instagram_basic",
-    "instagram_content_publish",
-    "pages_show_list",
-    "pages_read_engagement",
-  ];
+  // 2) Permissões — checa apenas as ESSENCIAIS para publicar.
+  // A Meta oferece dois fluxos de login com escopos diferentes:
+  //   • Facebook Login for Business: instagram_basic + instagram_content_publish (+ pages_*)
+  //   • Instagram API with Instagram Login: instagram_business_basic + instagram_business_content_publish
+  // Aceitamos qualquer um. pages_show_list / pages_read_engagement NÃO bloqueiam mais.
+  const PUBLISH_SCOPES = ["instagram_content_publish", "instagram_business_content_publish"];
+  const BASIC_SCOPES = ["instagram_basic", "instagram_business_basic"];
   let grantedPerms: string[] = [];
   try {
     const permRes = await fetch(`https://graph.facebook.com/${GRAPH_VERSION}/me/permissions?access_token=${encodeURIComponent(token)}`);
@@ -66,21 +66,23 @@ async function validateAccount(token: string, igId: string): Promise<ValidationR
       const code = perm.data.error.code;
       if (isApiBlocked(perm.data.error)) return { ok: false, status: "API_BLOCKED", message: `${BLOCKED_MSG} (${perm.data.error.message ?? ""})` };
       if (code === 190) return { ok: false, status: "TOKEN_EXPIRED", message: perm.data.error.message ?? "Token expirado." };
-      return { ok: false, status: "TOKEN_INVALID", message: perm.data.error.message ?? "Token inválido." };
+      // /me/permissions falha em tokens de Página/System User — seguimos e confiamos no teste do IG ID.
+    } else {
+      const list = Array.isArray(perm.data?.data) ? perm.data.data : [];
+      grantedPerms = list.filter((p: any) => p?.status === "granted").map((p: any) => p.permission);
+      const hasPublish = PUBLISH_SCOPES.some((p) => grantedPerms.includes(p));
+      const hasBasic = BASIC_SCOPES.some((p) => grantedPerms.includes(p));
+      if (grantedPerms.length > 0 && (!hasPublish || !hasBasic)) {
+        const need = [!hasBasic && `um de [${BASIC_SCOPES.join(", ")}]`, !hasPublish && `um de [${PUBLISH_SCOPES.join(", ")}]`]
+          .filter(Boolean).join(" + ");
+        return {
+          ok: false,
+          status: "PERMISSION_MISSING",
+          message: `Permissões essenciais ausentes (${need}). Escopos concedidos: ${grantedPerms.join(", ") || "nenhum"}.`,
+        };
+      }
     }
-    const list = Array.isArray(perm.data?.data) ? perm.data.data : [];
-    grantedPerms = list.filter((p: any) => p?.status === "granted").map((p: any) => p.permission);
-    const missing = REQUIRED_PERMS.filter((p) => !grantedPerms.includes(p));
-    if (missing.length > 0) {
-      return {
-        ok: false,
-        status: "PERMISSION_MISSING",
-        message: `Permissões ausentes no token: ${missing.join(", ")}. Reautentique o app da Meta concedendo todas as permissões: ${REQUIRED_PERMS.join(", ")}.`,
-      };
-    }
-  } catch (e: any) {
-    return { ok: false, status: "UNKNOWN_ERROR", message: e?.message ?? "Falha ao validar permissões." };
-  }
+  } catch (_) { /* segue para teste do Business ID */ }
 
   // 3) Business account — busca o IG informado
   try {
@@ -127,7 +129,7 @@ async function validateAccount(token: string, igId: string): Promise<ValidationR
         message: `Conta encontrada, mas o tipo retornado é "${accountType}". É necessário ser Instagram Profissional (Business ou Creator) para publicar via API.`,
       };
     }
-    return { ok: true, status: "VALID", message: `Conta @${ig.data.username ?? "?"} validada (${accountType ?? "OK"}). Permissões OK: ${grantedPerms.filter((p) => REQUIRED_PERMS.includes(p)).join(", ")}.`, username: ig.data.username ?? null, account_type: accountType };
+    return { ok: true, status: "VALID", message: `Conta @${ig.data.username ?? "?"} validada (${accountType ?? "OK"})${grantedPerms.length ? `. Escopos: ${grantedPerms.join(", ")}` : ""}.`, username: ig.data.username ?? null, account_type: accountType };
   } catch (e: any) {
     return { ok: false, status: "UNKNOWN_ERROR", message: e?.message ?? "Falha ao consultar o Business ID." };
   }
