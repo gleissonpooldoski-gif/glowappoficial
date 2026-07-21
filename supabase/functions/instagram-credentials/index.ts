@@ -2,25 +2,16 @@
 import { createClient } from "https://esm.sh/@supabase/supabase-js@2.45.4";
 import { corsHeaders } from "npm:@supabase/supabase-js@2/cors";
 
-const GRAPH_VERSION = "v25.0";
+const GRAPH_VERSION = "v18.0";
 const FB_BASE = `https://graph.facebook.com/${GRAPH_VERSION}`;
-const IG_LOGIN_BASE = `https://graph.instagram.com/${GRAPH_VERSION}`;
 
 // Sanitiza o Access Token: remove aspas, espaços, quebras de linha e caracteres invisíveis.
 function sanitizeToken(raw: string | undefined | null): string {
   if (!raw) return "";
-  let t = String(raw).trim();
-  t = t.replace(/^['"]+|['"]+$/g, "");
+  let t = String(raw).trim().replace(/^["']|["']$/g, "");
   t = t.replace(/[\s\r\n\t]+/g, "");
   t = t.replace(/[\u0000-\u001F\u007F\uFEFF]/g, "");
   return t.trim();
-}
-
-// EAA... => Facebook Graph. IGAA/IGQ... => Instagram API with Instagram Login.
-function baseForToken(token: string): string {
-  const t = sanitizeToken(token);
-  if (t.startsWith("IGAA") || t.startsWith("IGQ")) return IG_LOGIN_BASE;
-  return FB_BASE;
 }
 
 type ConnectionStatus = "CONNECTED" | "PENDING" | "ERROR";
@@ -30,7 +21,6 @@ type ValidationResult = {
   status: "VALID" | "TOKEN_INVALID" | "TOKEN_EXPIRED" | "IG_ID_INVALID" | "PERMISSION_MISSING" | "API_BLOCKED" | "UNKNOWN_ERROR" | "EMPTY";
   message: string;
   username?: string | null;
-  account_type?: string | null;
 };
 
 function connectionStatusFromValidation(validation: ValidationResult): ConnectionStatus {
@@ -62,14 +52,12 @@ async function validateAccount(rawToken: string, rawIgId: string): Promise<Valid
     return { ok: false, status: "EMPTY", message: "Access Token ou Instagram Business ID vazio." };
   }
 
-  // Roteamento por tipo de token: EAA → Facebook Graph, IGAA/IGQ → Instagram API with Instagram Login.
-  const base = baseForToken(token);
   const grantedPerms: string[] = [];
   const permissionWarning = "";
 
   try {
     const igRes = await fetch(
-      `${base}/${encodeURIComponent(igId)}?fields=id,username,name,profile_picture_url&access_token=${encodeURIComponent(token)}`,
+      `${FB_BASE}/${encodeURIComponent(igId)}?fields=id,username,name,profile_picture_url&access_token=${encodeURIComponent(token)}`,
       { headers: { Authorization: `Bearer ${token}` } },
     );
     const ig = await readMeta(igRes);
@@ -80,7 +68,7 @@ async function validateAccount(rawToken: string, rawIgId: string): Promise<Valid
       if (isApiBlocked(ig.data.error)) return { ok: false, status: "API_BLOCKED", message: `${BLOCKED_MSG} (${meta})` };
       if (code === 190) return { ok: false, status: "TOKEN_EXPIRED", message: meta || "Token expirado." };
 
-      const hint = `\n\nConfirme que o ID informado (${igId}) é o Instagram User ID (ex.: 17841…) e que o Access Token foi emitido para essa mesma conta no fluxo "Instagram API with Instagram Login".`;
+      const hint = `\n\nConfirme que o ID informado (${igId}) é o instagram_business_account_id exato (ex.: 17841…) e que o Access Token foi emitido para essa mesma conta.`;
 
       if (code === 100 || code === 803) {
         return {
@@ -98,7 +86,6 @@ async function validateAccount(rawToken: string, rawIgId: string): Promise<Valid
       status: "VALID",
       message: `Conta @${ig.data.username ?? "?"} validada${grantedPerms.length ? `. Escopos: ${grantedPerms.join(", ")}` : ""}${permissionWarning}.`,
       username: ig.data.username ?? null,
-      account_type: null,
     };
 
   } catch (e: any) {
