@@ -82,9 +82,9 @@ export default function InstagramBatchDialog({ open, onOpenChange, videoIds, onD
                 {activeProject ? `Projeto ativo: ${activeProject.name}` : "Nenhum projeto ativo selecionado"}
               </span>
             </div>
-            {!account && (
+            {!account && !accLoading && (
               <p className="text-[11px] text-destructive">
-                Selecione um projeto ativo (Frame ou Resenha) no menu superior para publicar.
+                Este projeto ainda não tem uma conta do Instagram vinculada. Cadastre em Configurações → Instagram.
               </p>
             )}
           </div>
