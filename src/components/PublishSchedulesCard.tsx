@@ -1,5 +1,5 @@
 import { useEffect, useState } from "react";
-import { Clock, Plus, Trash2, Save, Loader2, CalendarClock, RotateCcw, Sparkles, Instagram, Youtube } from "lucide-react";
+import { Clock, Plus, Trash2, Save, Loader2, CalendarClock, RotateCcw, Sparkles, Instagram, Youtube, CalendarDays } from "lucide-react";
 import { Card, CardContent } from "@/components/ui/card";
 import { Label } from "@/components/ui/label";
 import { Input } from "@/components/ui/input";
@@ -14,7 +14,9 @@ import {
   getSchedule,
   upsertSchedule,
   findNextSlot,
+  findNextSlots,
 } from "@/lib/schedules";
+import TimeInput from "@/components/TimeInput";
 
 function formatDateTimeBR(d: Date) {
   return d.toLocaleString("pt-BR", {
@@ -52,20 +54,26 @@ function ScheduleEditor({
 }) {
   const [times, setTimes] = useState<string[]>(defaultTimes);
   const [perDay, setPerDay] = useState<number>(defaultPerDay);
-  const [newTime, setNewTime] = useState("");
+  const [newTime, setNewTime] = useState("09:00");
   const [loading, setLoading] = useState(true);
   const [saving, setSaving] = useState(false);
   const [seqDate, setSeqDate] = useState("");
   const [seqTime, setSeqTime] = useState("");
   const [seqStartAt, setSeqStartAt] = useState<string | null>(null);
   const [nextSlot, setNextSlot] = useState<Date | null>(null);
+  const [preview, setPreview] = useState<Date[]>([]);
 
   const loadNextSlot = async () => {
     try {
-      const n = await findNextSlot(network, account);
+      const [n, arr] = await Promise.all([
+        findNextSlot(network, account),
+        findNextSlots(network, account, 6),
+      ]);
       setNextSlot(n);
+      setPreview(arr);
     } catch {
       setNextSlot(null);
+      setPreview([]);
     }
   };
 
@@ -98,7 +106,7 @@ function ScheduleEditor({
     const normalized = `${String(h).padStart(2, "0")}:${String(m).padStart(2, "0")}`;
     if (times.includes(normalized)) return toast.error("Horário já existe");
     setTimes([...times, normalized].sort());
-    setNewTime("");
+    setNewTime("09:00");
   };
 
   const remove = (t: string) => setTimes(times.filter((x) => x !== t));
@@ -183,19 +191,15 @@ function ScheduleEditor({
         )}
         <div className="flex flex-wrap gap-2">
           {times.map((t, i) => (
-            <div key={`${t}-${i}`} className="flex items-center gap-1 rounded-md border border-border/60 bg-background/40 px-2 py-1">
-              <Clock size={12} className="text-muted-foreground" />
-              <Input
-                type="time"
-                value={t}
-                onChange={(e) => editAt(i, e.target.value)}
-                className="h-7 w-24 border-0 bg-transparent p-0 text-xs focus-visible:ring-0"
-              />
+            <div key={`${t}-${i}`} className="group flex items-center gap-1 rounded-md border border-border/60 bg-background/40 px-1.5 py-0.5">
+              <Clock size={12} className="ml-1 text-muted-foreground" />
+              <TimeInput value={t} onChange={(v) => editAt(i, v)} className="border-0 bg-transparent px-1 py-0" />
               <Button
                 size="icon"
                 variant="ghost"
-                className="h-6 w-6 text-destructive hover:bg-destructive/10"
+                className="h-6 w-6 text-destructive opacity-60 hover:bg-destructive/10 hover:opacity-100"
                 onClick={() => remove(t)}
+                aria-label="Remover horário"
               >
                 <Trash2 size={12} />
               </Button>
@@ -204,15 +208,10 @@ function ScheduleEditor({
         </div>
       </div>
 
-      <div className="flex items-center gap-2">
-        <Input
-          type="time"
-          value={newTime}
-          onChange={(e) => setNewTime(e.target.value)}
-          className="h-8 w-32"
-        />
+      <div className="flex flex-wrap items-center gap-2">
+        <TimeInput value={newTime || "09:00"} onChange={(v) => setNewTime(v)} />
         <Button size="sm" variant="outline" onClick={add}>
-          <Plus size={12} className="mr-1" /> Adicionar
+          <Plus size={12} className="mr-1" /> Adicionar horário
         </Button>
         <div className="ml-auto flex items-center gap-2">
           <Badge variant="outline" className="text-[10px]">
@@ -224,6 +223,28 @@ function ScheduleEditor({
           </Button>
         </div>
       </div>
+
+      {preview.length > 0 && (
+        <div className="rounded-md border border-border/50 bg-background/30 p-3 space-y-2">
+          <div className="flex items-center gap-2">
+            <CalendarDays size={14} className="text-gold" />
+            <p className="text-sm font-medium">Próximas publicações</p>
+            <Badge variant="outline" className="text-[10px]">prévia</Badge>
+          </div>
+          <div className="grid gap-1 sm:grid-cols-2 lg:grid-cols-3">
+            {preview.map((d, i) => (
+              <div key={i} className="flex items-center gap-2 rounded-md bg-muted/30 px-2 py-1 text-[11px] font-mono tabular-nums">
+                <Clock size={11} className="text-muted-foreground" />
+                {formatDateTimeBR(d)}
+              </div>
+            ))}
+          </div>
+          <p className="text-[10px] text-muted-foreground">
+            Horários simulados com base na grade, no início da sequência e nos posts já agendados.
+          </p>
+        </div>
+      )}
+
 
       <div className="rounded-md border border-border/50 bg-background/30 p-3 space-y-3">
         <div className="flex items-center gap-2">
