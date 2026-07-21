@@ -23,34 +23,44 @@ import {
 import { format } from "date-fns";
 import { ptBR } from "date-fns/locale";
 import {
-  listInstagramPosts, InstagramPost, ACCOUNTS, InstagramAccount, getInstagramStatus,
+  listInstagramPosts, InstagramPost, InstagramAccount, getInstagramStatus,
 } from "@/lib/instagram";
 import { supabase } from "@/integrations/supabase/client";
 import { toast } from "sonner";
 import MultiScheduleTimeline from "@/components/MultiScheduleTimeline";
+import { useActiveProject } from "@/context/ProjectContext";
+import { FolderKanban } from "lucide-react";
 
 /* ---------- visual identity per platform ---------- */
 
-const PLATFORM_META: Record<InstagramAccount, {
+type PlatformMeta = {
   label: string; badge: string; ring: string; tint: string; icon: string; text: string;
-}> = {
-  frame: {
-    label: "Frame",
-    badge: "bg-blue-500/15 text-blue-300 border-blue-400/40",
-    ring: "border-blue-400/30",
-    tint: "from-blue-500/10 to-transparent",
-    icon: "text-blue-300",
-    text: "text-blue-300",
-  },
-  resenha: {
-    label: "Resenha",
-    badge: "bg-purple-500/15 text-purple-300 border-purple-400/40",
-    ring: "border-purple-400/30",
-    tint: "from-purple-500/10 to-transparent",
-    icon: "text-purple-300",
-    text: "text-purple-300",
-  },
 };
+
+const PLATFORM_THEMES: PlatformMeta[] = [
+  { label: "", badge: "bg-blue-500/15 text-blue-300 border-blue-400/40", ring: "border-blue-400/30", tint: "from-blue-500/10 to-transparent", icon: "text-blue-300", text: "text-blue-300" },
+  { label: "", badge: "bg-purple-500/15 text-purple-300 border-purple-400/40", ring: "border-purple-400/30", tint: "from-purple-500/10 to-transparent", icon: "text-purple-300", text: "text-purple-300" },
+  { label: "", badge: "bg-pink-500/15 text-pink-300 border-pink-400/40", ring: "border-pink-400/30", tint: "from-pink-500/10 to-transparent", icon: "text-pink-300", text: "text-pink-300" },
+  { label: "", badge: "bg-amber-500/15 text-amber-300 border-amber-400/40", ring: "border-amber-400/30", tint: "from-amber-500/10 to-transparent", icon: "text-amber-300", text: "text-amber-300" },
+  { label: "", badge: "bg-emerald-500/15 text-emerald-300 border-emerald-400/40", ring: "border-emerald-400/30", tint: "from-emerald-500/10 to-transparent", icon: "text-emerald-300", text: "text-emerald-300" },
+  { label: "", badge: "bg-cyan-500/15 text-cyan-300 border-cyan-400/40", ring: "border-cyan-400/30", tint: "from-cyan-500/10 to-transparent", icon: "text-cyan-300", text: "text-cyan-300" },
+];
+
+function themeForAccount(account: string, index: number): PlatformMeta {
+  // Manter identidade histórica: frame=azul, resenha=roxo.
+  if (account === "frame") return PLATFORM_THEMES[0];
+  if (account === "resenha") return PLATFORM_THEMES[1];
+  return PLATFORM_THEMES[(index + 2) % PLATFORM_THEMES.length];
+}
+
+function labelForAccount(slug: string, displayName?: string | null): string {
+  if (displayName && displayName.trim()) return displayName;
+  return slug
+    .split(/[_\-\s]+/)
+    .filter(Boolean)
+    .map((s) => s.charAt(0).toUpperCase() + s.slice(1).toLowerCase())
+    .join(" ");
+}
 
 const statusStyles: Record<InstagramPost["status"], string> = {
   AGENDADO: "border-blue-400/40 text-blue-300 bg-blue-500/10",
