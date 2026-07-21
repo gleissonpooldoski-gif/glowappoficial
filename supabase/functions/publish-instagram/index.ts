@@ -531,6 +531,11 @@ Deno.serve(async (req) => {
       post = inserted;
       activePostId = inserted.id;
     } else {
+      if (post.status === "PUBLICADO" || post.publish_id) {
+        await appendLog(post.id, { event: "publish_request_skipped_already_published", publish_id: post.publish_id ?? null });
+        return new Response(JSON.stringify({ success: true, already_published: true, post_id: post.id, publish_id: post.publish_id }),
+          { status: 200, headers: { ...corsHeaders, "Content-Type": "application/json" } });
+      }
       await supabase.from("instagram_posts").update({ status: "PUBLICANDO", error_message: null }).eq("id", post.id);
       await appendLog(post.id, { event: "publish_started" });
     }
@@ -571,10 +576,7 @@ Deno.serve(async (req) => {
     const { token, igId, tokenSource, tokenHead, tokenTail } = await tokensFor(supabase, account as Account);
     await appendLog(post.id, { event: "meta_token_resolved", account, token_source: tokenSource, token_length: token.length, token_head: tokenHead, token_tail: tokenTail, ig_id: igId });
     if (!token || !igId) throw new Error(`Credenciais Meta ausentes para a conta '${account}'.`);
-    try { assertValidToken(token, account); } catch (e: any) {
-      await markCredentialsValidationError(supabase, account as Account, "TOKEN_EXPIRED", e.message);
-      throw e;
-    }
+    assertValidToken(token, account);
 
     // Sem pré-consultas legadas: o IG Business Account ID cadastrado é usado direto
     // no endpoint de container. Removidas chamadas a account_type e à Página do Facebook.
@@ -587,16 +589,21 @@ Deno.serve(async (req) => {
     let lastContainerErr: any = null;
     for (let attempt = 1; attempt <= MAX_CONTAINER_ATTEMPTS; attempt++) {
       try {
-        await appendLog(post.id, { event: "media_container_create_attempt", attempt, endpoint: containerUrl, ig_id: igId });
+        const containerCreatedAt = new Date().toISOString();
+        await appendLog(post.id, { event: "media_container_create_attempt", attempt, endpoint: containerUrl, ig_id: igId, created_at: containerCreatedAt });
         containerRes = await metaPost(containerUrl, {
           media_type: "REELS",
           video_url: signed.signedUrl,
           caption: fullCaption,
           access_token: token,
         }, token);
-        await appendLog(post.id, { event: "media_container_create_response", attempt, status: containerRes.status, endpoint: containerUrl, response: containerRes.data });
+        await appendLog(post.id, { event: "media_container_create_response", attempt, status: containerRes.status, endpoint: containerUrl, created_at: containerCreatedAt, response: containerRes.data });
         containerId = containerRes.data?.id;
-        if (containerId) { lastContainerErr = null; break; }
+        if (containerId) {
+          containerRes.created_at = containerCreatedAt;
+          lastContainerErr = null;
+          break;
+        }
         throw new Error(`Meta não retornou creation_id. Resposta: ${safeJson(containerRes.data)}`);
       } catch (err: any) {
         lastContainerErr = err;
@@ -622,12 +629,12 @@ Deno.serve(async (req) => {
     await appendLog(post.id, {
       event: "creation_id_saved",
       creation_id: containerId,
-      created_at: new Date().toISOString(),
+      created_at: containerRes?.created_at ?? new Date().toISOString(),
       video_url_sent: signed.signedUrl,
       container_response: containerRes?.data ?? null,
     });
 
-    const background = completePublication(post.id, containerId, token, igId, account as Account);
+    const background = completePublication(post.id, containerId, token, igId, account as Account, signed.signedUrl, fullCaption);
     const edgeRuntime = (globalThis as any).EdgeRuntime;
     if (edgeRuntime?.waitUntil) edgeRuntime.waitUntil(background);
 
@@ -638,13 +645,6 @@ Deno.serve(async (req) => {
     const blocked = isApiBlockedError(e?.metaData, rawMessage);
     const message = blocked ? FRIENDLY_BLOCKED_MESSAGE : userFacingMetaError(activeAccount ?? body?.account, rawMessage, e?.metaData);
     console.error("[publish-instagram]", rawMessage);
-    if (blocked && activeAccount) {
-      await markCredentialsBlocked(supabase, activeAccount as Account, rawMessage);
-    } else if (activeAccount && isTokenExpiredError(e?.metaData, rawMessage)) {
-      await markCredentialsValidationError(supabase, activeAccount as Account, "TOKEN_EXPIRED", message);
-    } else if (activeAccount && isInstagramIdInvalidError(e?.metaData, rawMessage)) {
-      await markCredentialsValidationError(supabase, activeAccount as Account, "IG_ID_INVALID", message);
-    }
     await failPost(activePostId ?? body?.postId ?? null, message, { raw: rawMessage, blocked, meta: e?.metaData ?? null });
     return new Response(JSON.stringify({ error: message, blocked, status: "ERRO" }),
       { status: 200, headers: { ...corsHeaders, "Content-Type": "application/json" } });
