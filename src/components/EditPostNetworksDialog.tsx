@@ -194,9 +194,9 @@ export default function EditPostNetworksDialog({ post, open, onOpenChange, onSav
                   />
                   <Youtube size={14} className="text-red-400" />
                   <span className="flex-1">YouTube</span>
-                  {linkedYT ? (
+                  {linkedYT.length > 0 ? (
                     <Badge variant="outline" className="text-[10px] border-red-400/40 text-red-300 bg-red-500/10">
-                      {linkedYT.status}
+                      {linkedYT.length} vínculo{linkedYT.length > 1 ? "s" : ""}
                     </Badge>
                   ) : (
                     <Badge variant="outline" className="text-[10px] border-border text-muted-foreground">
@@ -204,6 +204,12 @@ export default function EditPostNetworksDialog({ post, open, onOpenChange, onSav
                     </Badge>
                   )}
                 </label>
+                {wantYT && (
+                  <div className="rounded-md border border-border/40 bg-background/20 px-3 py-2">
+                    <Label className="text-[11px] text-muted-foreground mb-1.5 block">Canais</Label>
+                    <YoutubeChannelPicker value={ytChannels} onChange={setYtChannels} disabled={busy} compact />
+                  </div>
+                )}
               </div>
               <p className="text-[11px] text-muted-foreground">
                 Ao adicionar o YouTube, geramos automaticamente o título a partir da legenda usando o
