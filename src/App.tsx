@@ -43,6 +43,7 @@ const App = () => (
                 <Route path="/settings" element={<Settings />} />
                 <Route path="/edits" element={<MyEdits />} />
                 <Route path="/publications" element={<Publications />} />
+                <Route path="/comments-config" element={<CommentsConfig />} />
                 <Route path="/editor/:id" element={<Editor />} />
                 <Route path="/brand" element={<Navigate to="/videos" replace />} />
                 <Route path="/processing" element={<Navigate to="/finished" replace />} />
