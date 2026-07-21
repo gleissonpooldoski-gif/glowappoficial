@@ -621,6 +621,8 @@ Deno.serve(async (req) => {
 
         const captionLength = fullCaption?.length ?? 0;
         const hashtagCount = (fullCaption?.match(/#\w+/g) ?? []).length;
+        const publishBody: Record<string, string> = { creation_id: containerId, access_token: token };
+        const payloadBytes = new URLSearchParams(publishBody).toString().length;
         const publishRequestedAt = new Date().toISOString();
         try {
           await appendLog(postId, {
@@ -633,13 +635,14 @@ Deno.serve(async (req) => {
             creation_id: containerId,
             caption_length: captionLength,
             hashtag_count: hashtagCount,
+            payload_bytes: payloadBytes,
+            body_keys: Object.keys(publishBody),
             publish_requested_at: publishRequestedAt,
           });
           const publishRes = await metaPost(
             publishUrl,
-            { creation_id: containerId },
+            publishBody,
             token,
-            { authHeaderToken: token },
           );
           const publishResponseAt = new Date().toISOString();
           await appendLog(postId, { event: "media_publish_response", cycle, status: publishRes.status, publish_requested_at: publishRequestedAt, publish_response_at: publishResponseAt, response: publishRes.data });
@@ -687,9 +690,10 @@ Deno.serve(async (req) => {
             creation_id: containerId,
             caption_length: captionLength,
             hashtag_count: hashtagCount,
+            payload_bytes: payloadBytes,
             publish_requested_at: publishRequestedAt,
             failed_at: new Date().toISOString(),
-            next_action: cycle < MAX_PUBLICATION_CYCLES ? "create_new_container" : "fail_post",
+            next_action: "fail_post_manual_retry",
             raw_message: err?.message ?? null,
             meta_error: metaErrorDetails(err?.metaData, err?.message),
           });
@@ -699,9 +703,8 @@ Deno.serve(async (req) => {
           }).eq("id", postId);
 
           await finalizeContainerLock(containerId, "error");
-          if (cycle === MAX_PUBLICATION_CYCLES) throw err;
-          if (!(await ensureNotAlreadyPublished("new_container_skipped_already_published"))) return;
-          containerId = await createReplacementContainer(cycle + 1);
+          // Sem retry automático em code=1 — libera para nova tentativa manual.
+          throw err;
         }
       }
       throw lastPublishErr ?? new Error("Falha ao publicar mídia no Instagram.");
