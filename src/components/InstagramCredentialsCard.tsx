@@ -144,8 +144,16 @@ export default function InstagramCredentialsCard() {
   };
 
   const createAccount = async () => {
-    if (!newForm.display_name.trim() || !newForm.access_token.trim() || !newForm.ig_business_id.trim()) {
+    const cleanToken = (newForm.access_token ?? "")
+      .replace(/[\r\n\t]/g, "")
+      .trim()
+      .replace(/^["']|["']$/g, "");
+    if (!newForm.display_name.trim() || !cleanToken || !newForm.ig_business_id.trim()) {
       toast.error("Preencha nome, Business ID e Access Token.");
+      return;
+    }
+    if (!/^[\x21-\x7E]+$/.test(cleanToken)) {
+      toast.error("Token inválido ou formato incorreto. Remova espaços, quebras de linha e caracteres especiais.");
       return;
     }
     if (!/^\d{6,20}$/.test(newForm.ig_business_id.trim())) {
@@ -157,7 +165,7 @@ export default function InstagramCredentialsCard() {
       body: {
         action: "create",
         display_name: newForm.display_name.trim(),
-        access_token: newForm.access_token.trim(),
+        access_token: cleanToken,
         ig_business_id: newForm.ig_business_id.trim(),
         project_id: newForm.project_id || null,
       },
