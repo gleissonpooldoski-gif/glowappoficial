@@ -326,14 +326,26 @@ export default function InstagramPublishDialog({
                 <Instagram size={14} className="text-pink-400" />
                 <span className="flex-1">Instagram</span>
               </label>
-              <label className={`flex items-center gap-2 rounded-md border px-2.5 py-2 text-xs cursor-pointer transition-colors ${
-                nets.has("youtube") ? "border-gold/50 bg-gold/5" : "border-border/60 bg-background/30 hover:bg-background/60"
-              }`}>
-                <Checkbox checked={nets.has("youtube")} onCheckedChange={() => toggleNet("youtube")} disabled={busy} />
+              <label
+                title={hasVideoFile === false ? "Para publicar no YouTube, adicione um vídeo ao post." : undefined}
+                className={`flex items-center gap-2 rounded-md border px-2.5 py-2 text-xs transition-colors ${
+                  nets.has("youtube") ? "border-gold/50 bg-gold/5" : "border-border/60 bg-background/30 hover:bg-background/60"
+                } ${hasVideoFile === false ? "opacity-50 cursor-not-allowed" : "cursor-pointer"}`}
+              >
+                <Checkbox
+                  checked={nets.has("youtube")}
+                  onCheckedChange={() => toggleNet("youtube")}
+                  disabled={busy || hasVideoFile === false}
+                />
                 <Youtube size={14} className="text-red-400" />
                 <span className="flex-1">YouTube</span>
               </label>
             </div>
+            {hasVideoFile === false && (
+              <p className="text-[11px] text-muted-foreground">
+                Para publicar no YouTube, adicione um vídeo ao post.
+              </p>
+            )}
           </div>
 
           <div className="space-y-1.5">
