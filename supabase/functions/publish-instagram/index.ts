@@ -136,6 +136,16 @@ function isReduceDataError(data: any, message?: string): boolean {
   return msg.includes("please reduce") || msg.includes("reduce the amount of data");
 }
 
+function isAppRateLimitError(data: any, message?: string): boolean {
+  const err = data?.error;
+  const msg = `${err?.message ?? ""} ${message ?? ""}`.toLowerCase();
+  const code = Number(err?.code);
+  if (code === 4 || code === 17 || code === 32 || code === 613) return true;
+  if (msg.includes("application request limit reached")) return true;
+  if (msg.includes("rate limit") || msg.includes("too many requests")) return true;
+  return false;
+}
+
 function isMetaServiceError(data: any, message?: string): boolean {
   const err = data?.error;
   const msg = `${err?.message ?? ""} ${message ?? ""}`.toLowerCase();
