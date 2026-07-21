@@ -1,5 +1,5 @@
 import { useEffect, useState } from "react";
-import { Youtube, Loader2, CheckCircle2, XCircle, LogIn, LogOut, RefreshCw, ExternalLink } from "lucide-react";
+import { Youtube, Loader2, CheckCircle2, XCircle, LogIn, LogOut, RefreshCw, ExternalLink, Upload } from "lucide-react";
 import { Card, CardContent } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { toast } from "sonner";
@@ -12,6 +12,7 @@ import {
   refreshYoutubeToken,
   startYoutubeAuth,
 } from "@/lib/youtube";
+import YoutubeUploadDialog from "./YoutubeUploadDialog";
 
 export default function YoutubeCredentialsCard() {
   const [creds, setCreds] = useState<Record<YoutubeAccount, YoutubeCredential | undefined>>({} as any);
