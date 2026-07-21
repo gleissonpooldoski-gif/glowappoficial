@@ -7,6 +7,8 @@ const FB_BASE = `https://graph.facebook.com/${GRAPH_VERSION}`;
 const BUCKET = "videos-processed";
 const POLL_INTERVAL_MS = 5000;
 const MAX_CONTAINER_STATUS_ATTEMPTS = 12;
+const PUBLISH_STABILIZATION_MS = 7000;
+const MAX_PUBLICATION_CYCLES = 3;
 
 // Sanitiza o Access Token: trim + remove aspas, whitespace interno, BOM,
 // caracteres de controle e QUALQUER caractere fora do intervalo ASCII imprimível
