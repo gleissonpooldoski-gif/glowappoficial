@@ -6,6 +6,8 @@ const AUTH_ENDPOINT = "https://accounts.google.com/o/oauth2/v2/auth";
 const SCOPES = [
   "https://www.googleapis.com/auth/youtube.upload",
   "https://www.googleapis.com/auth/youtube.readonly",
+  // Necessário para publicar/gerenciar comentários (comentários monetizados).
+  "https://www.googleapis.com/auth/youtube.force-ssl",
 ];
 
 function base64url(buf: ArrayBuffer): string {

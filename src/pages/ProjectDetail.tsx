@@ -9,6 +9,7 @@ import { Button } from "@/components/ui/button";
 import { formatBytes, formatDuration } from "@/lib/format";
 import { format } from "date-fns";
 import { ptBR } from "date-fns/locale";
+import ProjectAffiliateCard from "@/components/ProjectAffiliateCard";
 
 export default function ProjectDetail() {
   const { id } = useParams();
@@ -70,6 +71,8 @@ export default function ProjectDetail() {
           </div>
         </header>
       )}
+      {project && <ProjectAffiliateCard projectId={project.id} projectName={project.name} />}
+
 
       <section className="space-y-3">
         <div className="flex items-center gap-2">
