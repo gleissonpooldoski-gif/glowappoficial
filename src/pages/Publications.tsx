@@ -536,8 +536,19 @@ export default function Publications() {
     }
   };
 
+  const loadIgAccounts = async () => {
+    try {
+      const { data } = await supabase.functions.invoke("instagram-credentials", { body: { action: "get" } });
+      const creds = (data?.credentials ?? {}) as Record<string, { account: string; display_name: string | null; project_id: string | null }>;
+      setIgAccounts(Object.values(creds));
+    } catch {
+      setIgAccounts([]);
+    }
+  };
+
   useEffect(() => {
     load();
+    loadIgAccounts();
     const t = window.setInterval(load, 5000);
     return () => window.clearInterval(t);
   }, []);
