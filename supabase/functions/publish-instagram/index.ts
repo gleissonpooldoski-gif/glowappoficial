@@ -812,6 +812,20 @@ Deno.serve(async (req) => {
     await appendLog(post.id, { event: "meta_token_resolved", account, token_source: tokenSource, token_length: token.length, token_head: tokenHead, token_tail: tokenTail, ig_id: igId });
     if (!token || !igId) throw new Error(`Credenciais Meta ausentes para a conta '${account}'.`);
     assertValidToken(token, account);
+    activeIgId = igId;
+
+    // Fila por conta Instagram: uma publicação por vez + respeita cooldown de code=4.
+    const lockRes = await acquireAccountLock(igId, post.id);
+    if (!lockRes.ok) {
+      const msg = lockRes.reason === "cooldown"
+        ? `Conta ${accountLabel(account)} em cooldown pós-rate-limit da Meta. Nova tentativa liberada em ${lockRes.wait_seconds}s.`
+        : `Já existe uma publicação em andamento para ${accountLabel(account)}. Aguarde a atual finalizar.`;
+      await appendLog(post.id, { event: "account_lock_denied", ig_business_id: igId, reason: lockRes.reason, details: lockRes });
+      await supabase.from("instagram_posts").update({ status: "AGENDADO", error_message: msg }).eq("id", post.id);
+      return new Response(JSON.stringify({ success: false, queued: true, reason: lockRes.reason, message: msg, wait_seconds: lockRes.wait_seconds ?? null }),
+        { status: 200, headers: { ...corsHeaders, "Content-Type": "application/json" } });
+    }
+    await appendLog(post.id, { event: "account_lock_acquired", ig_business_id: igId });
 
     // Sem pré-consultas legadas: o IG Business Account ID cadastrado é usado direto
     // no endpoint de container. Removidas chamadas a account_type e à Página do Facebook.
