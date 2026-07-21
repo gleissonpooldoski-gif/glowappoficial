@@ -76,6 +76,9 @@ export default function InstagramPublishDialog({
   const [autoSlot, setAutoSlot] = useState<Date | null>(null);
   const [nets, setNets] = useState<Set<NetId>>(new Set(["instagram"]));
   const [hasVideoFile, setHasVideoFile] = useState<boolean | null>(null);
+  const [ytTitle, setYtTitle] = useState("");
+  const [ytDescription, setYtDescription] = useState("");
+  const [ytTags, setYtTags] = useState("");
   const toggleNet = (n: NetId) => setNets((prev) => {
     const s = new Set(prev);
     if (n === "youtube" && !s.has("youtube") && hasVideoFile === false) {
@@ -248,9 +251,19 @@ export default function InstagramPublishDialog({
 
       if (wantYT) {
         try {
-          const title = (videoMeta?.filename ?? caption ?? "Vídeo").replace(/\.[^.]+$/, "").slice(0, 100) || "Vídeo";
-          const desc = [caption, hashtags].filter(Boolean).join("\n\n").slice(0, 5000);
-          const tags = hashtags.split(/\s+/).map((t) => t.replace(/^#/, "")).filter(Boolean).slice(0, 15);
+          const captionFirstLine = (caption || "").split("\n").map((s) => s.trim()).find(Boolean) ?? "";
+          const fallbackTitle =
+            captionFirstLine ||
+            [videoMeta?.projectName, videoMeta?.templateName].filter(Boolean).join(" — ") ||
+            videoMeta?.projectCategory ||
+            "Novo vídeo";
+          const title = (ytTitle.trim() || fallbackTitle).slice(0, 100);
+          const desc = (ytDescription.trim()
+            ? ytDescription
+            : [caption, hashtags].filter(Boolean).join("\n\n")
+          ).slice(0, 5000);
+          const tagsSource = ytTags.trim() ? ytTags : hashtags;
+          const tags = tagsSource.split(/[\s,]+/).map((t) => t.replace(/^#/, "").trim()).filter(Boolean).slice(0, 15);
           if (mode === "schedule") {
             const { data, error } = await supabase.from("youtube_posts" as any).insert({
               video_id: videoId, account: "default",
@@ -380,6 +393,44 @@ export default function InstagramPublishDialog({
               </p>
             )}
           </div>
+
+          {nets.has("youtube") && (
+            <div className="space-y-2 rounded-lg border border-red-400/30 bg-red-500/5 p-3">
+              <div className="flex items-center gap-1.5 text-[11px] font-semibold text-red-300">
+                <Youtube size={12} /> Detalhes do vídeo no YouTube
+              </div>
+              <div className="space-y-1.5">
+                <Label className="text-xs">Título do vídeo</Label>
+                <Input
+                  value={ytTitle}
+                  onChange={(e) => setYtTitle(e.target.value)}
+                  maxLength={100}
+                  placeholder="Se vazio, geramos a partir do conteúdo do post"
+                />
+                <p className="text-[10px] text-muted-foreground">
+                  {ytTitle.length}/100 · o nome do arquivo nunca é usado como título.
+                </p>
+              </div>
+              <div className="space-y-1.5">
+                <Label className="text-xs">Descrição do vídeo</Label>
+                <Textarea
+                  value={ytDescription}
+                  onChange={(e) => setYtDescription(e.target.value)}
+                  rows={3}
+                  placeholder="Se vazio, usamos a legenda + hashtags."
+                />
+              </div>
+              <div className="space-y-1.5">
+                <Label className="text-xs">Tags (opcional, separadas por vírgula)</Label>
+                <Input
+                  value={ytTags}
+                  onChange={(e) => setYtTags(e.target.value)}
+                  placeholder="skincare, rotina, dicas"
+                />
+              </div>
+            </div>
+          )}
+
 
 
           <div className="space-y-1.5">
