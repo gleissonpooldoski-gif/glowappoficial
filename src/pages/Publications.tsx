@@ -1,8 +1,9 @@
 import { useEffect, useMemo, useState } from "react";
 import {
-  Instagram, Loader2, CheckCircle2, AlertCircle, Clock, Trash2, Calendar,
-  ScrollText, RotateCcw, Pencil, ExternalLink, Filter,
+  Instagram, Youtube, Loader2, CheckCircle2, AlertCircle, Clock, Trash2, Calendar,
+  ScrollText, RotateCcw, Pencil, ExternalLink, Filter, Share2,
 } from "lucide-react";
+import EditPostNetworksDialog from "@/components/EditPostNetworksDialog";
 import { Card, CardContent } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
@@ -164,15 +165,17 @@ function EditScheduledDialog({
 /* ---------- post card ---------- */
 
 function PostCard({
-  post, kind, onEdit, onCancel, onDelete, onRetry, onLogs,
+  post, kind, linkedYT, onEdit, onCancel, onDelete, onRetry, onLogs, onEditNetworks,
 }: {
   post: InstagramPost;
   kind: "scheduled" | "published";
+  linkedYT?: { status: string } | null;
   onEdit: (p: InstagramPost) => void;
   onCancel: (p: InstagramPost) => void;
   onDelete: (p: InstagramPost) => void;
   onRetry: (p: InstagramPost) => void;
   onLogs: (p: InstagramPost) => void;
+  onEditNetworks: (p: InstagramPost) => void;
 }) {
   const meta = PLATFORM_META[post.account];
   const dt =
@@ -201,6 +204,18 @@ function PostCard({
         </Badge>
       </div>
       <CardContent className="space-y-2 p-3">
+        {/* Histórico por rede */}
+        <div className="flex flex-wrap items-center gap-1">
+          <Badge variant="outline" className="text-[10px] gap-1 border-pink-400/40 text-pink-300 bg-pink-500/10">
+            <Instagram size={10} /> Instagram: {post.status.toLowerCase()}
+          </Badge>
+          {linkedYT && (
+            <Badge variant="outline" className="text-[10px] gap-1 border-red-400/40 text-red-300 bg-red-500/10">
+              <Youtube size={10} /> YouTube: {linkedYT.status.toLowerCase()}
+            </Badge>
+          )}
+        </div>
+
         <div className="flex items-center justify-between gap-2 text-[11px]">
           <div className="flex items-center gap-1.5 text-muted-foreground">
             <Calendar size={11} />
@@ -211,6 +226,10 @@ function PostCard({
           <div className="flex items-center gap-0.5">
             {kind === "scheduled" && post.status === "AGENDADO" && (
               <>
+                <Button size="icon" variant="ghost" className="h-6 w-6 text-muted-foreground hover:text-gold"
+                  onClick={() => onEditNetworks(post)} title="Editar redes de publicação">
+                  <Share2 size={12} />
+                </Button>
                 <Button size="icon" variant="ghost" className="h-6 w-6 text-muted-foreground hover:text-gold"
                   onClick={() => onEdit(post)} title="Editar">
                   <Pencil size={12} />
@@ -263,16 +282,18 @@ function PostCard({
 /* ---------- platform section (Agendados + Publicados) ---------- */
 
 function PlatformSection({
-  account, posts, statusFilter, ...handlers
+  account, posts, statusFilter, ytByKey, ...handlers
 }: {
   account: InstagramAccount;
   posts: InstagramPost[];
   statusFilter: StatusFilter;
+  ytByKey: Map<string, { status: string }>;
   onEdit: (p: InstagramPost) => void;
   onCancel: (p: InstagramPost) => void;
   onDelete: (p: InstagramPost) => void;
   onRetry: (p: InstagramPost) => void;
   onLogs: (p: InstagramPost) => void;
+  onEditNetworks: (p: InstagramPost) => void;
 }) {
   const meta = PLATFORM_META[account];
   const own = posts.filter((p) => p.account === account);
@@ -293,6 +314,8 @@ function PlatformSection({
   const showPublished = statusFilter === "all" || statusFilter === "published";
   const showFailed = statusFilter === "all" || statusFilter === "failed";
 
+  const linkKey = (p: InstagramPost) => `${p.video_id ?? ""}|${p.scheduled_at ?? ""}`;
+
   const grid = (items: InstagramPost[], kind: "scheduled" | "published", emptyMsg: string) =>
     items.length === 0 ? (
       <Card className={`glass border-dashed ${meta.ring}`}>
@@ -304,7 +327,7 @@ function PlatformSection({
     ) : (
       <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-3">
         {items.map((p) => (
-          <PostCard key={p.id} post={p} kind={kind} {...handlers} />
+          <PostCard key={p.id} post={p} kind={kind} linkedYT={ytByKey.get(linkKey(p))} {...handlers} />
         ))}
       </div>
     );
@@ -360,17 +383,34 @@ function PlatformSection({
 
 export default function Publications() {
   const [posts, setPosts] = useState<InstagramPost[] | null>(null);
+  const [ytByKey, setYtByKey] = useState<Map<string, { status: string }>>(new Map());
   const [selectedPost, setSelectedPost] = useState<InstagramPost | null>(null);
   const [editing, setEditing] = useState<InstagramPost | null>(null);
+  const [editingNetworks, setEditingNetworks] = useState<InstagramPost | null>(null);
 
   const [statusFilter, setStatusFilter] = useState<StatusFilter>("all");
   const [periodFilter, setPeriodFilter] = useState<PeriodFilter>("all");
   const [customFrom, setCustomFrom] = useState("");
   const [customTo, setCustomTo] = useState("");
 
+  const loadYoutubeLinks = async () => {
+    const { data } = await supabase
+      .from("youtube_posts" as any)
+      .select("video_id, scheduled_at, status")
+      .not("scheduled_at", "is", null)
+      .order("scheduled_at", { ascending: false })
+      .limit(500);
+    const map = new Map<string, { status: string }>();
+    for (const r of (data ?? []) as any[]) {
+      if (!r.video_id || !r.scheduled_at) continue;
+      map.set(`${r.video_id}|${r.scheduled_at}`, { status: r.status });
+    }
+    setYtByKey(map);
+  };
+
   const load = async () => {
     try {
-      const nextPosts = await listInstagramPosts();
+      const [nextPosts] = await Promise.all([listInstagramPosts(), loadYoutubeLinks()]);
       setPosts(nextPosts);
       const publishing = nextPosts.filter((p) => p.status === "PUBLICANDO" && p.container_id);
       if (publishing.length > 0) {
@@ -448,6 +488,7 @@ export default function Publications() {
     onDelete: deletePost,
     onRetry: retry,
     onLogs: (p: InstagramPost) => setSelectedPost(p),
+    onEditNetworks: (p: InstagramPost) => setEditingNetworks(p),
   };
 
   return (
@@ -526,15 +567,16 @@ export default function Publications() {
                 account={a.value}
                 posts={filteredPosts}
                 statusFilter={statusFilter}
+                ytByKey={ytByKey}
                 {...handlers}
               />
             ))}
           </TabsContent>
           <TabsContent value="frame">
-            <PlatformSection account="frame" posts={filteredPosts} statusFilter={statusFilter} {...handlers} />
+            <PlatformSection account="frame" posts={filteredPosts} statusFilter={statusFilter} ytByKey={ytByKey} {...handlers} />
           </TabsContent>
           <TabsContent value="resenha">
-            <PlatformSection account="resenha" posts={filteredPosts} statusFilter={statusFilter} {...handlers} />
+            <PlatformSection account="resenha" posts={filteredPosts} statusFilter={statusFilter} ytByKey={ytByKey} {...handlers} />
           </TabsContent>
         </Tabs>
       )}
@@ -544,6 +586,14 @@ export default function Publications() {
         post={editing}
         open={!!editing}
         onOpenChange={(o) => !o && setEditing(null)}
+        onSaved={load}
+      />
+
+      {/* Edit networks dialog */}
+      <EditPostNetworksDialog
+        post={editingNetworks}
+        open={!!editingNetworks}
+        onOpenChange={(o) => !o && setEditingNetworks(null)}
         onSaved={load}
       />
 
