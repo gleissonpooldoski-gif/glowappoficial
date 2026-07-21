@@ -520,8 +520,7 @@ export default function Publications() {
   };
   const clearSelection = () => setSelectedIds(new Set());
 
-  const load = async (opts?: { silent?: boolean }) => {
-    const silent = opts?.silent ?? false;
+  const load = async () => {
     try {
       const [nextPosts] = await Promise.all([listInstagramPosts(), loadYoutubeLinks(), loadTiktokLinks()]);
       setPosts(nextPosts);
@@ -533,9 +532,8 @@ export default function Publications() {
         }
       }
     } catch (e: any) {
-      // Falha de rede em polling não deve limpar a lista nem gerar toasts em loop.
-      if (!silent) toast.error(e?.message ?? "Falha ao carregar");
-      setPosts((prev) => prev ?? []);
+      toast.error(e?.message ?? "Falha ao carregar");
+      setPosts([]);
     }
   };
 
@@ -552,7 +550,7 @@ export default function Publications() {
   useEffect(() => {
     load();
     loadIgAccounts();
-    const t = window.setInterval(() => load({ silent: true }), 15000);
+    const t = window.setInterval(load, 5000);
     return () => window.clearInterval(t);
   }, []);
 
@@ -667,8 +665,12 @@ export default function Publications() {
         projectName: proj?.name ?? null,
       });
     }
-    // Contas legadas encontradas apenas em posts antigos são ignoradas —
-    // exibimos apenas pastas com credencial ativa vinculada a um projeto.
+    // 2) Contas encontradas em posts que ainda não apareceram
+    for (const p of posts ?? []) {
+      if (!seen.has(p.account)) {
+        seen.set(p.account, { slug: p.account, displayName: labelForAccount(p.account), projectId: null, projectName: null });
+      }
+    }
     // Ordena: FRAME primeiro, RESENHA depois, restante alfabético
     return Array.from(seen.values()).sort((a, b) => {
       const rank = (s: string) => (s === "frame" ? 0 : s === "resenha" ? 1 : 2);
