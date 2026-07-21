@@ -75,12 +75,43 @@ async function tokensFor(supabase: any, account: Account) {
   return { token, igId, tokenSource: source, tokenHead: head, tokenTail: tail };
 }
 
+function normalizeCaptionText(raw: string): string {
+  const trimmed = (raw ?? "").replace(/\r\n/g, "\n").trim();
+  if (!trimmed) return "";
+  // Colapsa 3+ quebras em duas e remove linhas duplicadas consecutivas.
+  const collapsed = trimmed.replace(/\n{3,}/g, "\n\n");
+  const seen = new Set<string>();
+  const dedupLines: string[] = [];
+  for (const line of collapsed.split("\n")) {
+    const key = line.trim().toLowerCase();
+    if (key && seen.has(key)) continue;
+    if (key) seen.add(key);
+    dedupLines.push(line);
+  }
+  return dedupLines.join("\n").trim();
+}
+
+function normalizeHashtagsText(raw: string): { text: string; count: number; dropped: number } {
+  const tokens = (raw ?? "").split(/\s+/).map((t) => t.trim()).filter(Boolean);
+  const unique: string[] = [];
+  const seen = new Set<string>();
+  for (const t of tokens) {
+    const tag = t.startsWith("#") ? t : `#${t.replace(/^#+/, "")}`;
+    const key = tag.toLowerCase();
+    if (seen.has(key)) continue;
+    seen.add(key);
+    unique.push(tag);
+  }
+  const kept = unique.slice(0, HASHTAGS_MAX_COUNT);
+  return { text: kept.join(" "), count: kept.length, dropped: unique.length - kept.length };
+}
+
 function buildCaption(caption: string, hashtags: string) {
-  const c = (caption ?? "").trim();
-  const h = (hashtags ?? "").trim();
-  if (!h) return c;
-  if (!c) return h;
-  return `${c}\n\n${h}`;
+  const c = normalizeCaptionText(caption);
+  const h = normalizeHashtagsText(hashtags).text;
+  let combined = c && h ? `${c}\n\n${h}` : (c || h);
+  if (combined.length > CAPTION_MAX_LENGTH) combined = combined.slice(0, CAPTION_MAX_LENGTH).trimEnd();
+  return combined;
 }
 
 function safeJson(value: unknown) {
