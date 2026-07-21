@@ -113,10 +113,18 @@ function ScheduleEditor({
 
   const editAt = (idx: number, value: string) => {
     if (!/^\d{1,2}:\d{2}$/.test(value)) return;
+    const [h, m] = value.split(":").map(Number);
+    const normalized = `${String(h).padStart(2, "0")}:${String(m).padStart(2, "0")}`;
+    if (times.some((t, i) => i !== idx && t === normalized)) {
+      toast.error("Horário já existe");
+      return;
+    }
     const next = [...times];
-    next[idx] = value;
+    next[idx] = normalized;
     setTimes(next);
   };
+
+  const uniqueCount = new Set(times).size;
 
   const buildSeqIso = (): string | null => {
     if (!seqDate || !seqTime) return null;
