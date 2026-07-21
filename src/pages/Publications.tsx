@@ -1,7 +1,7 @@
 import { useEffect, useMemo, useState } from "react";
 import {
   Instagram, Youtube, Loader2, CheckCircle2, AlertCircle, Clock, Trash2, Calendar,
-  ScrollText, RotateCcw, Pencil, ExternalLink, Filter, Share2, Music2, Plus,
+  ScrollText, RotateCcw, Pencil, ExternalLink, Filter, Share2, Music2, Plus, MessageSquare,
 } from "lucide-react";
 import EditPostNetworksDialog from "@/components/EditPostNetworksDialog";
 import BulkAddNetworksDialog from "@/components/BulkAddNetworksDialog";
