@@ -10,6 +10,7 @@ import { Badge } from "@/components/ui/badge";
 import { toast } from "sonner";
 import { supabase } from "@/integrations/supabase/client";
 import { buildYoutubeMetaFromCaption } from "@/lib/youtube-meta";
+import YoutubeChannelPicker from "./YoutubeChannelPicker";
 import type { InstagramPost } from "@/lib/instagram";
 
 type NetId = "instagram" | "youtube" | "tiktok";
@@ -21,7 +22,7 @@ type Props = {
   onSaved?: () => void;
 };
 
-async function ensureYoutube(post: InstagramPost) {
+async function ensureYoutubeForChannel(post: InstagramPost, channelAcc: string) {
   if (!post.video_id || !post.scheduled_at) return { skipped: "sem vídeo/horário" };
 
   // Verifica arquivo
@@ -30,22 +31,22 @@ async function ensureYoutube(post: InstagramPost) {
     .eq("id", post.video_id).maybeSingle();
   if (!video?.original_path && !video?.processed_path) return { skipped: "sem arquivo" };
 
-  // Duplicata?
+  // Duplicata neste mesmo canal?
   const { data: existing } = await supabase
     .from("youtube_posts" as any)
     .select("id")
     .eq("video_id", post.video_id)
     .eq("scheduled_at", post.scheduled_at)
+    .eq("account", channelAcc)
     .maybeSingle();
   if (existing) return { skipped: "já vinculado" };
 
-  // Título sempre da legenda (nunca do nome do arquivo).
   const { title, description, tags } = await buildYoutubeMetaFromCaption(
     post.caption ?? "", post.hashtags ?? "",
   );
 
   const { error } = await supabase.from("youtube_posts" as any).insert({
-    video_id: post.video_id, account: "default",
+    video_id: post.video_id, account: channelAcc,
     title, description, tags,
     category_id: "22", privacy_status: "public",
     status: "AGENDADO", scheduled_at: post.scheduled_at,
@@ -83,6 +84,7 @@ export default function BulkAddNetworksDialog({ posts, open, onOpenChange, onSav
   const [nets, setNets] = useState<Record<NetId, boolean>>({
     instagram: false, youtube: true, tiktok: false,
   });
+  const [ytChannels, setYtChannels] = useState<string[]>([]);
 
   const toggle = (id: NetId) => setNets((s) => ({ ...s, [id]: !s[id] }));
 
@@ -92,15 +94,29 @@ export default function BulkAddNetworksDialog({ posts, open, onOpenChange, onSav
       toast.error("Selecione ao menos uma rede (YouTube ou TikTok).");
       return;
     }
+    if (chosen.includes("youtube") && ytChannels.length === 0) {
+      toast.error("Selecione ao menos um canal do YouTube.");
+      return;
+    }
     setBusy(true);
     let added = 0, skipped = 0, failed = 0;
     try {
       for (const post of posts) {
         for (const net of chosen) {
           try {
-            const res = net === "youtube" ? await ensureYoutube(post) : await ensureTiktok(post);
-            if ((res as any).added) added++;
-            else skipped++;
+            if (net === "youtube") {
+              for (const ch of ytChannels) {
+                try {
+                  const res = await ensureYoutubeForChannel(post, ch);
+                  if ((res as any).added) added++;
+                  else skipped++;
+                } catch { failed++; }
+              }
+            } else {
+              const res = await ensureTiktok(post);
+              if ((res as any).added) added++;
+              else skipped++;
+            }
           } catch { failed++; }
         }
       }
