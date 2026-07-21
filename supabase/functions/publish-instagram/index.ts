@@ -246,7 +246,9 @@ function metaErrorDetails(data: any, fallbackMessage?: string) {
 async function metaPost(url: string, body: Record<string, string>, token?: string) {
   if (token !== undefined) assertValidToken(token);
   const form = new URLSearchParams(body);
-  console.log(`[publish-instagram] meta_request POST ${url.split("?")[0]} body_keys=${Object.keys(body).join(",")}`);
+  const endpoint = url.split("?")[0];
+  const bodyKeys = Object.keys(body).filter((k) => k !== "access_token");
+  console.log(`[publish-instagram] meta_request POST ${endpoint} body_keys=${bodyKeys.join(",")}`);
   const res = await fetch(url, {
     method: "POST",
     headers: { "Content-Type": "application/x-www-form-urlencoded" },
@@ -254,8 +256,13 @@ async function metaPost(url: string, body: Record<string, string>, token?: strin
   });
   const payload = await readMetaResponse(res);
   if (!res.ok || payload.data?.error) {
+    if (isReduceDataError(payload.data, payload.text)) {
+      console.error(`[publish-instagram] reduce_data_error endpoint=${endpoint} body_keys=${bodyKeys.join(",")} meta_message=${payload.data?.error?.message ?? ""}`);
+    }
     const err: any = new Error(metaErrorMessage(payload.data, `HTTP ${res.status}: ${payload.text.slice(0, 500)}`));
     err.metaData = payload.data;
+    err.endpoint = endpoint;
+    err.bodyKeys = bodyKeys;
     throw err;
   }
   return { status: res.status, data: payload.data };
