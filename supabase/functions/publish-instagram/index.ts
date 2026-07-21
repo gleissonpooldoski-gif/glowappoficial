@@ -5,8 +5,8 @@ import { corsHeaders } from "npm:@supabase/supabase-js@2/cors";
 const GRAPH_VERSION = "v18.0";
 const FB_BASE = `https://graph.facebook.com/${GRAPH_VERSION}`;
 const BUCKET = "videos-processed";
-const MAX_POLL_MS = 5 * 60 * 1000;
 const POLL_INTERVAL_MS = 5000;
+const MAX_CONTAINER_STATUS_ATTEMPTS = 12;
 
 // Sanitiza o Access Token: trim + remove aspas, whitespace interno, BOM,
 // caracteres de controle e QUALQUER caractere fora do intervalo ASCII imprimível
@@ -118,13 +118,18 @@ function isInstagramIdInvalidError(data: any, message?: string): boolean {
   return code === 100 || code === 803 || msg.includes("ig_id_invalid") || msg.includes("unsupported post request") || msg.includes("object with id") || msg.includes("does not exist");
 }
 
-function isTransientMetaError(data: any, message?: string): boolean {
+function isCodeOneMetaError(data: any, message?: string): boolean {
   const err = data?.error;
   const msg = `${err?.message ?? ""} ${message ?? ""}`.toLowerCase();
   const code = Number(err?.code);
-  const sub = Number(err?.error_subcode);
+  return code === 1 || msg.includes("oauthexception") && msg.includes("code=1");
+}
+
+function isMetaServiceError(data: any, message?: string): boolean {
+  const err = data?.error;
+  const msg = `${err?.message ?? ""} ${message ?? ""}`.toLowerCase();
+  const code = Number(err?.code);
   if (code === 1 || code === 2 || code === 4 || code === 17 || code === 32 || code === 341) return true;
-  if (sub === 2207001 || sub === 2207020 || sub === 2207026) return true;
   if (msg.includes("unknown error") || msg.includes("please reduce") || msg.includes("try again")) return true;
   return false;
 }
@@ -168,8 +173,8 @@ function userFacingMetaError(account: string | null | undefined, rawMessage: str
   if (isInvalidVideoError(metaData, rawMessage)) {
     return `Vídeo rejeitado pelo Instagram em ${label}. Verifique formato (MP4/H.264 + AAC), duração (3s a 15min) e proporção 9:16. Detalhe Meta: ${rawMessage}`;
   }
-  if (isTransientMetaError(metaData, rawMessage)) {
-    return `A Meta retornou um erro temporário (code=${code}) ao publicar em ${label}${trace}. O token continua válido — tentaremos novamente automaticamente; se persistir, tente publicar novamente em alguns minutos.`;
+  if (isMetaServiceError(metaData, rawMessage)) {
+    return `Erro Meta ao publicar em ${label} (code=${code})${trace}. A resposta da Meta foi salva nos logs da publicação. Tente novamente em alguns minutos se persistir.`;
   }
   if (isInstagramIdInvalidError(metaData, rawMessage)) {
     return `Instagram Business Account ID inválido para ${label}. Confirme que o ID cadastrado é o instagram_business_account_id exato da conta selecionada.`;
@@ -219,6 +224,18 @@ async function readMetaResponse(res: Response) {
   return { data, text };
 }
 
+function metaErrorDetails(data: any, fallbackMessage?: string) {
+  const err = data?.error ?? {};
+  return {
+    message: err.message ?? fallbackMessage ?? null,
+    type: err.type ?? null,
+    code: err.code ?? null,
+    fbtrace_id: err.fbtrace_id ?? null,
+    error_subcode: err.error_subcode ?? null,
+    raw: data ?? null,
+  };
+}
+
 async function metaPost(url: string, body: Record<string, string>, token?: string) {
   if (token !== undefined) assertValidToken(token);
   const form = new URLSearchParams(body);
@@ -252,14 +269,20 @@ async function metaGet(url: string, token?: string) {
 
 
 async function checkPublicVideoUrl(videoUrl: string) {
-  const res = await fetch(videoUrl, { headers: { Range: "bytes=0-0" } });
-  await res.arrayBuffer();
+  let method = "HEAD";
+  let res = await fetch(videoUrl, { method });
+  if (res.status === 405 || res.status === 403 || res.status === 400) {
+    method = "GET";
+    res = await fetch(videoUrl, { method, headers: { Range: "bytes=0-0" } });
+    await res.arrayBuffer();
+  }
   const contentType = res.headers.get("content-type") ?? "";
   const contentLength = res.headers.get("content-length") ?? "";
   const acceptRanges = res.headers.get("accept-ranges") ?? "";
   const contentRange = res.headers.get("content-range") ?? "";
-  const ok = (res.status >= 200 && res.status < 300) || res.status === 206;
-  return { ok, status: res.status, content_type: contentType, content_length: contentLength, accept_ranges: acceptRanges, content_range: contentRange };
+  const statusOk = res.status === 200;
+  const mp4Ok = contentType.toLowerCase().split(";")[0].trim() === "video/mp4";
+  return { ok: statusOk && mp4Ok, method, status: res.status, content_type: contentType, content_length: contentLength, accept_ranges: acceptRanges, content_range: contentRange, status_ok: statusOk, mp4_ok: mp4Ok };
 }
 
 Deno.serve(async (req) => {
