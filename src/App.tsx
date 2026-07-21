@@ -16,6 +16,7 @@ import MyEdits from "./pages/MyEdits";
 import Publications from "./pages/Publications";
 import Privacy from "./pages/Privacy";
 import Terms from "./pages/Terms";
+import CommentsConfig from "./pages/CommentsConfig";
 
 import { ProjectProvider } from "@/context/ProjectContext";
 import { RenderQueueProvider } from "@/context/RenderQueueContext";
@@ -42,6 +43,7 @@ const App = () => (
                 <Route path="/settings" element={<Settings />} />
                 <Route path="/edits" element={<MyEdits />} />
                 <Route path="/publications" element={<Publications />} />
+                <Route path="/comments-config" element={<CommentsConfig />} />
                 <Route path="/editor/:id" element={<Editor />} />
                 <Route path="/brand" element={<Navigate to="/videos" replace />} />
                 <Route path="/processing" element={<Navigate to="/finished" replace />} />
