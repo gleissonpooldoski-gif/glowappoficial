@@ -517,15 +517,41 @@ Deno.serve(async (req) => {
     const fullCaption = buildCaption(caption, hashtags);
 
     const containerUrl = `${FB_BASE}/${igId}/media`;
-    const containerRes = await metaPost(containerUrl, {
-      media_type: "REELS",
-      video_url: signed.signedUrl,
-      caption: fullCaption,
-      access_token: token,
-    }, token);
-    const containerId = containerRes.data?.id;
-    await appendLog(post.id, { event: "media_container_create_response", status: containerRes.status, endpoint: containerUrl, response: containerRes.data });
-    if (!containerId) throw new Error(`Meta não retornou creation_id. Resposta: ${safeJson(containerRes.data)}`);
+    const MAX_CONTAINER_ATTEMPTS = 3;
+    let containerRes: any = null;
+    let containerId: string | undefined;
+    let lastContainerErr: any = null;
+    for (let attempt = 1; attempt <= MAX_CONTAINER_ATTEMPTS; attempt++) {
+      try {
+        await appendLog(post.id, { event: "media_container_create_attempt", attempt, endpoint: containerUrl, ig_id: igId });
+        containerRes = await metaPost(containerUrl, {
+          media_type: "REELS",
+          video_url: signed.signedUrl,
+          caption: fullCaption,
+          access_token: token,
+        }, token);
+        await appendLog(post.id, { event: "media_container_create_response", attempt, status: containerRes.status, endpoint: containerUrl, response: containerRes.data });
+        containerId = containerRes.data?.id;
+        if (containerId) { lastContainerErr = null; break; }
+        throw new Error(`Meta não retornou creation_id. Resposta: ${safeJson(containerRes.data)}`);
+      } catch (err: any) {
+        lastContainerErr = err;
+        const transient = isTransientMetaError(err?.metaData, err?.message);
+        await appendLog(post.id, {
+          event: "media_container_create_error",
+          attempt,
+          transient,
+          raw_message: err?.message ?? null,
+          meta: err?.metaData ?? null,
+        });
+        if (!transient || attempt === MAX_CONTAINER_ATTEMPTS) throw err;
+        const backoffMs = 4000 * attempt;
+        await appendLog(post.id, { event: "media_container_retry_wait", attempt, backoff_ms: backoffMs });
+        await new Promise((r) => setTimeout(r, backoffMs));
+      }
+    }
+    if (!containerId) throw lastContainerErr ?? new Error("Falha ao criar container de mídia no Instagram.");
+
 
 
     await supabase.from("instagram_posts").update({ container_id: containerId }).eq("id", post.id);
