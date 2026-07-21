@@ -226,6 +226,7 @@ Deno.serve(async (req) => {
       const publishUrl = `${baseForToken(token)}/${igId}/media_publish`;
       const publishRes = await metaPost(publishUrl, {
         creation_id: containerId,
+        access_token: token,
       }, token);
 
       const publishId = publishRes.data?.id;
