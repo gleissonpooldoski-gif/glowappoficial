@@ -865,7 +865,30 @@ Deno.serve(async (req) => {
 
     // Sem pré-consultas legadas: o IG Business Account ID cadastrado é usado direto
     // no endpoint de container. Removidas chamadas a account_type e à Página do Facebook.
-    const fullCaption = buildCaption(caption, hashtags);
+    let fullCaption = buildCaption(caption, hashtags);
+
+    // 🧪 DIAGNÓSTICO EXCLUSIVO DA CONTA RESENHA (ig_business_id=17841410630040919)
+    // Substitui a legenda por uma versão mínima e sem hashtags para isolar se o
+    // erro code=1 no /media_publish está relacionado ao conteúdo da caption.
+    // NÃO altera nada da conta FRAME nem de outras contas.
+    const isResenhaDiagnostic =
+      isSessionDaResenha(account) || String(igId).trim() === "17841410630040919";
+    if (isResenhaDiagnostic) {
+      const diagnosticCaption = "Novo vídeo 🔥";
+      await appendLog(post.id, {
+        event: "resenha_publish_diagnostic",
+        account: "resenha",
+        instagram_business_id: "17841410630040919",
+        creation_id: null,
+        caption_used: diagnosticCaption,
+        caption_length: diagnosticCaption.length,
+        hashtag_count: 0,
+        payload_bytes: new URLSearchParams({ caption: diagnosticCaption }).toString().length,
+        original_caption_length: fullCaption.length,
+        timestamp: new Date().toISOString(),
+      });
+      fullCaption = diagnosticCaption;
+    }
 
     const containerUrl = `${FB_BASE}/${igId}/media`;
     const MAX_CONTAINER_ATTEMPTS = 3;
