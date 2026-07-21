@@ -210,7 +210,25 @@ Deno.serve(async (req) => {
         return new Response(JSON.stringify({ error: "Nome, Access Token e Business ID são obrigatórios." }),
           { status: 400, headers: { ...corsHeaders, "Content-Type": "application/json" } });
       }
-      // Gera slug único
+
+      // Sanity check no formato do ID (dígitos apenas, típico 15-18 chars começando com 178…)
+      if (!/^\d{6,20}$/.test(ig_business_id)) {
+        return new Response(JSON.stringify({
+          error: "Instagram Business ID deve conter apenas dígitos. Copie o valor exato do campo 'Instagram Business Account ID' (não use @username, URL, ou o ID da Página do Facebook).",
+        }), { status: 400, headers: { ...corsHeaders, "Content-Type": "application/json" } });
+      }
+
+      // Valida ANTES de inserir — não cria a conta se a Meta rejeitar
+      const validation = await validateAccount(access_token, ig_business_id);
+      if (!validation.ok) {
+        return new Response(JSON.stringify({
+          error: validation.message,
+          status: validation.status,
+          result: validation,
+        }), { status: 400, headers: { ...corsHeaders, "Content-Type": "application/json" } });
+      }
+
+      // Gera slug único (só depois de validar)
       let base = slugify(display_name);
       let account = base;
       let n = 1;
@@ -221,7 +239,6 @@ Deno.serve(async (req) => {
         n += 1;
         account = `${base}_${n}`;
       }
-      const validation = await validateAccount(access_token, ig_business_id);
       const { error: insErr } = await supabase.from("instagram_credentials").insert({
         account, display_name, access_token, ig_business_id, project_id,
         last_validated_at: new Date().toISOString(),
@@ -229,7 +246,7 @@ Deno.serve(async (req) => {
         last_validation_detail: validation.message,
       });
       if (insErr) {
-        return new Response(JSON.stringify({ error: `Falha ao criar: ${insErr.message}` }),
+        return new Response(JSON.stringify({ error: `Falha ao salvar: ${insErr.message}` }),
           { status: 400, headers: { ...corsHeaders, "Content-Type": "application/json" } });
       }
       return new Response(JSON.stringify({ success: true, account, result: validation }),
