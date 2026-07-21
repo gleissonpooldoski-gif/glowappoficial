@@ -3,11 +3,31 @@ import { createClient } from "https://esm.sh/@supabase/supabase-js@2.45.4";
 import { corsHeaders } from "npm:@supabase/supabase-js@2/cors";
 
 const GRAPH_VERSION = "v25.0";
-// Instagram API with Instagram Login: usa graph.instagram.com com o IG User ID direto.
-const IG_BASE = `https://graph.instagram.com/${GRAPH_VERSION}`;
+const FB_BASE = `https://graph.facebook.com/${GRAPH_VERSION}`;
+const IG_LOGIN_BASE = `https://graph.instagram.com/${GRAPH_VERSION}`;
 const BUCKET = "videos-processed";
 const MAX_POLL_MS = 5 * 60 * 1000;
 const POLL_INTERVAL_MS = 5000;
+
+// Sanitiza o Access Token: remove aspas, espaços, quebras de linha e caracteres invisíveis.
+function sanitizeToken(raw: string | undefined | null): string {
+  if (!raw) return "";
+  let t = String(raw).trim();
+  // Remove aspas simples/duplas do início/fim
+  t = t.replace(/^['"]+|['"]+$/g, "");
+  // Remove qualquer whitespace/newline no meio
+  t = t.replace(/[\s\r\n\t]+/g, "");
+  // Remove BOM e caracteres de controle
+  t = t.replace(/[\u0000-\u001F\u007F\uFEFF]/g, "");
+  return t.trim();
+}
+
+// EAA... => token do Facebook Graph. IGAA/IGQ... => Instagram API with Instagram Login.
+function baseForToken(token: string): string {
+  const t = sanitizeToken(token);
+  if (t.startsWith("IGAA") || t.startsWith("IGQ")) return IG_LOGIN_BASE;
+  return FB_BASE;
+}
 
 
 type Account = string;
