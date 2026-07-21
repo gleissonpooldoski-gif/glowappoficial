@@ -7,6 +7,8 @@ const FB_BASE = `https://graph.facebook.com/${GRAPH_VERSION}`;
 const BUCKET = "videos-processed";
 const POLL_INTERVAL_MS = 5000;
 const MAX_CONTAINER_STATUS_ATTEMPTS = 12;
+const PUBLISH_STABILIZATION_MS = 7000;
+const MAX_PUBLICATION_CYCLES = 3;
 
 // Sanitiza o Access Token: trim + remove aspas, whitespace interno, BOM,
 // caracteres de controle e QUALQUER caractere fora do intervalo ASCII imprimível
@@ -321,100 +323,134 @@ Deno.serve(async (req) => {
     await appendLog(postId, { event: "error", message, details: details ?? null });
   };
 
-  const completePublication = async (postId: string, containerId: string, token: string, igId: string, account: Account) => {
+  const completePublication = async (postId: string, initialContainerId: string, token: string, igId: string, account: Account, videoUrl: string, fullCaption: string) => {
     try {
-      const startedAt = Date.now();
-      let lastStatus: any = null;
-      for (let attempt = 1; attempt <= MAX_CONTAINER_STATUS_ATTEMPTS; attempt++) {
-        const statusUrl = `${FB_BASE}/${containerId}?fields=status_code,status&access_token=${encodeURIComponent(token)}`;
-        const statusRes = await metaGet(statusUrl, token);
-        lastStatus = statusRes.data;
-
-        const statusCode = statusRes.data?.status_code ?? "UNKNOWN";
-        await appendLog(postId, { event: "container_status_response", attempt, max_attempts: MAX_CONTAINER_STATUS_ATTEMPTS, elapsed_ms: Date.now() - startedAt, status_code: statusCode, status: statusRes.data?.status ?? null, response: statusRes.data });
-
-        if (statusCode === "FINISHED") break;
-        if (statusCode === "ERROR" || statusCode === "EXPIRED") {
-          const reason = statusRes.data?.status ?? statusRes.data?.error?.message ?? safeJson(statusRes.data);
-          const err: any = new Error(`Container não processado (${statusCode}). Motivo Meta: ${reason}`);
-          err.metaData = { error: { message: reason, type: "ContainerStatus", code: statusCode, fbtrace_id: statusRes.data?.fbtrace_id ?? null }, container_status: statusRes.data };
-          throw err;
-        }
-        if (attempt === MAX_CONTAINER_STATUS_ATTEMPTS) break;
-        await new Promise((resolve) => setTimeout(resolve, POLL_INTERVAL_MS));
-      }
-
-      if (lastStatus?.status_code !== "FINISHED") {
-        throw new Error(`Timeout de 60 segundos aguardando FINISHED. Último status Meta: ${safeJson(lastStatus)}`);
-      }
-      await appendLog(postId, { event: "container_finished", creation_id: containerId, response: lastStatus });
-
-      const { data: current } = await supabase.from("instagram_posts").select("status, publish_id").eq("id", postId).maybeSingle();
-      if (current?.status === "PUBLICADO" || current?.publish_id) {
-        await appendLog(postId, { event: "publish_skipped_already_published", publish_id: current.publish_id });
-        return;
-      }
-
+      let containerId = initialContainerId;
       const publishUrl = `${FB_BASE}/${igId}/media_publish`;
-      const MAX_PUBLISH_ATTEMPTS = 3;
-      let publishRes: any = null;
-      let publishId: string | undefined;
+      const containerUrl = `${FB_BASE}/${igId}/media`;
+
+      const ensureNotAlreadyPublished = async (event = "publish_skipped_already_published") => {
+        const { data: current } = await supabase.from("instagram_posts").select("status, publish_id").eq("id", postId).maybeSingle();
+        if (current?.status === "PUBLICADO" || current?.publish_id) {
+          await appendLog(postId, { event, publish_id: current.publish_id });
+          return false;
+        }
+        return true;
+      };
+
+      const waitForContainerFinished = async (cycle: number, currentContainerId: string) => {
+        const startedAt = Date.now();
+        let lastStatus: any = null;
+        for (let attempt = 1; attempt <= MAX_CONTAINER_STATUS_ATTEMPTS; attempt++) {
+          const statusUrl = `${FB_BASE}/${currentContainerId}?fields=status_code,status&access_token=${encodeURIComponent(token)}`;
+          const statusRes = await metaGet(statusUrl, token);
+          lastStatus = statusRes.data;
+
+          const statusCode = statusRes.data?.status_code ?? "UNKNOWN";
+          await appendLog(postId, { event: "container_status_response", cycle, creation_id: currentContainerId, attempt, max_attempts: MAX_CONTAINER_STATUS_ATTEMPTS, elapsed_ms: Date.now() - startedAt, status_code: statusCode, status: statusRes.data?.status ?? null, response: statusRes.data });
+
+          if (statusCode === "FINISHED") {
+            const finishedAt = new Date().toISOString();
+            await appendLog(postId, { event: "container_finished", cycle, creation_id: currentContainerId, finished_at: finishedAt, response: lastStatus });
+            return { response: lastStatus, finishedAt };
+          }
+          if (statusCode === "ERROR" || statusCode === "EXPIRED") {
+            const reason = statusRes.data?.status ?? statusRes.data?.error?.message ?? safeJson(statusRes.data);
+            const err: any = new Error(`Container não processado (${statusCode}). Motivo Meta: ${reason}`);
+            err.metaData = { error: { message: reason, type: "ContainerStatus", code: statusCode, fbtrace_id: statusRes.data?.fbtrace_id ?? null }, container_status: statusRes.data };
+            throw err;
+          }
+          if (attempt === MAX_CONTAINER_STATUS_ATTEMPTS) break;
+          await new Promise((resolve) => setTimeout(resolve, POLL_INTERVAL_MS));
+        }
+
+        throw new Error(`Timeout de 60 segundos aguardando FINISHED. Último status Meta: ${safeJson(lastStatus)}`);
+      };
+
+      const createReplacementContainer = async (cycle: number) => {
+        const createdAt = new Date().toISOString();
+        await appendLog(postId, { event: "media_container_recreate_attempt", cycle, endpoint: containerUrl, ig_id: igId, created_at: createdAt });
+        const containerRes = await metaPost(containerUrl, {
+          media_type: "REELS",
+          video_url: videoUrl,
+          caption: fullCaption,
+          access_token: token,
+        }, token);
+        const nextContainerId = containerRes.data?.id;
+        await appendLog(postId, { event: "media_container_recreate_response", cycle, status: containerRes.status, endpoint: containerUrl, response: containerRes.data });
+        if (!nextContainerId) throw new Error(`Meta não retornou novo creation_id. Resposta: ${safeJson(containerRes.data)}`);
+        await supabase.from("instagram_posts").update({ container_id: nextContainerId }).eq("id", postId);
+        await appendLog(postId, {
+          event: "creation_id_saved",
+          cycle,
+          creation_id: nextContainerId,
+          created_at: createdAt,
+          video_url_sent: videoUrl,
+          container_response: containerRes.data ?? null,
+        });
+        return nextContainerId;
+      };
+
       let lastPublishErr: any = null;
-      for (let attempt = 1; attempt <= MAX_PUBLISH_ATTEMPTS; attempt++) {
+      for (let cycle = 1; cycle <= MAX_PUBLICATION_CYCLES; cycle++) {
+        if (!(await ensureNotAlreadyPublished())) return;
+        await appendLog(postId, { event: "publication_cycle_started", cycle, max_cycles: MAX_PUBLICATION_CYCLES, creation_id: containerId });
+
+        const finished = await waitForContainerFinished(cycle, containerId);
+        await appendLog(postId, { event: "publish_stabilization_wait", cycle, creation_id: containerId, finished_at: finished.finishedAt, wait_ms: PUBLISH_STABILIZATION_MS });
+        await new Promise((resolve) => setTimeout(resolve, PUBLISH_STABILIZATION_MS));
+
+        if (!(await ensureNotAlreadyPublished())) return;
+
+        const publishPayload = { creation_id: containerId };
+        const publishRequestedAt = new Date().toISOString();
         try {
-          await appendLog(postId, { event: "media_publish_attempt", attempt, max_attempts: MAX_PUBLISH_ATTEMPTS, ig_id: igId, creation_id: containerId });
-          publishRes = await metaPost(publishUrl, {
+          await appendLog(postId, { event: "media_publish_attempt", cycle, attempt: 1, ig_id: igId, creation_id: containerId, publish_requested_at: publishRequestedAt, payload: publishPayload });
+          const publishRes = await metaPost(publishUrl, {
             creation_id: containerId,
             access_token: token,
           }, token);
-          await appendLog(postId, { event: "media_publish_response", attempt, status: publishRes.status, response: publishRes.data });
-          publishId = publishRes.data?.id;
-          if (publishId) { lastPublishErr = null; break; }
-          throw new Error(`Meta não retornou publish_id. Resposta: ${safeJson(publishRes.data)}`);
+          const publishResponseAt = new Date().toISOString();
+          await appendLog(postId, { event: "media_publish_response", cycle, attempt: 1, status: publishRes.status, publish_requested_at: publishRequestedAt, publish_response_at: publishResponseAt, response: publishRes.data });
+          const publishId = publishRes.data?.id;
+          if (!publishId) throw new Error(`Meta não retornou publish_id. Resposta: ${safeJson(publishRes.data)}`);
+
+          const nowIso = new Date().toISOString();
+          await supabase.from("instagram_posts").update({
+            publish_id: publishId,
+            status: "PUBLICADO",
+            published_at: nowIso,
+            error_message: null,
+          }).eq("id", postId);
+          await appendLog(postId, { event: "publish_id_saved", publish_id: publishId });
+          await appendLog(postId, { event: "published", publish_id: publishId, published_at: nowIso });
+          return;
         } catch (err: any) {
           lastPublishErr = err;
-          const retryable = isCodeOneMetaError(err?.metaData, err?.message);
-          const details = metaErrorDetails(err?.metaData, err?.message);
           await appendLog(postId, {
             event: "media_publish_error",
-            attempt,
-            retryable_code_1: retryable,
+            cycle,
+            attempt: 1,
+            creation_id: containerId,
+            publish_requested_at: publishRequestedAt,
+            failed_at: new Date().toISOString(),
+            next_action: cycle < MAX_PUBLICATION_CYCLES ? "create_new_container" : "fail_post",
             raw_message: err?.message ?? null,
-            meta_error: details,
+            meta_error: metaErrorDetails(err?.metaData, err?.message),
           });
-          if (!retryable || attempt === MAX_PUBLISH_ATTEMPTS) throw err;
-          const backoffMs = 5000 * attempt;
-          await appendLog(postId, { event: "media_publish_retry_wait", attempt, reason: "meta_code_1", backoff_ms: backoffMs });
-          await new Promise((r) => setTimeout(r, backoffMs));
+
+          if (cycle === MAX_PUBLICATION_CYCLES) throw err;
+          if (!(await ensureNotAlreadyPublished("new_container_skipped_already_published"))) return;
+          containerId = await createReplacementContainer(cycle + 1);
         }
       }
-      if (!publishId) throw lastPublishErr ?? new Error("Falha ao publicar mídia no Instagram.");
-
-      const nowIso = new Date().toISOString();
-      await supabase.from("instagram_posts").update({
-        publish_id: publishId,
-        status: "PUBLICADO",
-        published_at: nowIso,
-        error_message: null,
-      }).eq("id", postId);
-      await appendLog(postId, { event: "publish_id_saved", publish_id: publishId });
-      await appendLog(postId, { event: "published", publish_id: publishId, published_at: nowIso });
+      throw lastPublishErr ?? new Error("Falha ao publicar mídia no Instagram.");
     } catch (e: any) {
       const rawMessage = e?.message ?? "Erro desconhecido ao finalizar publicação.";
       const blocked = isApiBlockedError(e?.metaData, rawMessage);
       const message = blocked ? FRIENDLY_BLOCKED_MESSAGE : userFacingMetaError(account, rawMessage, e?.metaData);
       console.error("[publish-instagram/background]", rawMessage);
       await appendLog(postId, { event: "meta_api_error", blocked, raw_message: rawMessage, meta: e?.metaData ?? null });
-      if (blocked) {
-        try {
-          const { data: cur } = await supabase.from("instagram_posts").select("account").eq("id", postId).maybeSingle();
-          if (cur?.account) await markCredentialsBlocked(supabase, cur.account, rawMessage);
-        } catch (_) { /* noop */ }
-      } else if (isTokenExpiredError(e?.metaData, rawMessage)) {
-        await markCredentialsValidationError(supabase, account, "TOKEN_EXPIRED", message);
-      } else if (isInstagramIdInvalidError(e?.metaData, rawMessage)) {
-        await markCredentialsValidationError(supabase, account, "IG_ID_INVALID", message);
-      }
       await failPost(postId, message, { raw: rawMessage, meta: e?.metaData ?? null });
     }
   };
@@ -495,6 +531,11 @@ Deno.serve(async (req) => {
       post = inserted;
       activePostId = inserted.id;
     } else {
+      if (post.status === "PUBLICADO" || post.publish_id) {
+        await appendLog(post.id, { event: "publish_request_skipped_already_published", publish_id: post.publish_id ?? null });
+        return new Response(JSON.stringify({ success: true, already_published: true, post_id: post.id, publish_id: post.publish_id }),
+          { status: 200, headers: { ...corsHeaders, "Content-Type": "application/json" } });
+      }
       await supabase.from("instagram_posts").update({ status: "PUBLICANDO", error_message: null }).eq("id", post.id);
       await appendLog(post.id, { event: "publish_started" });
     }
@@ -535,10 +576,7 @@ Deno.serve(async (req) => {
     const { token, igId, tokenSource, tokenHead, tokenTail } = await tokensFor(supabase, account as Account);
     await appendLog(post.id, { event: "meta_token_resolved", account, token_source: tokenSource, token_length: token.length, token_head: tokenHead, token_tail: tokenTail, ig_id: igId });
     if (!token || !igId) throw new Error(`Credenciais Meta ausentes para a conta '${account}'.`);
-    try { assertValidToken(token, account); } catch (e: any) {
-      await markCredentialsValidationError(supabase, account as Account, "TOKEN_EXPIRED", e.message);
-      throw e;
-    }
+    assertValidToken(token, account);
 
     // Sem pré-consultas legadas: o IG Business Account ID cadastrado é usado direto
     // no endpoint de container. Removidas chamadas a account_type e à Página do Facebook.
@@ -551,16 +589,21 @@ Deno.serve(async (req) => {
     let lastContainerErr: any = null;
     for (let attempt = 1; attempt <= MAX_CONTAINER_ATTEMPTS; attempt++) {
       try {
-        await appendLog(post.id, { event: "media_container_create_attempt", attempt, endpoint: containerUrl, ig_id: igId });
+        const containerCreatedAt = new Date().toISOString();
+        await appendLog(post.id, { event: "media_container_create_attempt", attempt, endpoint: containerUrl, ig_id: igId, created_at: containerCreatedAt });
         containerRes = await metaPost(containerUrl, {
           media_type: "REELS",
           video_url: signed.signedUrl,
           caption: fullCaption,
           access_token: token,
         }, token);
-        await appendLog(post.id, { event: "media_container_create_response", attempt, status: containerRes.status, endpoint: containerUrl, response: containerRes.data });
+        await appendLog(post.id, { event: "media_container_create_response", attempt, status: containerRes.status, endpoint: containerUrl, created_at: containerCreatedAt, response: containerRes.data });
         containerId = containerRes.data?.id;
-        if (containerId) { lastContainerErr = null; break; }
+        if (containerId) {
+          containerRes.created_at = containerCreatedAt;
+          lastContainerErr = null;
+          break;
+        }
         throw new Error(`Meta não retornou creation_id. Resposta: ${safeJson(containerRes.data)}`);
       } catch (err: any) {
         lastContainerErr = err;
@@ -586,12 +629,12 @@ Deno.serve(async (req) => {
     await appendLog(post.id, {
       event: "creation_id_saved",
       creation_id: containerId,
-      created_at: new Date().toISOString(),
+      created_at: containerRes?.created_at ?? new Date().toISOString(),
       video_url_sent: signed.signedUrl,
       container_response: containerRes?.data ?? null,
     });
 
-    const background = completePublication(post.id, containerId, token, igId, account as Account);
+    const background = completePublication(post.id, containerId, token, igId, account as Account, signed.signedUrl, fullCaption);
     const edgeRuntime = (globalThis as any).EdgeRuntime;
     if (edgeRuntime?.waitUntil) edgeRuntime.waitUntil(background);
 
@@ -602,13 +645,6 @@ Deno.serve(async (req) => {
     const blocked = isApiBlockedError(e?.metaData, rawMessage);
     const message = blocked ? FRIENDLY_BLOCKED_MESSAGE : userFacingMetaError(activeAccount ?? body?.account, rawMessage, e?.metaData);
     console.error("[publish-instagram]", rawMessage);
-    if (blocked && activeAccount) {
-      await markCredentialsBlocked(supabase, activeAccount as Account, rawMessage);
-    } else if (activeAccount && isTokenExpiredError(e?.metaData, rawMessage)) {
-      await markCredentialsValidationError(supabase, activeAccount as Account, "TOKEN_EXPIRED", message);
-    } else if (activeAccount && isInstagramIdInvalidError(e?.metaData, rawMessage)) {
-      await markCredentialsValidationError(supabase, activeAccount as Account, "IG_ID_INVALID", message);
-    }
     await failPost(activePostId ?? body?.postId ?? null, message, { raw: rawMessage, blocked, meta: e?.metaData ?? null });
     return new Response(JSON.stringify({ error: message, blocked, status: "ERRO" }),
       { status: 200, headers: { ...corsHeaders, "Content-Type": "application/json" } });
