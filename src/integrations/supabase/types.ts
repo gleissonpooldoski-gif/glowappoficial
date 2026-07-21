@@ -754,6 +754,78 @@ export type Database = {
           },
         ]
       }
+      youtube_credentials: {
+        Row: {
+          access_token: string
+          account: string
+          channel_id: string | null
+          channel_title: string | null
+          created_at: string
+          expires_at: string | null
+          id: string
+          last_validated_at: string | null
+          last_validation_detail: string | null
+          last_validation_status: string | null
+          refresh_token: string | null
+          scope: string | null
+          thumbnail: string | null
+          updated_at: string
+          user_id: string | null
+        }
+        Insert: {
+          access_token: string
+          account?: string
+          channel_id?: string | null
+          channel_title?: string | null
+          created_at?: string
+          expires_at?: string | null
+          id?: string
+          last_validated_at?: string | null
+          last_validation_detail?: string | null
+          last_validation_status?: string | null
+          refresh_token?: string | null
+          scope?: string | null
+          thumbnail?: string | null
+          updated_at?: string
+          user_id?: string | null
+        }
+        Update: {
+          access_token?: string
+          account?: string
+          channel_id?: string | null
+          channel_title?: string | null
+          created_at?: string
+          expires_at?: string | null
+          id?: string
+          last_validated_at?: string | null
+          last_validation_detail?: string | null
+          last_validation_status?: string | null
+          refresh_token?: string | null
+          scope?: string | null
+          thumbnail?: string | null
+          updated_at?: string
+          user_id?: string | null
+        }
+        Relationships: []
+      }
+      youtube_oauth_states: {
+        Row: {
+          account: string
+          created_at: string
+          state: string
+        }
+        Insert: {
+          account?: string
+          created_at?: string
+          state: string
+        }
+        Update: {
+          account?: string
+          created_at?: string
+          state?: string
+        }
+        Relationships: []
+      }
     }
     Views: {
       [_ in never]: never
