@@ -243,15 +243,18 @@ function metaErrorDetails(data: any, fallbackMessage?: string) {
   };
 }
 
-async function metaPost(url: string, body: Record<string, string>, token?: string) {
+async function metaPost(url: string, body: Record<string, string>, token?: string, options?: { authHeaderToken?: string }) {
   if (token !== undefined) assertValidToken(token);
+  if (options?.authHeaderToken !== undefined) assertValidToken(options.authHeaderToken);
   const form = new URLSearchParams(body);
   const endpoint = url.split("?")[0];
   const bodyKeys = Object.keys(body).filter((k) => k !== "access_token");
   console.log(`[publish-instagram] meta_request POST ${endpoint} body_keys=${bodyKeys.join(",")}`);
+  const headers: Record<string, string> = { "Content-Type": "application/x-www-form-urlencoded" };
+  if (options?.authHeaderToken) headers.Authorization = `Bearer ${options.authHeaderToken}`;
   const res = await fetch(url, {
     method: "POST",
-    headers: { "Content-Type": "application/x-www-form-urlencoded" },
+    headers,
     body: form.toString(),
   });
   const payload = await readMetaResponse(res);
