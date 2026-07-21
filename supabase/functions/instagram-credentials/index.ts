@@ -59,6 +59,7 @@ async function validateAccount(token: string, igId: string): Promise<ValidationR
   // pages_show_list / pages_read_engagement NÃO são obrigatórias aqui.
   const ACCEPTED_SCOPES = ["instagram_content_publish", "instagram_basic"];
   let grantedPerms: string[] = [];
+  let permissionWarning = "";
   try {
     const permRes = await fetch(`https://graph.facebook.com/${GRAPH_VERSION}/me/permissions?access_token=${encodeURIComponent(token)}`);
     const perm = await readMeta(permRes);
@@ -72,11 +73,7 @@ async function validateAccount(token: string, igId: string): Promise<ValidationR
       grantedPerms = list.filter((p: any) => p?.status === "granted").map((p: any) => p.permission);
       const hasAcceptedInstagramScope = grantedPerms.some((p) => ACCEPTED_SCOPES.includes(p) || p.startsWith("instagram_business_"));
       if (grantedPerms.length > 0 && !hasAcceptedInstagramScope) {
-        return {
-          ok: false,
-          status: "PERMISSION_MISSING",
-          message: `Token sem escopos Instagram reconhecidos. Aceitos: instagram_content_publish, instagram_basic ou instagram_business_*. Escopos concedidos: ${grantedPerms.join(", ") || "nenhum"}.`,
-        };
+        permissionWarning = ` /me/permissions não listou escopos Instagram reconhecidos; validação seguirá pelo acesso direto ao IG ID. Escopos: ${grantedPerms.join(", ") || "nenhum"}.`;
       }
     }
   } catch (_) { /* segue para teste do Business ID */ }
@@ -126,7 +123,7 @@ async function validateAccount(token: string, igId: string): Promise<ValidationR
         message: `Conta encontrada, mas o tipo retornado é "${accountType}". É necessário ser Instagram Profissional (Business ou Creator) para publicar via API.`,
       };
     }
-    return { ok: true, status: "VALID", message: `Conta @${ig.data.username ?? "?"} validada (${accountType ?? "OK"})${grantedPerms.length ? `. Escopos: ${grantedPerms.join(", ")}` : ""}.`, username: ig.data.username ?? null, account_type: accountType };
+    return { ok: true, status: "VALID", message: `Conta @${ig.data.username ?? "?"} validada (${accountType ?? "OK"})${grantedPerms.length ? `. Escopos: ${grantedPerms.join(", ")}` : ""}${permissionWarning}.`, username: ig.data.username ?? null, account_type: accountType };
   } catch (e: any) {
     return { ok: false, status: "UNKNOWN_ERROR", message: e?.message ?? "Falha ao consultar o Business ID." };
   }
