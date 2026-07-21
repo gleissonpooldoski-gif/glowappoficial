@@ -248,19 +248,35 @@ export default function InstagramPublishDialog({
 
       if (wantYT) {
         try {
-          const captionFirstLine = (caption || "").split("\n").map((s) => s.trim()).find(Boolean) ?? "";
-          const fallbackTitle =
-            captionFirstLine ||
-            [videoMeta?.projectName, videoMeta?.templateName].filter(Boolean).join(" — ") ||
-            videoMeta?.projectCategory ||
-            "Novo vídeo";
-          const title = (ytTitle.trim() || fallbackTitle).slice(0, 100);
-          const desc = (ytDescription.trim()
-            ? ytDescription
-            : [caption, hashtags].filter(Boolean).join("\n\n")
-          ).slice(0, 5000);
-          const tagsSource = ytTags.trim() ? ytTags : hashtags;
-          const tags = tagsSource.split(/[\s,]+/).map((t) => t.replace(/^#/, "").trim()).filter(Boolean).slice(0, 15);
+          // Extrai hashtags da legenda + campo hashtags. Título nunca usa nome do arquivo.
+          const captionRaw = caption ?? "";
+          const hashtagsFromCaption = (captionRaw.match(/#[\p{L}\p{N}_]+/gu) ?? []) as string[];
+          const hashtagsFromField = (hashtags ?? "").split(/\s+/).filter((s) => s.startsWith("#"));
+          const allHashtags = Array.from(new Set([...hashtagsFromCaption, ...hashtagsFromField]));
+          const captionNoTags = captionRaw.replace(/#[\p{L}\p{N}_]+/gu, "").replace(/\s+/g, " ").trim();
+
+          // Gera título via IA a partir da legenda (sem hashtags, sem nome do arquivo).
+          let title = "";
+          try {
+            const { data: t, error: tErr } = await supabase.functions.invoke("generate-youtube-title", {
+              body: {
+                caption: captionNoTags,
+                projectName: videoMeta?.projectName ?? null,
+                projectCategory: videoMeta?.projectCategory ?? null,
+              },
+            });
+            if (!tErr) title = String((t as any)?.title ?? "").trim();
+          } catch { /* fallback abaixo */ }
+          if (!title) {
+            title = (captionNoTags.split(/[.!?\n]/)[0] || captionNoTags || videoMeta?.projectName || "Novo vídeo").trim();
+          }
+          title = title.replace(/#[\p{L}\p{N}_]+/gu, "").trim().slice(0, 100);
+
+          // Descrição: legenda (limpa) + hashtags no final.
+          const desc = [captionNoTags, allHashtags.join(" ")].filter(Boolean).join("\n\n").slice(0, 5000);
+          // Tags: hashtags extraídas (sem #), até 15.
+          const tags = allHashtags.map((t) => t.replace(/^#/, "")).filter(Boolean).slice(0, 15);
+
           if (mode === "schedule") {
             const { data, error } = await supabase.from("youtube_posts" as any).insert({
               video_id: videoId, account: "default",
