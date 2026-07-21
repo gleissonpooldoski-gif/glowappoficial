@@ -159,6 +159,13 @@ export default function BulkAddNetworksDialog({ posts, open, onOpenChange, onSav
             <span className="flex-1">YouTube</span>
           </label>
 
+          {nets.youtube && (
+            <div className="rounded-md border border-border/40 bg-background/20 px-3 py-2 space-y-1.5">
+              <Label className="text-[11px] text-muted-foreground">Canais do YouTube</Label>
+              <YoutubeChannelPicker value={ytChannels} onChange={setYtChannels} disabled={busy} compact />
+            </div>
+          )}
+
           <label className={`flex items-center gap-2 rounded-md border px-3 py-2 text-xs cursor-pointer transition-colors ${
             nets.tiktok ? "border-gold/50 bg-gold/5" : "border-border/60 bg-background/30 hover:bg-background/60"
           }`}>
