@@ -23,34 +23,44 @@ import {
 import { format } from "date-fns";
 import { ptBR } from "date-fns/locale";
 import {
-  listInstagramPosts, InstagramPost, ACCOUNTS, InstagramAccount, getInstagramStatus,
+  listInstagramPosts, InstagramPost, InstagramAccount, getInstagramStatus,
 } from "@/lib/instagram";
 import { supabase } from "@/integrations/supabase/client";
 import { toast } from "sonner";
 import MultiScheduleTimeline from "@/components/MultiScheduleTimeline";
+import { useActiveProject } from "@/context/ProjectContext";
+import { FolderKanban } from "lucide-react";
 
 /* ---------- visual identity per platform ---------- */
 
-const PLATFORM_META: Record<InstagramAccount, {
+type PlatformMeta = {
   label: string; badge: string; ring: string; tint: string; icon: string; text: string;
-}> = {
-  frame: {
-    label: "Frame",
-    badge: "bg-blue-500/15 text-blue-300 border-blue-400/40",
-    ring: "border-blue-400/30",
-    tint: "from-blue-500/10 to-transparent",
-    icon: "text-blue-300",
-    text: "text-blue-300",
-  },
-  resenha: {
-    label: "Resenha",
-    badge: "bg-purple-500/15 text-purple-300 border-purple-400/40",
-    ring: "border-purple-400/30",
-    tint: "from-purple-500/10 to-transparent",
-    icon: "text-purple-300",
-    text: "text-purple-300",
-  },
 };
+
+const PLATFORM_THEMES: PlatformMeta[] = [
+  { label: "", badge: "bg-blue-500/15 text-blue-300 border-blue-400/40", ring: "border-blue-400/30", tint: "from-blue-500/10 to-transparent", icon: "text-blue-300", text: "text-blue-300" },
+  { label: "", badge: "bg-purple-500/15 text-purple-300 border-purple-400/40", ring: "border-purple-400/30", tint: "from-purple-500/10 to-transparent", icon: "text-purple-300", text: "text-purple-300" },
+  { label: "", badge: "bg-pink-500/15 text-pink-300 border-pink-400/40", ring: "border-pink-400/30", tint: "from-pink-500/10 to-transparent", icon: "text-pink-300", text: "text-pink-300" },
+  { label: "", badge: "bg-amber-500/15 text-amber-300 border-amber-400/40", ring: "border-amber-400/30", tint: "from-amber-500/10 to-transparent", icon: "text-amber-300", text: "text-amber-300" },
+  { label: "", badge: "bg-emerald-500/15 text-emerald-300 border-emerald-400/40", ring: "border-emerald-400/30", tint: "from-emerald-500/10 to-transparent", icon: "text-emerald-300", text: "text-emerald-300" },
+  { label: "", badge: "bg-cyan-500/15 text-cyan-300 border-cyan-400/40", ring: "border-cyan-400/30", tint: "from-cyan-500/10 to-transparent", icon: "text-cyan-300", text: "text-cyan-300" },
+];
+
+function themeForAccount(account: string, index: number): PlatformMeta {
+  // Manter identidade histórica: frame=azul, resenha=roxo.
+  if (account === "frame") return PLATFORM_THEMES[0];
+  if (account === "resenha") return PLATFORM_THEMES[1];
+  return PLATFORM_THEMES[(index + 2) % PLATFORM_THEMES.length];
+}
+
+function labelForAccount(slug: string, displayName?: string | null): string {
+  if (displayName && displayName.trim()) return displayName;
+  return slug
+    .split(/[_\-\s]+/)
+    .filter(Boolean)
+    .map((s) => s.charAt(0).toUpperCase() + s.slice(1).toLowerCase())
+    .join(" ");
+}
 
 const statusStyles: Record<InstagramPost["status"], string> = {
   AGENDADO: "border-blue-400/40 text-blue-300 bg-blue-500/10",
@@ -167,10 +177,11 @@ function EditScheduledDialog({
 /* ---------- post card ---------- */
 
 function PostCard({
-  post, kind, linkedYT, linkedTT, selectable, selected, onToggleSelect,
+  post, meta, kind, linkedYT, linkedTT, selectable, selected, onToggleSelect,
   onEdit, onCancel, onDelete, onRetry, onLogs, onEditNetworks, onToggleAutoComment,
 }: {
   post: InstagramPost;
+  meta: PlatformMeta;
   kind: "scheduled" | "published";
   linkedYT?: { id: string; status: string; auto_comment_enabled: boolean } | null;
   linkedTT?: { status: string } | null;
@@ -185,7 +196,6 @@ function PostCard({
   onEditNetworks: (p: InstagramPost) => void;
   onToggleAutoComment: (ytId: string, enable: boolean) => void;
 }) {
-  const meta = PLATFORM_META[post.account];
   const dt =
     kind === "scheduled" && post.scheduled_at
       ? new Date(post.scheduled_at)
@@ -315,10 +325,11 @@ function PostCard({
 /* ---------- platform section (Agendados + Publicados) ---------- */
 
 function PlatformSection({
-  account, posts, statusFilter, ytByKey, ttByKey, selectedIds, onToggleSelect, onToggleAll,
+  account, meta, posts, statusFilter, ytByKey, ttByKey, selectedIds, onToggleSelect, onToggleAll,
   ...handlers
 }: {
   account: InstagramAccount;
+  meta: PlatformMeta;
   posts: InstagramPost[];
   statusFilter: StatusFilter;
   ytByKey: Map<string, { id: string; status: string; auto_comment_enabled: boolean }>;
@@ -334,8 +345,8 @@ function PlatformSection({
   onEditNetworks: (p: InstagramPost) => void;
   onToggleAutoComment: (ytId: string, enable: boolean) => void;
 }) {
-  const meta = PLATFORM_META[account];
   const own = posts.filter((p) => p.account === account);
+  const displayLabel = labelForAccount(account);
 
   const scheduled = own
     .filter((p) => p.status === "AGENDADO" || p.status === "PUBLICANDO")
@@ -370,7 +381,7 @@ function PlatformSection({
       <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-3">
         {items.map((p) => (
           <PostCard
-            key={p.id} post={p} kind={kind}
+            key={p.id} post={p} meta={meta} kind={kind}
             linkedYT={ytByKey.get(linkKey(p))}
             linkedTT={ttByKey.get(linkKey(p))}
             selectable={kind === "scheduled" && p.status === "AGENDADO"}
@@ -388,9 +399,9 @@ function PlatformSection({
         <div className="flex items-center gap-2">
           <Instagram size={18} className={meta.icon} />
           <h2 className="text-base font-semibold tracking-tight">
-            📱 Publicações {meta.label}
+            📁 {displayLabel}
           </h2>
-          <Badge variant="outline" className={`ml-2 text-[10px] ${meta.badge}`}>{meta.label.toUpperCase()}</Badge>
+          <Badge variant="outline" className={`ml-2 text-[10px] ${meta.badge}`}>{displayLabel.toUpperCase()}</Badge>
         </div>
         <div className="flex items-center gap-2 text-[11px] text-muted-foreground">
           <span>Agendados: <b className={meta.text}>{scheduled.length}</b></span>
@@ -419,14 +430,14 @@ function PlatformSection({
               </label>
             )}
           </div>
-          {grid(scheduled, "scheduled", `Nenhum conteúdo agendado no ${meta.label}.`)}
+          {grid(scheduled, "scheduled", `Nenhum conteúdo agendado em ${displayLabel}.`)}
         </div>
       )}
 
       {showPublished && (
         <div className="space-y-2">
           <h3 className="text-xs font-semibold uppercase tracking-wider text-muted-foreground">Publicados</h3>
-          {grid(published, "published", `Ainda não há publicações no ${meta.label}.`)}
+          {grid(published, "published", `Ainda não há publicações em ${displayLabel}.`)}
         </div>
       )}
 
@@ -443,6 +454,7 @@ function PlatformSection({
 /* ---------- page ---------- */
 
 export default function Publications() {
+  const { activeProject, projects } = useActiveProject();
   const [posts, setPosts] = useState<InstagramPost[] | null>(null);
   const [ytByKey, setYtByKey] = useState<Map<string, { id: string; status: string; auto_comment_enabled: boolean }>>(new Map());
   const [ttByKey, setTtByKey] = useState<Map<string, { status: string }>>(new Map());
@@ -452,6 +464,7 @@ export default function Publications() {
   const [selectedPost, setSelectedPost] = useState<InstagramPost | null>(null);
   const [editing, setEditing] = useState<InstagramPost | null>(null);
   const [editingNetworks, setEditingNetworks] = useState<InstagramPost | null>(null);
+  const [igAccounts, setIgAccounts] = useState<Array<{ account: string; display_name: string | null; project_id: string | null }>>([]);
 
 
   const [statusFilter, setStatusFilter] = useState<StatusFilter>("all");
@@ -524,8 +537,19 @@ export default function Publications() {
     }
   };
 
+  const loadIgAccounts = async () => {
+    try {
+      const { data } = await supabase.functions.invoke("instagram-credentials", { body: { action: "get" } });
+      const creds = (data?.credentials ?? {}) as Record<string, { account: string; display_name: string | null; project_id: string | null }>;
+      setIgAccounts(Object.values(creds));
+    } catch {
+      setIgAccounts([]);
+    }
+  };
+
   useEffect(() => {
     load();
+    loadIgAccounts();
     const t = window.setInterval(load, 5000);
     return () => window.clearInterval(t);
   }, []);
@@ -627,13 +651,50 @@ export default function Publications() {
     });
   }, [posts, ytByKey, ttByKey]);
 
+  // Lista de "pastas" (contas IG) a exibir. Cada projeto vira uma pasta.
+  // Prioriza contas vinculadas a projetos; adiciona contas legadas encontradas em posts.
+  const accountsList = useMemo(() => {
+    const seen = new Map<string, { slug: string; displayName: string; projectId: string | null; projectName: string | null }>();
+    // 1) Contas vinculadas a projetos (via instagram_credentials)
+    for (const c of igAccounts) {
+      const proj = projects.find((p) => p.id === c.project_id);
+      seen.set(c.account, {
+        slug: c.account,
+        displayName: labelForAccount(c.account, c.display_name ?? proj?.name),
+        projectId: c.project_id,
+        projectName: proj?.name ?? null,
+      });
+    }
+    // 2) Contas encontradas em posts que ainda não apareceram
+    for (const p of posts ?? []) {
+      if (!seen.has(p.account)) {
+        seen.set(p.account, { slug: p.account, displayName: labelForAccount(p.account), projectId: null, projectName: null });
+      }
+    }
+    // Ordena: FRAME primeiro, RESENHA depois, restante alfabético
+    return Array.from(seen.values()).sort((a, b) => {
+      const rank = (s: string) => (s === "frame" ? 0 : s === "resenha" ? 1 : 2);
+      const r = rank(a.slug) - rank(b.slug);
+      return r !== 0 ? r : a.displayName.localeCompare(b.displayName);
+    });
+  }, [igAccounts, projects, posts]);
+
+  // Conta vinculada ao projeto ativo (para banner de identificação)
+  const activeAccount = useMemo(() => {
+    if (!activeProject) return null;
+    return accountsList.find((a) => a.projectId === activeProject.id) ?? null;
+  }, [accountsList, activeProject]);
+  const activeMeta = activeAccount
+    ? themeForAccount(activeAccount.slug, accountsList.findIndex((a) => a.slug === activeAccount.slug))
+    : null;
+
   return (
     <div className="space-y-6">
       <header className="flex items-start justify-between gap-3">
         <div className="flex flex-col gap-1">
           <h1 className="text-2xl font-semibold tracking-tight">Publicações</h1>
           <p className="text-sm text-muted-foreground">
-            Calendário independente por conta — cada plataforma organizada e visível de imediato.
+            Uma pasta por projeto — Frame, Resenha e Segredo das Promoções organizados lado a lado.
           </p>
         </div>
         {legacyOnlyIg.length > 0 && (
@@ -648,6 +709,34 @@ export default function Publications() {
           </Button>
         )}
       </header>
+
+      {/* Banner do projeto ativo — evita erros de postagem */}
+      {activeProject && (
+        <Card className={`glass border ${activeMeta?.ring ?? "border-gold/40"} bg-gradient-to-r ${activeMeta?.tint ?? "from-gold/10 to-transparent"}`}>
+          <CardContent className="flex flex-wrap items-center gap-3 p-4">
+            <div className="flex h-10 w-10 items-center justify-center overflow-hidden rounded-md bg-gold-gradient text-black">
+              {activeProject.logo_url ? (
+                <img src={activeProject.logo_url} alt="" className="h-full w-full object-cover" />
+              ) : (
+                <FolderKanban size={18} />
+              )}
+            </div>
+            <div className="min-w-0 flex-1">
+              <div className="text-[10px] uppercase tracking-[0.18em] text-muted-foreground">Projeto ativo</div>
+              <div className="truncate text-sm font-semibold">{activeProject.name}</div>
+            </div>
+            {activeAccount ? (
+              <Badge variant="outline" className={`gap-1 text-[10px] ${activeMeta?.badge ?? ""}`}>
+                <Instagram size={11} /> Publicando em {activeAccount.displayName}
+              </Badge>
+            ) : (
+              <Badge variant="outline" className="gap-1 text-[10px] border-amber-400/40 text-amber-300 bg-amber-500/10">
+                <AlertCircle size={11} /> Nenhuma conta Instagram vinculada a este projeto
+              </Badge>
+            )}
+          </CardContent>
+        </Card>
+      )}
 
       <MultiScheduleTimeline />
 
@@ -704,17 +793,24 @@ export default function Publications() {
         </div>
       ) : (
         <Tabs defaultValue="all" className="space-y-6">
-          <TabsList>
+          <TabsList className="flex-wrap">
             <TabsTrigger value="all">Todos</TabsTrigger>
-            <TabsTrigger value="frame" className="data-[state=active]:text-blue-300">Frame</TabsTrigger>
-            <TabsTrigger value="resenha" className="data-[state=active]:text-purple-300">Resenha</TabsTrigger>
+            {accountsList.map((a, i) => {
+              const m = themeForAccount(a.slug, i);
+              return (
+                <TabsTrigger key={a.slug} value={a.slug} className={`data-[state=active]:${m.text}`}>
+                  📁 {a.displayName}
+                </TabsTrigger>
+              );
+            })}
           </TabsList>
 
           <TabsContent value="all" className="space-y-10">
-            {ACCOUNTS.map((a) => (
+            {accountsList.map((a, i) => (
               <PlatformSection
-                key={a.value}
-                account={a.value}
+                key={a.slug}
+                account={a.slug}
+                meta={themeForAccount(a.slug, i)}
                 posts={filteredPosts}
                 statusFilter={statusFilter}
                 ytByKey={ytByKey}
@@ -726,18 +822,21 @@ export default function Publications() {
               />
             ))}
           </TabsContent>
-          <TabsContent value="frame">
-            <PlatformSection account="frame" posts={filteredPosts} statusFilter={statusFilter}
-              ytByKey={ytByKey} ttByKey={ttByKey} selectedIds={selectedIds}
-              onToggleSelect={toggleSelect} onToggleAll={toggleAll} {...handlers} />
-          </TabsContent>
-          <TabsContent value="resenha">
-            <PlatformSection account="resenha" posts={filteredPosts} statusFilter={statusFilter}
-              ytByKey={ytByKey} ttByKey={ttByKey} selectedIds={selectedIds}
-              onToggleSelect={toggleSelect} onToggleAll={toggleAll} {...handlers} />
-          </TabsContent>
+          {accountsList.map((a, i) => (
+            <TabsContent key={a.slug} value={a.slug}>
+              <PlatformSection
+                account={a.slug}
+                meta={themeForAccount(a.slug, i)}
+                posts={filteredPosts}
+                statusFilter={statusFilter}
+                ytByKey={ytByKey} ttByKey={ttByKey} selectedIds={selectedIds}
+                onToggleSelect={toggleSelect} onToggleAll={toggleAll} {...handlers}
+              />
+            </TabsContent>
+          ))}
         </Tabs>
       )}
+
 
       {/* Bulk actions floating bar */}
       {selectedIds.size > 0 && (
