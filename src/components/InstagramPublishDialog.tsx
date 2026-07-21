@@ -523,17 +523,38 @@ export default function InstagramPublishDialog({
               </div>
 
               {scheduleMode === "auto" ? (
-                <div className="text-xs text-muted-foreground">
-                  {slotBusy && "Buscando próximo espaço livre…"}
-                  {!slotBusy && autoSlot && (
-                    <>Próximo slot: <span className="text-foreground font-medium">
-                      {autoSlot.toLocaleString("pt-BR", { dateStyle: "short", timeStyle: "short" })}
-                    </span></>
-                  )}
-                  {!slotBusy && !autoSlot && (
-                    <span className="text-destructive">
-                      Nenhum horário configurado. Vá em Configurações → Horários de publicação.
-                    </span>
+                <div className="space-y-1 text-xs text-muted-foreground">
+                  {slotBusy && <div>Buscando próximos slots por rede…</div>}
+                  {!slotBusy && (
+                    <>
+                      {nets.has("instagram") && (
+                        <div className="flex items-center gap-2">
+                          <Instagram size={11} className="text-pink-400" />
+                          <span>Instagram:</span>
+                          <span className="text-foreground font-medium">
+                            {autoSlots.instagram
+                              ? autoSlots.instagram.toLocaleString("pt-BR", { dateStyle: "short", timeStyle: "short" })
+                              : "grade não configurada"}
+                          </span>
+                        </div>
+                      )}
+                      {nets.has("youtube") && (
+                        <div className="flex items-center gap-2">
+                          <Youtube size={11} className="text-red-400" />
+                          <span>YouTube:</span>
+                          <span className="text-foreground font-medium">
+                            {autoSlots.youtube
+                              ? autoSlots.youtube.toLocaleString("pt-BR", { dateStyle: "short", timeStyle: "short" })
+                              : "grade não configurada"}
+                          </span>
+                        </div>
+                      )}
+                      {!autoSlots.instagram && !autoSlots.youtube && (
+                        <div className="text-destructive">
+                          Nenhum horário configurado. Vá em Configurações → Horários de publicação.
+                        </div>
+                      )}
+                    </>
                   )}
                 </div>
               ) : (
