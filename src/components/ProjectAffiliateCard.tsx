@@ -103,24 +103,20 @@ export default function ProjectAffiliateCard({ projectId, projectName }: { proje
         </div>
 
         <p className="text-[11px] text-muted-foreground">
-          Após a publicação no YouTube, o sistema comenta automaticamente com o link de afiliado deste projeto.
-          Cada projeto tem sua própria oferta e nunca compartilha modelos com outro. Use <code className="text-gold">[link]</code> como marcador do link.
+          Após a publicação no YouTube, o sistema comenta automaticamente com um CTA direcionando o público para a BIO deste canal.
+          <strong className="text-foreground"> Nenhum link é inserido no comentário</strong> — links no YouTube não ficam clicáveis, então o CTA aponta apenas para a BIO.
           <br />
           <span className="text-yellow-400/80">Requer reconectar o canal do YouTube uma vez para autorizar o escopo de comentários.</span>
         </p>
 
         <div className="grid gap-3 md:grid-cols-2">
           <div>
-            <Label className="text-xs">Produto</Label>
+            <Label className="text-xs">Produto (referência interna)</Label>
             <Input value={cfg?.product_name ?? ""} onChange={(e) => setCfg({ ...cfg!, product_name: e.target.value })} placeholder="Ex.: Cineflix" />
           </div>
           <div>
             <Label className="text-xs">Categoria</Label>
             <Input value={cfg?.product_category ?? ""} onChange={(e) => setCfg({ ...cfg!, product_category: e.target.value })} placeholder="Ex.: Filmes, séries e entretenimento" />
-          </div>
-          <div className="md:col-span-2">
-            <Label className="text-xs flex items-center gap-1"><LinkIcon size={12} /> Link de afiliado</Label>
-            <Input value={cfg?.affiliate_link ?? ""} onChange={(e) => setCfg({ ...cfg!, affiliate_link: e.target.value })} placeholder="https://..." />
           </div>
         </div>
 
