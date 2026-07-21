@@ -520,7 +520,8 @@ export default function Publications() {
   };
   const clearSelection = () => setSelectedIds(new Set());
 
-  const load = async () => {
+  const load = async (opts?: { silent?: boolean }) => {
+    const silent = opts?.silent ?? false;
     try {
       const [nextPosts] = await Promise.all([listInstagramPosts(), loadYoutubeLinks(), loadTiktokLinks()]);
       setPosts(nextPosts);
@@ -532,8 +533,9 @@ export default function Publications() {
         }
       }
     } catch (e: any) {
-      toast.error(e?.message ?? "Falha ao carregar");
-      setPosts([]);
+      // Falha de rede em polling não deve limpar a lista nem gerar toasts em loop.
+      if (!silent) toast.error(e?.message ?? "Falha ao carregar");
+      setPosts((prev) => prev ?? []);
     }
   };
 
@@ -550,7 +552,7 @@ export default function Publications() {
   useEffect(() => {
     load();
     loadIgAccounts();
-    const t = window.setInterval(load, 5000);
+    const t = window.setInterval(() => load({ silent: true }), 15000);
     return () => window.clearInterval(t);
   }, []);
 
