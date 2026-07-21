@@ -283,6 +283,26 @@ export default function InstagramPublishDialog({
 
         <div className="space-y-3">
           <div className="space-y-1.5">
+            <Label className="text-xs">Redes sociais</Label>
+            <div className="grid grid-cols-2 gap-2">
+              <label className={`flex items-center gap-2 rounded-md border px-2.5 py-2 text-xs cursor-pointer transition-colors ${
+                nets.has("instagram") ? "border-gold/50 bg-gold/5" : "border-border/60 bg-background/30 hover:bg-background/60"
+              }`}>
+                <Checkbox checked={nets.has("instagram")} onCheckedChange={() => toggleNet("instagram")} disabled={busy} />
+                <Instagram size={14} className="text-pink-400" />
+                <span className="flex-1">Instagram</span>
+              </label>
+              <label className={`flex items-center gap-2 rounded-md border px-2.5 py-2 text-xs cursor-pointer transition-colors ${
+                nets.has("youtube") ? "border-gold/50 bg-gold/5" : "border-border/60 bg-background/30 hover:bg-background/60"
+              }`}>
+                <Checkbox checked={nets.has("youtube")} onCheckedChange={() => toggleNet("youtube")} disabled={busy} />
+                <Youtube size={14} className="text-red-400" />
+                <span className="flex-1">YouTube</span>
+              </label>
+            </div>
+          </div>
+
+          <div className="space-y-1.5">
             <Label className="text-xs flex items-center gap-1"><Lock size={10} /> Publicando em</Label>
             <div className="flex items-center gap-2 rounded-md border border-border/60 bg-background/40 px-3 py-2">
               <Instagram size={14} className={account === "frame" ? "text-blue-300" : account === "resenha" ? "text-purple-300" : "text-muted-foreground"} />
