@@ -481,6 +481,13 @@ export default function Publications() {
   const [selectedPost, setSelectedPost] = useState<InstagramPost | null>(null);
   const [editing, setEditing] = useState<InstagramPost | null>(null);
   const [editingNetworks, setEditingNetworks] = useState<InstagramPost | null>(null);
+  const [igAccounts, setIgAccounts] = useState<InstagramAccountInfo[]>([]);
+
+  useEffect(() => {
+    fetchInstagramAccounts().catch(() => {});
+    const unsub = subscribeInstagramAccounts(setIgAccounts);
+    return () => { unsub(); };
+  }, []);
 
   const [statusFilter, setStatusFilter] = useState<StatusFilter>("all");
   const [periodFilter, setPeriodFilter] = useState<PeriodFilter>("all");
@@ -708,17 +715,28 @@ export default function Publications() {
         </div>
       ) : (
         <Tabs defaultValue="all" className="space-y-6">
-          <TabsList>
+          <TabsList className="flex-wrap">
             <TabsTrigger value="all">Todos</TabsTrigger>
-            <TabsTrigger value="frame" className="data-[state=active]:text-blue-300">Frame</TabsTrigger>
-            <TabsTrigger value="resenha" className="data-[state=active]:text-purple-300">Resenha</TabsTrigger>
+            {igAccounts.map((a) => {
+              const m = metaFor(a.account);
+              return (
+                <TabsTrigger key={a.account} value={a.account} className={`data-[state=active]:${m.text}`}>
+                  {a.display_name}
+                </TabsTrigger>
+              );
+            })}
           </TabsList>
 
           <TabsContent value="all" className="space-y-10">
-            {ACCOUNTS.map((a) => (
+            {igAccounts.length === 0 && (
+              <div className="rounded-lg border border-dashed border-border/60 py-10 text-center text-sm text-muted-foreground">
+                Nenhuma conta do Instagram conectada. Configure em <b>Configurações → Instagram</b>.
+              </div>
+            )}
+            {igAccounts.map((a) => (
               <PlatformSection
-                key={a.value}
-                account={a.value}
+                key={a.account}
+                account={a.account}
                 posts={filteredPosts}
                 statusFilter={statusFilter}
                 ytByKey={ytByKey}
@@ -730,16 +748,13 @@ export default function Publications() {
               />
             ))}
           </TabsContent>
-          <TabsContent value="frame">
-            <PlatformSection account="frame" posts={filteredPosts} statusFilter={statusFilter}
-              ytByKey={ytByKey} ttByKey={ttByKey} selectedIds={selectedIds}
-              onToggleSelect={toggleSelect} onToggleAll={toggleAll} {...handlers} />
-          </TabsContent>
-          <TabsContent value="resenha">
-            <PlatformSection account="resenha" posts={filteredPosts} statusFilter={statusFilter}
-              ytByKey={ytByKey} ttByKey={ttByKey} selectedIds={selectedIds}
-              onToggleSelect={toggleSelect} onToggleAll={toggleAll} {...handlers} />
-          </TabsContent>
+          {igAccounts.map((a) => (
+            <TabsContent key={a.account} value={a.account}>
+              <PlatformSection account={a.account} posts={filteredPosts} statusFilter={statusFilter}
+                ytByKey={ytByKey} ttByKey={ttByKey} selectedIds={selectedIds}
+                onToggleSelect={toggleSelect} onToggleAll={toggleAll} {...handlers} />
+            </TabsContent>
+          ))}
         </Tabs>
       )}
 
