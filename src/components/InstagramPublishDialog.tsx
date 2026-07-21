@@ -11,6 +11,7 @@ import { toast } from "sonner";
 import { supabase } from "@/integrations/supabase/client";
 import { InstagramAccount, publishInstagram, friendlyError, platformFromProject, PLATFORM_LABEL } from "@/lib/instagram";
 import { uploadToYoutube } from "@/lib/youtube";
+import YoutubeChannelPicker from "./YoutubeChannelPicker";
 import { findNextSlot, ScheduleNetwork, scheduleAccountFor } from "@/lib/schedules";
 import { useActiveProject } from "@/context/ProjectContext";
 import { extractVideoFrames } from "@/lib/videoFrames";
@@ -75,6 +76,7 @@ export default function InstagramPublishDialog({
   const [slotBusy, setSlotBusy] = useState(false);
   const [autoSlots, setAutoSlots] = useState<{ instagram: Date | null; youtube: Date | null }>({ instagram: null, youtube: null });
   const [nets, setNets] = useState<Set<NetId>>(new Set(["instagram"]));
+  const [ytChannels, setYtChannels] = useState<string[]>([]);
   const [hasVideoFile, setHasVideoFile] = useState<boolean | null>(null);
   const toggleNet = (n: NetId) => setNets((prev) => {
     const s = new Set(prev);
@@ -267,54 +269,65 @@ export default function InstagramPublishDialog({
       }
 
       if (wantYT) {
-        try {
-          // Extrai hashtags da legenda + campo hashtags. Título nunca usa nome do arquivo.
-          const captionRaw = caption ?? "";
-          const hashtagsFromCaption = (captionRaw.match(/#[\p{L}\p{N}_]+/gu) ?? []) as string[];
-          const hashtagsFromField = (hashtags ?? "").split(/\s+/).filter((s) => s.startsWith("#"));
-          const allHashtags = Array.from(new Set([...hashtagsFromCaption, ...hashtagsFromField]));
-          const captionNoTags = captionRaw.replace(/#[\p{L}\p{N}_]+/gu, "").replace(/\s+/g, " ").trim();
-
-          // Gera título via IA a partir da legenda (sem hashtags, sem nome do arquivo).
-          let title = "";
+        if (ytChannels.length === 0) {
+          errs.push("YouTube: selecione ao menos um canal.");
+        } else {
           try {
-            const { data: t, error: tErr } = await supabase.functions.invoke("generate-youtube-title", {
-              body: {
-                caption: captionNoTags,
-                projectName: videoMeta?.projectName ?? null,
-                projectCategory: videoMeta?.projectCategory ?? null,
-              },
-            });
-            if (!tErr) title = String((t as any)?.title ?? "").trim();
-          } catch { /* fallback abaixo */ }
-          if (!title) {
-            title = (captionNoTags.split(/[.!?\n]/)[0] || captionNoTags || videoMeta?.projectName || "Novo vídeo").trim();
-          }
-          title = title.replace(/#[\p{L}\p{N}_]+/gu, "").trim().slice(0, 100);
+            // Extrai hashtags da legenda + campo hashtags. Título nunca usa nome do arquivo.
+            const captionRaw = caption ?? "";
+            const hashtagsFromCaption = (captionRaw.match(/#[\p{L}\p{N}_]+/gu) ?? []) as string[];
+            const hashtagsFromField = (hashtags ?? "").split(/\s+/).filter((s) => s.startsWith("#"));
+            const allHashtags = Array.from(new Set([...hashtagsFromCaption, ...hashtagsFromField]));
+            const captionNoTags = captionRaw.replace(/#[\p{L}\p{N}_]+/gu, "").replace(/\s+/g, " ").trim();
 
-          // Descrição: legenda (limpa) + hashtags no final.
-          const desc = [captionNoTags, allHashtags.join(" ")].filter(Boolean).join("\n\n").slice(0, 5000);
-          // Tags: hashtags extraídas (sem #), até 15.
-          const tags = allHashtags.map((t) => t.replace(/^#/, "")).filter(Boolean).slice(0, 15);
+            // Gera título via IA a partir da legenda (sem hashtags, sem nome do arquivo).
+            let title = "";
+            try {
+              const { data: t, error: tErr } = await supabase.functions.invoke("generate-youtube-title", {
+                body: {
+                  caption: captionNoTags,
+                  projectName: videoMeta?.projectName ?? null,
+                  projectCategory: videoMeta?.projectCategory ?? null,
+                },
+              });
+              if (!tErr) title = String((t as any)?.title ?? "").trim();
+            } catch { /* fallback abaixo */ }
+            if (!title) {
+              title = (captionNoTags.split(/[.!?\n]/)[0] || captionNoTags || videoMeta?.projectName || "Novo vídeo").trim();
+            }
+            title = title.replace(/#[\p{L}\p{N}_]+/gu, "").trim().slice(0, 100);
 
-          if (mode === "schedule") {
-            const { data, error } = await supabase.from("youtube_posts" as any).insert({
-              video_id: videoId, account: "default",
-              title, description: desc, tags,
-              category_id: "22", privacy_status: "public",
-              status: "AGENDADO", scheduled_at: ytIso,
-            }).select("id").maybeSingle();
-            if (error) throw error;
-            ytPostId = (data as any)?.id ?? null;
-          } else {
-            toast.message("Enviando para o YouTube…");
-            await uploadToYoutube({
-              account: "default", video_id: videoId,
-              title, description: desc, tags,
-              category_id: "22", privacy_status: "public",
-            });
-          }
-        } catch (e: any) { errs.push(`YouTube: ${e?.message ?? "erro"}`); }
+            // Descrição: legenda (limpa) + hashtags no final.
+            const desc = [captionNoTags, allHashtags.join(" ")].filter(Boolean).join("\n\n").slice(0, 5000);
+            // Tags: hashtags extraídas (sem #), até 15.
+            const tags = allHashtags.map((t) => t.replace(/^#/, "")).filter(Boolean).slice(0, 15);
+
+            // Publica/agenda um post por canal selecionado.
+            for (const channelAcc of ytChannels) {
+              try {
+                if (mode === "schedule") {
+                  const { data, error } = await supabase.from("youtube_posts" as any).insert({
+                    video_id: videoId, account: channelAcc,
+                    title, description: desc, tags,
+                    category_id: "22", privacy_status: "public",
+                    status: "AGENDADO", scheduled_at: ytIso,
+                  }).select("id").maybeSingle();
+                  if (error) throw error;
+                  if (!ytPostId) ytPostId = (data as any)?.id ?? null;
+                } else {
+                  toast.message(`Enviando para o YouTube (${channelAcc.slice(0, 8)}…)`);
+                  await uploadToYoutube({
+                    account: channelAcc, video_id: videoId,
+                    title, description: desc, tags,
+                    category_id: "22", privacy_status: "public",
+                  });
+                }
+              } catch (e: any) {
+                errs.push(`YouTube (${channelAcc.slice(0, 8)}…): ${e?.message ?? "erro"}`);
+              }
+            }
+          } catch (e: any) { errs.push(`YouTube: ${e?.message ?? "erro"}`); }
+        }
       }
 
       // Registro consolidado por rede (para o calendário exibir os ícones).
@@ -411,11 +424,12 @@ export default function InstagramPublishDialog({
                 </div>
               )}
               {nets.has("youtube") && (
-                <div className="flex items-center gap-2">
-                  <Youtube size={14} className="text-red-400" />
-                  <Badge variant="outline" className="text-[10px] font-semibold bg-red-500/15 text-red-300 border-red-400/40">
-                    ▶️ YouTube · Canal principal
-                  </Badge>
+                <div className="space-y-1.5">
+                  <div className="flex items-center gap-2">
+                    <Youtube size={14} className="text-red-400" />
+                    <span className="text-[11px] font-semibold text-red-300">▶️ YouTube · canais</span>
+                  </div>
+                  <YoutubeChannelPicker value={ytChannels} onChange={setYtChannels} disabled={busy} compact />
                 </div>
               )}
               {nets.size === 0 && (

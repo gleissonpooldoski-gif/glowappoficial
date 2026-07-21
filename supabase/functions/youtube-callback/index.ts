@@ -92,21 +92,61 @@ Deno.serve(async (req) => {
       }
     } catch (_) { /* opcional */ }
 
-    // Preserva refresh_token caso o Google não devolva um novo em reconexões
+    // Multi-canal: usa channel_id como chave estável. Se o canal já existir
+    // sob outra chave (ex.: "default" antigo, ou uma chave temporária "new"),
+    // migra para o channel_id e apaga a antiga.
+    const finalAccount = channelId ?? stateRow.account;
+
+    // Preserva refresh_token caso o Google não devolva um novo em reconexões.
     let finalRefresh = refreshToken;
     if (!finalRefresh) {
-      const { data: existing } = await supabase
-        .from("youtube_credentials")
-        .select("refresh_token")
-        .eq("account", stateRow.account)
-        .maybeSingle();
-      finalRefresh = existing?.refresh_token ?? null;
+      // Procura por channel_id (canal atual) ou pela chave enviada no state.
+      let existingRefresh: string | null = null;
+      if (channelId) {
+        const { data } = await supabase
+          .from("youtube_credentials")
+          .select("refresh_token")
+          .eq("channel_id", channelId)
+          .maybeSingle();
+        existingRefresh = data?.refresh_token ?? null;
+      }
+      if (!existingRefresh) {
+        const { data } = await supabase
+          .from("youtube_credentials")
+          .select("refresh_token")
+          .eq("account", stateRow.account)
+          .maybeSingle();
+        existingRefresh = data?.refresh_token ?? null;
+      }
+      finalRefresh = existingRefresh;
+    }
+
+    // Se estamos migrando a chave (ex.: "new" -> channel_id) e a chave antiga
+    // existir mas apontar para outro canal, deixamos ela em paz (é outro canal).
+    // Só removemos quando ela é temporária ("new*") ou aponta para o MESMO channel_id.
+    if (stateRow.account && stateRow.account !== finalAccount) {
+      const isTempAccount = stateRow.account === "new" || stateRow.account.startsWith("new-");
+      if (isTempAccount) {
+        await supabase.from("youtube_credentials").delete().eq("account", stateRow.account);
+      } else if (channelId) {
+        // reconexão sob chave antiga apontando para este mesmo canal -> unifica
+        const { data: oldRow } = await supabase
+          .from("youtube_credentials")
+          .select("account, channel_id")
+          .eq("account", stateRow.account)
+          .maybeSingle();
+        if (oldRow && (oldRow as any).channel_id === channelId) {
+          await supabase.from("youtube_credentials").delete().eq("account", stateRow.account);
+        }
+      }
     }
 
     const { error: upsertErr } = await supabase.from("youtube_credentials").upsert({
-      account: stateRow.account,
+      account: finalAccount,
       channel_id: channelId,
       channel_title: channelTitle,
+      label: channelTitle,
+      status: "connected",
       thumbnail,
       access_token: accessToken,
       refresh_token: finalRefresh,

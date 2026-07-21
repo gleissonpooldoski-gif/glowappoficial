@@ -14,6 +14,7 @@ import { findNextSlots, ScheduleNetwork, scheduleAccountFor } from "@/lib/schedu
 import { useActiveProject } from "@/context/ProjectContext";
 import { extractVideoFrames } from "@/lib/videoFrames";
 import { NETWORKS, NetworkId } from "@/lib/publish-networks";
+import YoutubeChannelPicker from "./YoutubeChannelPicker";
 
 type VideoMeta = {
   id: string;
@@ -47,6 +48,7 @@ export default function InstagramBatchScheduleDialog({ open, onOpenChange, video
   const platformLabel = igAccount ? PLATFORM_LABEL[igAccount] : "—";
 
   const [selectedNets, setSelectedNets] = useState<Set<NetworkId>>(new Set(["instagram"]));
+  const [ytChannels, setYtChannels] = useState<string[]>([]);
   const toggleNet = (id: NetworkId) => setSelectedNets((prev) => {
     const n = new Set(prev);
     if (n.has(id)) n.delete(id); else n.add(id);
@@ -209,18 +211,25 @@ export default function InstagramBatchScheduleDialog({ open, onOpenChange, video
         // Título NUNCA usa nome do arquivo — sempre gerado a partir da legenda.
         const { buildYoutubeMetaFromCaption } = await import("@/lib/youtube-meta");
         const { title, description, tags } = await buildYoutubeMetaFromCaption(caption, hashtags);
-        const { data, error } = await supabase.from("youtube_posts" as any).insert({
-          video_id: v.id, account: "default",
-          title, description, tags,
-          category_id: "22", privacy_status: "public",
-          status: "AGENDADO", scheduled_at: iso,
-        }).select("id").maybeSingle();
-        if (error) throw error;
-        ytPostId = (data as any)?.id ?? null;
-        await supabase.from("publish_schedules_multi" as any).insert({
-          video_id: v.id, networks: ["youtube"], scheduled_at: iso,
-          instagram_post_id: null, youtube_post_id: ytPostId, tiktok_post_id: null,
-        });
+        for (const channelAcc of ytChannels) {
+          try {
+            const { data, error } = await supabase.from("youtube_posts" as any).insert({
+              video_id: v.id, account: channelAcc,
+              title, description, tags,
+              category_id: "22", privacy_status: "public",
+              status: "AGENDADO", scheduled_at: iso,
+            }).select("id").maybeSingle();
+            if (error) throw error;
+            const ytId = (data as any)?.id ?? null;
+            if (!ytPostId) ytPostId = ytId;
+            await supabase.from("publish_schedules_multi" as any).insert({
+              video_id: v.id, networks: ["youtube"], scheduled_at: iso,
+              instagram_post_id: null, youtube_post_id: ytId, tiktok_post_id: null,
+            });
+          } catch (e: any) {
+            errs.push(`YouTube (${channelAcc.slice(0, 8)}…): ${e?.message ?? "erro"}`);
+          }
+        }
       } catch (e: any) { errs.push(`YouTube: ${e?.message ?? "erro"}`); }
     }
 
@@ -232,6 +241,9 @@ export default function InstagramBatchScheduleDialog({ open, onOpenChange, video
     if (nets.length === 0) { toast.error("Selecione ao menos uma rede social."); return; }
     if (nets.includes("instagram") && !igAccount) {
       toast.error("Selecione um projeto ativo (Frame/Resenha) para publicar no Instagram."); return;
+    }
+    if (nets.includes("youtube") && ytChannels.length === 0) {
+      toast.error("Selecione ao menos um canal do YouTube."); return;
     }
     if (videos.length === 0) return;
     if (insufficient) {
@@ -311,6 +323,12 @@ export default function InstagramBatchScheduleDialog({ open, onOpenChange, video
                 <Lock size={10} />
                 <span className="text-muted-foreground">Instagram usa o projeto ativo:</span>
                 <Badge variant="outline" className="text-[10px]">{platformLabel}</Badge>
+              </div>
+            )}
+            {selectedNets.has("youtube") && (
+              <div className="rounded-md border border-border/60 bg-background/40 px-2.5 py-2 space-y-1.5">
+                <Label className="text-[11px] text-muted-foreground">Canais do YouTube</Label>
+                <YoutubeChannelPicker value={ytChannels} onChange={setYtChannels} disabled={busy} compact />
               </div>
             )}
           </div>

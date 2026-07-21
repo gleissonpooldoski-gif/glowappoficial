@@ -1,19 +1,17 @@
-// Helper client-side para as edge functions do YouTube.
+// Helper client-side para as edge functions do YouTube (multi-canal).
 import { supabase } from "@/integrations/supabase/client";
 
-export type YoutubeAccount = "default";
-
-export const YOUTUBE_ACCOUNTS: { value: YoutubeAccount; label: string }[] = [
-  { value: "default", label: "Canal principal" },
-];
+export type YoutubeAccount = string; // channel_id ou slug legado ("default")
 
 export type YoutubeCredential = {
-  account: YoutubeAccount;
+  account: string;
   channel_id: string | null;
   channel_title: string | null;
   thumbnail: string | null;
   expires_at: string | null;
   scope: string | null;
+  status: string | null;
+  label: string | null;
   last_validated_at: string | null;
   last_validation_status: string | null;
   last_validation_detail: string | null;
@@ -31,27 +29,41 @@ async function invoke<T = any>(fn: string, body: Record<string, unknown>): Promi
   return data as T;
 }
 
-export async function listYoutubeCredentials(): Promise<Record<YoutubeAccount, YoutubeCredential | undefined>> {
+export async function listYoutubeChannels(): Promise<YoutubeCredential[]> {
   const { data, error } = await supabase
     .from("youtube_credentials" as any)
-    .select("account, channel_id, channel_title, thumbnail, expires_at, scope, last_validated_at, last_validation_status, last_validation_detail, updated_at");
+    .select(
+      "account, channel_id, channel_title, thumbnail, expires_at, scope, status, label, last_validated_at, last_validation_status, last_validation_detail, updated_at",
+    )
+    .order("updated_at", { ascending: false });
   if (error) throw error;
-  const map = {} as Record<YoutubeAccount, YoutubeCredential | undefined>;
-  for (const row of (data ?? []) as any[]) map[row.account as YoutubeAccount] = row as YoutubeCredential;
+  return ((data ?? []) as any[]) as YoutubeCredential[];
+}
+
+// Compat: alguns componentes ainda usam a assinatura em map.
+export async function listYoutubeCredentials(): Promise<Record<string, YoutubeCredential>> {
+  const arr = await listYoutubeChannels();
+  const map: Record<string, YoutubeCredential> = {};
+  for (const c of arr) map[c.account] = c;
   return map;
 }
 
-export async function startYoutubeAuth(account: YoutubeAccount = "default"): Promise<string> {
-  const res = await invoke<{ auth_url: string }>("youtube-auth", { account });
+/**
+ * Inicia OAuth. Passe `account` para reconectar um canal específico; omita
+ * (ou passe "new") para conectar um canal adicional (a callback grava um
+ * novo registro usando o channel_id retornado pelo Google).
+ */
+export async function startYoutubeAuth(account?: YoutubeAccount): Promise<string> {
+  const res = await invoke<{ auth_url: string }>("youtube-auth", { account: account ?? "new" });
   return res.auth_url;
 }
 
-export async function disconnectYoutube(account: YoutubeAccount = "default") {
+export async function disconnectYoutube(account: YoutubeAccount) {
   const { error } = await supabase.from("youtube_credentials" as any).delete().eq("account", account);
   if (error) throw error;
 }
 
-export function refreshYoutubeToken(account: YoutubeAccount = "default") {
+export function refreshYoutubeToken(account: YoutubeAccount) {
   return invoke("youtube-refresh-token", { account });
 }
 
