@@ -247,8 +247,8 @@ Deno.serve(async (req) => {
       hashtags = data.hashtags ?? hashtags;
     }
 
-    if (!account || !["resenha", "frame"].includes(account)) {
-      return new Response(JSON.stringify({ error: "Conta inválida. Use 'resenha' ou 'frame'." }),
+    if (!account || typeof account !== "string") {
+      return new Response(JSON.stringify({ error: "Conta inválida." }),
         { status: 400, headers: { ...corsHeaders, "Content-Type": "application/json" } });
     }
     if (!videoId) {
