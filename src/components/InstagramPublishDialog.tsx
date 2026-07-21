@@ -251,9 +251,19 @@ export default function InstagramPublishDialog({
 
       if (wantYT) {
         try {
-          const title = (videoMeta?.filename ?? caption ?? "Vídeo").replace(/\.[^.]+$/, "").slice(0, 100) || "Vídeo";
-          const desc = [caption, hashtags].filter(Boolean).join("\n\n").slice(0, 5000);
-          const tags = hashtags.split(/\s+/).map((t) => t.replace(/^#/, "")).filter(Boolean).slice(0, 15);
+          const captionFirstLine = (caption || "").split("\n").map((s) => s.trim()).find(Boolean) ?? "";
+          const fallbackTitle =
+            captionFirstLine ||
+            [videoMeta?.projectName, videoMeta?.templateName].filter(Boolean).join(" — ") ||
+            videoMeta?.projectCategory ||
+            "Novo vídeo";
+          const title = (ytTitle.trim() || fallbackTitle).slice(0, 100);
+          const desc = (ytDescription.trim()
+            ? ytDescription
+            : [caption, hashtags].filter(Boolean).join("\n\n")
+          ).slice(0, 5000);
+          const tagsSource = ytTags.trim() ? ytTags : hashtags;
+          const tags = tagsSource.split(/[\s,]+/).map((t) => t.replace(/^#/, "").trim()).filter(Boolean).slice(0, 15);
           if (mode === "schedule") {
             const { data, error } = await supabase.from("youtube_posts" as any).insert({
               video_id: videoId, account: "default",
