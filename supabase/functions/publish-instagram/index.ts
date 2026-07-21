@@ -127,6 +127,11 @@ function isCodeOneMetaError(data: any, message?: string): boolean {
   return code === 1 || msg.includes("oauthexception") && msg.includes("code=1");
 }
 
+function isReduceDataError(data: any, message?: string): boolean {
+  const msg = `${data?.error?.message ?? ""} ${message ?? ""}`.toLowerCase();
+  return msg.includes("please reduce") || msg.includes("reduce the amount of data");
+}
+
 function isMetaServiceError(data: any, message?: string): boolean {
   const err = data?.error;
   const msg = `${err?.message ?? ""} ${message ?? ""}`.toLowerCase();
