@@ -50,8 +50,8 @@ const CONNECTION_LABEL: Record<NonNullable<Stored["connection_status"]>, string>
 };
 
 const LEGACY_LABEL: Record<string, string> = {
-  resenha: "Sessão da Resenha",
-  frame: "Sessão da Frame",
+  resenha: "SESSÃO DA RESENHA",
+  frame: "SESSÃO DA FRAME",
 };
 
 export default function InstagramCredentialsCard() {
