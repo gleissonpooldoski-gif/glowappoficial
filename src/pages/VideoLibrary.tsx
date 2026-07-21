@@ -16,6 +16,7 @@ import {
   Download,
   Wand2,
   Rocket,
+  Sparkles,
 } from "lucide-react";
 import { supabase } from "@/integrations/supabase/client";
 import { toast } from "sonner";
@@ -611,6 +612,70 @@ export default function VideoLibrary() {
     }
   };
 
+  const editWithoutTemplate = async () => {
+    if (selected.size === 0) return;
+    setApplying(true);
+    try {
+      const ids = Array.from(selected);
+      const byId = new Map((videos ?? []).map((v) => [v.id, v] as const));
+
+      const rows = await Promise.all(ids.map(async (vid) => {
+        const v = byId.get(vid);
+        if (!v) throw new Error("Vídeo selecionado não foi encontrado.");
+        if (!v.original_path) throw new Error(`${v.filename} não tem arquivo original armazenado.`);
+
+        const { data, error } = await supabase.storage
+          .from(BUCKET)
+          .createSignedUrl(v.original_path, 60 * 60 * 6);
+        if (error || !data?.signedUrl) {
+          throw new Error(error?.message ?? `Não foi possível gerar URL do vídeo ${v.filename}.`);
+        }
+
+        return {
+          video_id: vid,
+          video_url: data.signedUrl,
+          video_filename: v.filename,
+          video_storage_path: v.original_path,
+          template_id: null,
+          template_url: null,
+          user_id: "single-user",
+          owner_user_id: "single-user",
+          project_id: activeProject?.id ?? v?.project_id ?? null,
+          name: v?.filename ?? "Edição livre",
+          aspect_ratio: "9:16",
+          status: "editing" as const,
+          doc: {
+            video: { zoom: 1, x: 0, y: 0 },
+            texts: [],
+            colors: { primary: "#D4AF37", secondary: "#FFFFFF" },
+          },
+        };
+      }));
+
+      const { data: created, error } = await (supabase as any)
+        .from("edits")
+        .insert(rows)
+        .select("id");
+      if (error) throw error;
+
+      const { error: upErr } = await (supabase as any)
+        .from("videos")
+        .update({ status: "in_editing" })
+        .in("id", ids);
+      if (upErr) console.error("[VideoLibrary] failed to flag videos as in_editing", upErr);
+
+      const firstId = created?.[0]?.id;
+      toast.success(`${rows.length} edição(ões) livre(s) criada(s). Abrindo editor...`);
+      setSelected(new Set());
+      if (firstId) navigate(`/editor/${firstId}`);
+    } catch (e: any) {
+      toast.error(e?.message ?? "Falha ao criar edição livre");
+    } finally {
+      setApplying(false);
+    }
+  };
+
+
 
   const requestDeleteSelected = () => {
     if (selected.size === 0) return;
@@ -891,6 +956,20 @@ export default function VideoLibrary() {
               className="bg-gold-gradient text-black glow-gold"
             >
               <Wand2 size={13} className="mr-1" /> Aplicar template
+            </Button>
+            <Button
+              size="sm"
+              variant="outline"
+              onClick={editWithoutTemplate}
+              disabled={applying}
+              className="border-gold/40 text-gold hover:text-gold"
+            >
+              {applying ? (
+                <Loader2 size={13} className="mr-1 animate-spin" />
+              ) : (
+                <Sparkles size={13} className="mr-1" />
+              )}
+              Editar sem template
             </Button>
             <Button
               size="sm"
