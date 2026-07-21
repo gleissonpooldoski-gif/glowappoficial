@@ -332,6 +332,93 @@ Deno.serve(async (req) => {
   let body: any = {};
   let activePostId: string | null = null;
   let activeAccount: string | null = null;
+  let activeIgId: string | null = null;
+  let activeCreationId: string | null = null;
+
+  // ============ Rate-limit guard helpers ============
+  const acquireAccountLock = async (igId: string, postId: string) => {
+    // Verifica cooldown
+    const { data: existing } = await supabase
+      .from("instagram_account_locks")
+      .select("*")
+      .eq("ig_business_id", igId)
+      .maybeSingle();
+    const now = Date.now();
+    if (existing?.cooldown_until && new Date(existing.cooldown_until).getTime() > now) {
+      const secs = Math.ceil((new Date(existing.cooldown_until).getTime() - now) / 1000);
+      return { ok: false, reason: "cooldown", cooldown_until: existing.cooldown_until, wait_seconds: secs };
+    }
+    if (existing?.post_id && existing.post_id !== postId) {
+      const lockedAgeMs = now - new Date(existing.locked_at).getTime();
+      if (lockedAgeMs < ACCOUNT_LOCK_STALE_MS) {
+        return { ok: false, reason: "busy", busy_post_id: existing.post_id, locked_at: existing.locked_at };
+      }
+    }
+    await supabase.from("instagram_account_locks").upsert({
+      ig_business_id: igId,
+      post_id: postId,
+      locked_at: new Date().toISOString(),
+      cooldown_until: null,
+      last_error_code: null,
+    }, { onConflict: "ig_business_id" });
+    return { ok: true };
+  };
+
+  const releaseAccountLock = async (igId: string, postId: string) => {
+    await supabase.from("instagram_account_locks").delete().eq("ig_business_id", igId).eq("post_id", postId);
+  };
+
+  const setAccountCooldown = async (igId: string, postId: string, ms: number, code: number) => {
+    const until = new Date(Date.now() + ms).toISOString();
+    await supabase.from("instagram_account_locks").upsert({
+      ig_business_id: igId,
+      post_id: postId,
+      locked_at: new Date().toISOString(),
+      cooldown_until: until,
+      last_error_code: code,
+    }, { onConflict: "ig_business_id" });
+    return until;
+  };
+
+  const acquireContainerLock = async (creationId: string, postId: string, igId: string) => {
+    const { data: existing } = await supabase
+      .from("instagram_publish_locks")
+      .select("*")
+      .eq("creation_id", creationId)
+      .maybeSingle();
+    if (existing) {
+      const ageMs = Date.now() - new Date(existing.polling_started_at).getTime();
+      if (existing.status === "processing" && ageMs < 5 * 60 * 1000 && existing.post_id !== postId) {
+        return { ok: false, reason: "already_polling", request_count: existing.request_count };
+      }
+    }
+    await supabase.from("instagram_publish_locks").upsert({
+      creation_id: creationId,
+      post_id: postId,
+      ig_business_id: igId,
+      status: "processing",
+      polling_started_at: new Date().toISOString(),
+      request_count: 0,
+      last_request_at: null,
+    }, { onConflict: "creation_id" });
+    return { ok: true };
+  };
+
+  const incrementContainerRequest = async (creationId: string) => {
+    const { data } = await supabase.from("instagram_publish_locks").select("request_count").eq("creation_id", creationId).maybeSingle();
+    const next = (data?.request_count ?? 0) + 1;
+    await supabase.from("instagram_publish_locks").update({
+      request_count: next,
+      last_request_at: new Date().toISOString(),
+    }).eq("creation_id", creationId);
+    return next;
+  };
+
+  const finalizeContainerLock = async (creationId: string, status: "done" | "timeout" | "error") => {
+    await supabase.from("instagram_publish_locks").update({ status }).eq("creation_id", creationId);
+  };
+  // ==================================================
+
 
   const appendLog = async (postId: string, entry: any) => {
     try {
