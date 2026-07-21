@@ -428,6 +428,9 @@ function PlatformSection({
 export default function Publications() {
   const [posts, setPosts] = useState<InstagramPost[] | null>(null);
   const [ytByKey, setYtByKey] = useState<Map<string, { status: string }>>(new Map());
+  const [ttByKey, setTtByKey] = useState<Map<string, { status: string }>>(new Map());
+  const [selectedIds, setSelectedIds] = useState<Set<string>>(new Set());
+  const [bulkOpen, setBulkOpen] = useState(false);
   const [selectedPost, setSelectedPost] = useState<InstagramPost | null>(null);
   const [editing, setEditing] = useState<InstagramPost | null>(null);
   const [editingNetworks, setEditingNetworks] = useState<InstagramPost | null>(null);
@@ -437,9 +440,9 @@ export default function Publications() {
   const [customFrom, setCustomFrom] = useState("");
   const [customTo, setCustomTo] = useState("");
 
-  const loadYoutubeLinks = async () => {
+  const loadLinkedByTable = async (table: "youtube_posts" | "tiktok_posts") => {
     const { data } = await supabase
-      .from("youtube_posts" as any)
+      .from(table as any)
       .select("video_id, scheduled_at, status")
       .not("scheduled_at", "is", null)
       .order("scheduled_at", { ascending: false })
@@ -449,8 +452,28 @@ export default function Publications() {
       if (!r.video_id || !r.scheduled_at) continue;
       map.set(`${r.video_id}|${r.scheduled_at}`, { status: r.status });
     }
-    setYtByKey(map);
+    return map;
   };
+
+  const loadYoutubeLinks = async () => setYtByKey(await loadLinkedByTable("youtube_posts"));
+  const loadTiktokLinks = async () => setTtByKey(await loadLinkedByTable("tiktok_posts"));
+
+  const toggleSelect = (p: InstagramPost) => {
+    setSelectedIds((prev) => {
+      const s = new Set(prev);
+      if (s.has(p.id)) s.delete(p.id); else s.add(p.id);
+      return s;
+    });
+  };
+  const toggleAll = (ids: string[], selectAll: boolean) => {
+    setSelectedIds((prev) => {
+      const s = new Set(prev);
+      if (selectAll) ids.forEach((id) => s.add(id));
+      else ids.forEach((id) => s.delete(id));
+      return s;
+    });
+  };
+  const clearSelection = () => setSelectedIds(new Set());
 
   const load = async () => {
     try {
