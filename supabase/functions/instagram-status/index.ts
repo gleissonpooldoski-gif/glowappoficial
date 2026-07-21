@@ -24,6 +24,19 @@ function sanitizeToken(raw: string | undefined | null): string {
   return t.trim();
 }
 
+// Impede que URLs (ex.: signed video URL) sejam usadas como ID de recurso Graph API.
+function assertGraphId(value: unknown, field: string): string {
+  const raw = value == null ? "" : String(value).trim();
+  if (!raw) throw new Error(`[instagram-status] ${field} vazio ao montar URL Graph API.`);
+  if (/^https?:\/\//i.test(raw) || raw.includes("/") || raw.includes("?") || raw.includes(" ")) {
+    console.error(`[instagram-status] invalid_graph_id field=${field} value_preview=${raw.slice(0, 60)}`);
+    throw new Error(`[instagram-status] ${field} inválido: recebeu URL/caminho em vez do ID numérico da Meta.`);
+  }
+  return raw;
+}
+
+
+
 
 function envCredentialsFor(account: string) {
   if (account === "resenha") {
