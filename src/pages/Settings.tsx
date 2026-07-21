@@ -15,6 +15,7 @@ import {
 } from "@/components/ui/select";
 import InstagramCredentialsCard from "@/components/InstagramCredentialsCard";
 import TiktokCredentialsCard from "@/components/TiktokCredentialsCard";
+import YoutubeCredentialsCard from "@/components/YoutubeCredentialsCard";
 import PublishSchedulesCard from "@/components/PublishSchedulesCard";
 
 type App = {
@@ -149,6 +150,8 @@ export default function Settings() {
       <InstagramCredentialsCard />
 
       <TiktokCredentialsCard />
+
+      <YoutubeCredentialsCard />
 
       <PublishSchedulesCard />
 
