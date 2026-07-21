@@ -136,7 +136,7 @@ Deno.serve(async (req) => {
     if (!token || !igId) throw new Error(`Credenciais Meta ausentes para a conta '${post.account}'.`);
 
     if (post.status === "PUBLICADO" && post.publish_id) {
-      const published = await metaGet(`${FB_BASE}/${post.publish_id}?fields=id,permalink,timestamp&access_token=${encodeURIComponent(token)}`);
+      const published = await metaGet(`${FB_BASE}/${post.publish_id}?fields=id,permalink&access_token=${encodeURIComponent(token)}`);
       await appendLog(post.id, { event: "published_status_response", response: published.data });
       return new Response(JSON.stringify({ success: true, status: "PUBLICADO", data: published.data }),
         { status: 200, headers: { ...corsHeaders, "Content-Type": "application/json" } });
