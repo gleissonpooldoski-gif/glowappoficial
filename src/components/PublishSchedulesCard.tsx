@@ -82,7 +82,6 @@ function ScheduleEditor({
         const sched: PublishSchedule | null = await getSchedule(network, account, null);
         if (sched) {
           setTimes(sched.times.length ? sched.times : defaultTimes);
-          setPerDay(sched.posts_per_day || defaultPerDay);
           setSeqStartAt(sched.sequence_start_at);
           const { date, time } = toLocalInputValue(sched.sequence_start_at);
           setSeqDate(date);
