@@ -127,6 +127,11 @@ function isCodeOneMetaError(data: any, message?: string): boolean {
   return code === 1 || msg.includes("oauthexception") && msg.includes("code=1");
 }
 
+function isReduceDataError(data: any, message?: string): boolean {
+  const msg = `${data?.error?.message ?? ""} ${message ?? ""}`.toLowerCase();
+  return msg.includes("please reduce") || msg.includes("reduce the amount of data");
+}
+
 function isMetaServiceError(data: any, message?: string): boolean {
   const err = data?.error;
   const msg = `${err?.message ?? ""} ${message ?? ""}`.toLowerCase();
@@ -241,7 +246,9 @@ function metaErrorDetails(data: any, fallbackMessage?: string) {
 async function metaPost(url: string, body: Record<string, string>, token?: string) {
   if (token !== undefined) assertValidToken(token);
   const form = new URLSearchParams(body);
-  console.log(`[publish-instagram] meta_request POST ${url.split("?")[0]} body_keys=${Object.keys(body).join(",")}`);
+  const endpoint = url.split("?")[0];
+  const bodyKeys = Object.keys(body).filter((k) => k !== "access_token");
+  console.log(`[publish-instagram] meta_request POST ${endpoint} body_keys=${bodyKeys.join(",")}`);
   const res = await fetch(url, {
     method: "POST",
     headers: { "Content-Type": "application/x-www-form-urlencoded" },
@@ -249,8 +256,13 @@ async function metaPost(url: string, body: Record<string, string>, token?: strin
   });
   const payload = await readMetaResponse(res);
   if (!res.ok || payload.data?.error) {
+    if (isReduceDataError(payload.data, payload.text)) {
+      console.error(`[publish-instagram] reduce_data_error endpoint=${endpoint} body_keys=${bodyKeys.join(",")} meta_message=${payload.data?.error?.message ?? ""}`);
+    }
     const err: any = new Error(metaErrorMessage(payload.data, `HTTP ${res.status}: ${payload.text.slice(0, 500)}`));
     err.metaData = payload.data;
+    err.endpoint = endpoint;
+    err.bodyKeys = bodyKeys;
     throw err;
   }
   return { status: res.status, data: payload.data };
@@ -258,12 +270,17 @@ async function metaPost(url: string, body: Record<string, string>, token?: strin
 
 async function metaGet(url: string, token?: string) {
   if (token !== undefined) assertValidToken(token);
-  console.log(`[publish-instagram] meta_request GET ${url.split("?")[0]}`);
+  const endpoint = url.split("?")[0];
+  console.log(`[publish-instagram] meta_request GET ${endpoint}`);
   const res = await fetch(url);
   const payload = await readMetaResponse(res);
   if (!res.ok || payload.data?.error) {
+    if (isReduceDataError(payload.data, payload.text)) {
+      console.error(`[publish-instagram] reduce_data_error endpoint=${endpoint} method=GET meta_message=${payload.data?.error?.message ?? ""}`);
+    }
     const err: any = new Error(metaErrorMessage(payload.data, `HTTP ${res.status}: ${payload.text.slice(0, 500)}`));
     err.metaData = payload.data;
+    err.endpoint = endpoint;
     throw err;
   }
   return { status: res.status, data: payload.data };
@@ -342,7 +359,7 @@ Deno.serve(async (req) => {
         const startedAt = Date.now();
         let lastStatus: any = null;
         for (let attempt = 1; attempt <= MAX_CONTAINER_STATUS_ATTEMPTS; attempt++) {
-          const statusUrl = `${FB_BASE}/${currentContainerId}?fields=status_code,status&access_token=${encodeURIComponent(token)}`;
+          const statusUrl = `${FB_BASE}/${currentContainerId}?fields=id,status_code&access_token=${encodeURIComponent(token)}`;
           const statusRes = await metaGet(statusUrl, token);
           lastStatus = statusRes.data;
 
@@ -406,10 +423,12 @@ Deno.serve(async (req) => {
         const publishRequestedAt = new Date().toISOString();
         try {
           await appendLog(postId, { event: "media_publish_attempt", cycle, attempt: 1, ig_id: igId, creation_id: containerId, publish_requested_at: publishRequestedAt, payload: publishPayload });
-          const publishRes = await metaPost(publishUrl, {
-            creation_id: containerId,
-            access_token: token,
-          }, token);
+          // media_publish: enviar SOMENTE creation_id no body; access_token vai na query string.
+          const publishRes = await metaPost(
+            `${publishUrl}?access_token=${encodeURIComponent(token)}`,
+            { creation_id: containerId },
+            token,
+          );
           const publishResponseAt = new Date().toISOString();
           await appendLog(postId, { event: "media_publish_response", cycle, attempt: 1, status: publishRes.status, publish_requested_at: publishRequestedAt, publish_response_at: publishResponseAt, response: publishRes.data });
           const publishId = publishRes.data?.id;

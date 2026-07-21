@@ -107,8 +107,8 @@ async function validateAccount(rawToken: string, rawIgId: string): Promise<Valid
   }
 
   try {
-    const url = `${FB_BASE}/${encodeURIComponent(igId)}?fields=id,username,name,profile_picture_url&access_token=${encodeURIComponent(token)}`;
-    console.log(`[instagram-credentials] validate GET ${FB_BASE}/${igId}?fields=... ig_id=${igId} token_len=${token.length}`);
+    const url = `${FB_BASE}/${encodeURIComponent(igId)}?fields=id,username&access_token=${encodeURIComponent(token)}`;
+    console.log(`[instagram-credentials] validate GET ${FB_BASE}/${igId}?fields=id,username ig_id=${igId} token_len=${token.length}`);
     const igRes = await fetch(url);
     const ig = await readMeta(igRes);
     if (ig.data?.error) {
