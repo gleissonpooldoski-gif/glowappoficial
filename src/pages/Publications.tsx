@@ -282,16 +282,18 @@ function PostCard({
 /* ---------- platform section (Agendados + Publicados) ---------- */
 
 function PlatformSection({
-  account, posts, statusFilter, ...handlers
+  account, posts, statusFilter, ytByKey, ...handlers
 }: {
   account: InstagramAccount;
   posts: InstagramPost[];
   statusFilter: StatusFilter;
+  ytByKey: Map<string, { status: string }>;
   onEdit: (p: InstagramPost) => void;
   onCancel: (p: InstagramPost) => void;
   onDelete: (p: InstagramPost) => void;
   onRetry: (p: InstagramPost) => void;
   onLogs: (p: InstagramPost) => void;
+  onEditNetworks: (p: InstagramPost) => void;
 }) {
   const meta = PLATFORM_META[account];
   const own = posts.filter((p) => p.account === account);
@@ -312,6 +314,8 @@ function PlatformSection({
   const showPublished = statusFilter === "all" || statusFilter === "published";
   const showFailed = statusFilter === "all" || statusFilter === "failed";
 
+  const linkKey = (p: InstagramPost) => `${p.video_id ?? ""}|${p.scheduled_at ?? ""}`;
+
   const grid = (items: InstagramPost[], kind: "scheduled" | "published", emptyMsg: string) =>
     items.length === 0 ? (
       <Card className={`glass border-dashed ${meta.ring}`}>
@@ -323,7 +327,7 @@ function PlatformSection({
     ) : (
       <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-3">
         {items.map((p) => (
-          <PostCard key={p.id} post={p} kind={kind} {...handlers} />
+          <PostCard key={p.id} post={p} kind={kind} linkedYT={ytByKey.get(linkKey(p))} {...handlers} />
         ))}
       </div>
     );
