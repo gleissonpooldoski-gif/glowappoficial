@@ -137,7 +137,7 @@ function ScheduleEditor({
     setSaving(true);
     try {
       const sequence_start_at = buildSeqIso();
-      await upsertSchedule({ network, account, times, posts_per_day: perDay, sequence_start_at });
+      await upsertSchedule({ network, account, times, posts_per_day: uniqueCount, sequence_start_at });
       setSeqStartAt(sequence_start_at);
       await loadNextSlot();
       toast.success(`Configurações salvas: ${label}`);
