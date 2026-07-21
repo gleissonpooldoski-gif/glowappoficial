@@ -76,9 +76,6 @@ export default function InstagramPublishDialog({
   const [autoSlot, setAutoSlot] = useState<Date | null>(null);
   const [nets, setNets] = useState<Set<NetId>>(new Set(["instagram"]));
   const [hasVideoFile, setHasVideoFile] = useState<boolean | null>(null);
-  const [ytTitle, setYtTitle] = useState("");
-  const [ytDescription, setYtDescription] = useState("");
-  const [ytTags, setYtTags] = useState("");
   const toggleNet = (n: NetId) => setNets((prev) => {
     const s = new Set(prev);
     if (n === "youtube" && !s.has("youtube") && hasVideoFile === false) {
@@ -251,19 +248,35 @@ export default function InstagramPublishDialog({
 
       if (wantYT) {
         try {
-          const captionFirstLine = (caption || "").split("\n").map((s) => s.trim()).find(Boolean) ?? "";
-          const fallbackTitle =
-            captionFirstLine ||
-            [videoMeta?.projectName, videoMeta?.templateName].filter(Boolean).join(" — ") ||
-            videoMeta?.projectCategory ||
-            "Novo vídeo";
-          const title = (ytTitle.trim() || fallbackTitle).slice(0, 100);
-          const desc = (ytDescription.trim()
-            ? ytDescription
-            : [caption, hashtags].filter(Boolean).join("\n\n")
-          ).slice(0, 5000);
-          const tagsSource = ytTags.trim() ? ytTags : hashtags;
-          const tags = tagsSource.split(/[\s,]+/).map((t) => t.replace(/^#/, "").trim()).filter(Boolean).slice(0, 15);
+          // Extrai hashtags da legenda + campo hashtags. Título nunca usa nome do arquivo.
+          const captionRaw = caption ?? "";
+          const hashtagsFromCaption = (captionRaw.match(/#[\p{L}\p{N}_]+/gu) ?? []) as string[];
+          const hashtagsFromField = (hashtags ?? "").split(/\s+/).filter((s) => s.startsWith("#"));
+          const allHashtags = Array.from(new Set([...hashtagsFromCaption, ...hashtagsFromField]));
+          const captionNoTags = captionRaw.replace(/#[\p{L}\p{N}_]+/gu, "").replace(/\s+/g, " ").trim();
+
+          // Gera título via IA a partir da legenda (sem hashtags, sem nome do arquivo).
+          let title = "";
+          try {
+            const { data: t, error: tErr } = await supabase.functions.invoke("generate-youtube-title", {
+              body: {
+                caption: captionNoTags,
+                projectName: videoMeta?.projectName ?? null,
+                projectCategory: videoMeta?.projectCategory ?? null,
+              },
+            });
+            if (!tErr) title = String((t as any)?.title ?? "").trim();
+          } catch { /* fallback abaixo */ }
+          if (!title) {
+            title = (captionNoTags.split(/[.!?\n]/)[0] || captionNoTags || videoMeta?.projectName || "Novo vídeo").trim();
+          }
+          title = title.replace(/#[\p{L}\p{N}_]+/gu, "").trim().slice(0, 100);
+
+          // Descrição: legenda (limpa) + hashtags no final.
+          const desc = [captionNoTags, allHashtags.join(" ")].filter(Boolean).join("\n\n").slice(0, 5000);
+          // Tags: hashtags extraídas (sem #), até 15.
+          const tags = allHashtags.map((t) => t.replace(/^#/, "")).filter(Boolean).slice(0, 15);
+
           if (mode === "schedule") {
             const { data, error } = await supabase.from("youtube_posts" as any).insert({
               video_id: videoId, account: "default",
@@ -395,41 +408,14 @@ export default function InstagramPublishDialog({
           </div>
 
           {nets.has("youtube") && (
-            <div className="space-y-2 rounded-lg border border-red-400/30 bg-red-500/5 p-3">
-              <div className="flex items-center gap-1.5 text-[11px] font-semibold text-red-300">
-                <Youtube size={12} /> Detalhes do vídeo no YouTube
-              </div>
-              <div className="space-y-1.5">
-                <Label className="text-xs">Título do vídeo</Label>
-                <Input
-                  value={ytTitle}
-                  onChange={(e) => setYtTitle(e.target.value)}
-                  maxLength={100}
-                  placeholder="Se vazio, geramos a partir do conteúdo do post"
-                />
-                <p className="text-[10px] text-muted-foreground">
-                  {ytTitle.length}/100 · o nome do arquivo nunca é usado como título.
-                </p>
-              </div>
-              <div className="space-y-1.5">
-                <Label className="text-xs">Descrição do vídeo</Label>
-                <Textarea
-                  value={ytDescription}
-                  onChange={(e) => setYtDescription(e.target.value)}
-                  rows={3}
-                  placeholder="Se vazio, usamos a legenda + hashtags."
-                />
-              </div>
-              <div className="space-y-1.5">
-                <Label className="text-xs">Tags (opcional, separadas por vírgula)</Label>
-                <Input
-                  value={ytTags}
-                  onChange={(e) => setYtTags(e.target.value)}
-                  placeholder="skincare, rotina, dicas"
-                />
-              </div>
+            <div className="flex items-start gap-2 rounded-md border border-red-400/30 bg-red-500/5 px-3 py-2 text-[11px] text-red-200">
+              <Youtube size={12} className="mt-0.5 shrink-0" />
+              <span>
+                Título, descrição e tags do YouTube são gerados automaticamente a partir da legenda do post — o nome do arquivo nunca é usado.
+              </span>
             </div>
           )}
+
 
 
 
