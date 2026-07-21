@@ -79,9 +79,10 @@ async function validateAccount(token: string, igId: string): Promise<ValidationR
     }
   } catch (_) { /* segue para teste do Business ID */ }
 
-  // 3) Business account — busca o IG informado
+  // 3) Business account — busca o IG informado usando apenas campos válidos da Graph API.
+  // NÃO usar `account_type` aqui: não é um campo válido no nó instagram_business_account e derruba com erro #100.
   try {
-    const igRes = await fetch(`https://graph.facebook.com/${GRAPH_VERSION}/${encodeURIComponent(igId)}?fields=id,username,account_type,ig_id&access_token=${encodeURIComponent(token)}`);
+    const igRes = await fetch(`https://graph.facebook.com/${GRAPH_VERSION}/${encodeURIComponent(igId)}?fields=id,username,name,profile_picture_url&access_token=${encodeURIComponent(token)}`);
     const ig = await readMeta(igRes);
     if (ig.data?.error) {
       const code = ig.data.error.code;
@@ -116,15 +117,14 @@ async function validateAccount(token: string, igId: string): Promise<ValidationR
       return { ok: false, status: "IG_ID_INVALID", message: `${meta || "Falha ao ler o Business ID."}${accessibleHint}` };
     }
     if (!ig.data?.id) return { ok: false, status: "IG_ID_INVALID", message: "Instagram Business ID não retornou dados." };
-    const accountType = ig.data.account_type ?? null;
-    if (accountType && accountType !== "BUSINESS" && accountType !== "MEDIA_CREATOR") {
-      return {
-        ok: false,
-        status: "IG_ID_INVALID",
-        message: `Conta encontrada, mas o tipo retornado é "${accountType}". É necessário ser Instagram Profissional (Business ou Creator) para publicar via API.`,
-      };
-    }
-    return { ok: true, status: "VALID", message: `Conta @${ig.data.username ?? "?"} validada (${accountType ?? "OK"})${grantedPerms.length ? `. Escopos: ${grantedPerms.join(", ")}` : ""}${permissionWarning}.`, username: ig.data.username ?? null, account_type: accountType };
+    return {
+      ok: true,
+      status: "VALID",
+      message: `Conta @${ig.data.username ?? "?"} validada${grantedPerms.length ? `. Escopos: ${grantedPerms.join(", ")}` : ""}${permissionWarning}.`,
+      username: ig.data.username ?? null,
+      account_type: null,
+    };
+
   } catch (e: any) {
     return { ok: false, status: "UNKNOWN_ERROR", message: e?.message ?? "Falha ao consultar o Business ID." };
   }
