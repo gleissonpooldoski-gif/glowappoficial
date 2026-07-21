@@ -168,11 +168,11 @@ function EditScheduledDialog({
 
 function PostCard({
   post, kind, linkedYT, linkedTT, selectable, selected, onToggleSelect,
-  onEdit, onCancel, onDelete, onRetry, onLogs, onEditNetworks,
+  onEdit, onCancel, onDelete, onRetry, onLogs, onEditNetworks, onToggleAutoComment,
 }: {
   post: InstagramPost;
   kind: "scheduled" | "published";
-  linkedYT?: { status: string } | null;
+  linkedYT?: { id: string; status: string; auto_comment_enabled: boolean } | null;
   linkedTT?: { status: string } | null;
   selectable?: boolean;
   selected?: boolean;
@@ -183,6 +183,7 @@ function PostCard({
   onRetry: (p: InstagramPost) => void;
   onLogs: (p: InstagramPost) => void;
   onEditNetworks: (p: InstagramPost) => void;
+  onToggleAutoComment: (ytId: string, enable: boolean) => void;
 }) {
   const meta = PLATFORM_META[post.account];
   const dt =
@@ -231,6 +232,11 @@ function PostCard({
               <Music2 size={10} /> TikTok: {linkedTT.status.toLowerCase()}
             </Badge>
           )}
+          {linkedYT?.auto_comment_enabled && (
+            <Badge variant="outline" className="text-[10px] gap-1 border-emerald-400/40 text-emerald-300 bg-emerald-500/10">
+              <MessageSquare size={10} /> Comentário auto
+            </Badge>
+          )}
         </div>
 
         <div className="flex items-center justify-between gap-2 text-[11px]">
@@ -241,6 +247,16 @@ function PostCard({
             <span>{format(dt, "HH:mm", { locale: ptBR })}</span>
           </div>
           <div className="flex items-center gap-0.5">
+            {kind === "scheduled" && post.status === "AGENDADO" && linkedYT && (
+              <Button
+                size="icon" variant="ghost"
+                className={`h-6 w-6 ${linkedYT.auto_comment_enabled ? "text-emerald-400 hover:text-emerald-300" : "text-muted-foreground hover:text-emerald-400"}`}
+                onClick={() => onToggleAutoComment(linkedYT.id, !linkedYT.auto_comment_enabled)}
+                title={linkedYT.auto_comment_enabled ? "Desativar comentário automático do YouTube" : "Ativar comentário automático do YouTube"}
+              >
+                <MessageSquare size={12} />
+              </Button>
+            )}
             {kind === "scheduled" && post.status === "AGENDADO" && (
               <>
                 <Button size="icon" variant="ghost" className="h-6 w-6 text-muted-foreground hover:text-gold"
