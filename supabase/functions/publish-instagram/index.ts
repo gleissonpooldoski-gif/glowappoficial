@@ -5,10 +5,14 @@ import { corsHeaders } from "npm:@supabase/supabase-js@2/cors";
 const GRAPH_VERSION = "v18.0";
 const FB_BASE = `https://graph.facebook.com/${GRAPH_VERSION}`;
 const BUCKET = "videos-processed";
-const POLL_INTERVAL_MS = 5000;
-const MAX_CONTAINER_STATUS_ATTEMPTS = 12;
-const PUBLISH_STABILIZATION_MS = 8000;
+// Rate-limit guard: NUNCA consultar em intervalo menor que 10s.
+const INITIAL_POLL_DELAY_MS = 10000;      // Espera 10s após criar o container antes do primeiro GET.
+const POLL_INTERVAL_MS = 10000;            // 10s entre consultas subsequentes.
+const MAX_CONTAINER_STATUS_ATTEMPTS = 8;   // Máximo 8 consultas por container.
+const PUBLISH_STABILIZATION_MS = 15000;    // Aguarda 15s após FINISHED antes do publish único.
 const MAX_PUBLICATION_CYCLES = 3;
+const CODE_4_COOLDOWN_MS = 5 * 60 * 1000;  // Cooldown de 5min após code=4.
+const ACCOUNT_LOCK_STALE_MS = 15 * 60 * 1000; // Considera lock preso após 15min.
 
 // Sanitiza o Access Token: trim + remove aspas, whitespace interno, BOM,
 // caracteres de controle e QUALQUER caractere fora do intervalo ASCII imprimível
