@@ -75,12 +75,42 @@ export default function InstagramPublishDialog({
   const [slotBusy, setSlotBusy] = useState(false);
   const [autoSlot, setAutoSlot] = useState<Date | null>(null);
   const [nets, setNets] = useState<Set<NetId>>(new Set(["instagram"]));
+  const [hasVideoFile, setHasVideoFile] = useState<boolean | null>(null);
   const toggleNet = (n: NetId) => setNets((prev) => {
     const s = new Set(prev);
+    if (n === "youtube" && !s.has("youtube") && hasVideoFile === false) {
+      toast.error("Para publicar no YouTube, adicione um vídeo ao post.");
+      return prev;
+    }
     if (s.has(n)) s.delete(n); else s.add(n);
     if (s.size === 0) s.add(n); // sempre pelo menos 1
     return s;
   });
+
+  // Verifica se o vídeo tem arquivo (original ou processado) para habilitar YouTube.
+  useEffect(() => {
+    if (!open || !videoId) { setHasVideoFile(null); return; }
+    let cancelled = false;
+    (async () => {
+      const { data } = await supabase
+        .from("videos")
+        .select("original_path, processed_path")
+        .eq("id", videoId)
+        .maybeSingle();
+      if (cancelled) return;
+      const ok = Boolean((data as any)?.original_path || (data as any)?.processed_path);
+      setHasVideoFile(ok);
+      if (!ok) {
+        setNets((prev) => {
+          if (!prev.has("youtube")) return prev;
+          const s = new Set(prev); s.delete("youtube");
+          if (s.size === 0) s.add("instagram");
+          return s;
+        });
+      }
+    })();
+    return () => { cancelled = true; };
+  }, [open, videoId]);
 
   // Auto-gera legenda/hashtags ao abrir se não vieram prontos
   useEffect(() => {
