@@ -921,7 +921,7 @@ Deno.serve(async (req) => {
       fullCaption = diagnosticCaption;
     }
 
-    const containerUrl = `${FB_BASE}/${igId}/media`;
+    const containerUrl = `${FB_BASE}/${assertGraphId(igId, "ig_business_id")}/media`;
     const MAX_CONTAINER_ATTEMPTS = 3;
     let containerRes: any = null;
     let containerId: string | undefined;
