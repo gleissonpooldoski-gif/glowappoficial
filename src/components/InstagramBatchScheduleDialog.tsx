@@ -351,40 +351,43 @@ export default function InstagramBatchScheduleDialog({ open, onOpenChange, video
             )}
           </div>
 
-          {/* Resumo */}
-          <div className="rounded-lg border border-border/50 bg-background/40 p-3 space-y-2 text-xs">
+          {/* Resumo por rede */}
+          <div className="rounded-lg border border-border/50 bg-background/40 p-3 space-y-3 text-xs">
             <div className="flex items-center justify-between">
-              <span className="font-medium">Resumo do lote</span>
+              <span className="font-medium">Resumo do lote ({videos.length} vídeo(s))</span>
               <Button type="button" size="sm" variant="ghost" className="h-7 text-[11px]"
                 onClick={compute} disabled={slotBusy || busy}>
                 {slotBusy ? <Loader2 size={12} className="mr-1 animate-spin" /> : <RefreshCw size={12} className="mr-1" />}
                 Recalcular
               </Button>
             </div>
-            <div className="grid grid-cols-2 gap-2 text-muted-foreground">
-              <div>Vídeos: <span className="text-foreground font-medium">{videos.length}</span></div>
-              <div>Slots: <span className={insufficient ? "text-destructive font-medium" : "text-foreground font-medium"}>{slots.length}</span></div>
-              <div>Primeiro: <span className="text-foreground font-medium">{first ? fmt(first) : "—"}</span></div>
-              <div>Último: <span className="text-foreground font-medium">{last ? fmt(last) : "—"}</span></div>
-            </div>
-            {preview.length > 0 && (
-              <div className="mt-2 max-h-40 overflow-auto rounded border border-border/40 divide-y divide-border/40">
-                {preview.map((s, i) => (
-                  <div key={i} className="flex justify-between px-2 py-1">
-                    <span className="text-muted-foreground">Vídeo {i + 1}</span>
-                    <span className="text-foreground">{fmt(s)}</span>
-                  </div>
-                ))}
-                {slots.length > preview.length && (
-                  <div className="px-2 py-1 text-center text-muted-foreground">
-                    + {slots.length - preview.length} vídeo(s)…
-                  </div>
-                )}
-              </div>
+            {activeNets.length === 0 && (
+              <p className="text-[11px] text-muted-foreground">Selecione ao menos uma rede acima.</p>
             )}
+            {activeNets.map((n) => {
+              const meta = NETWORKS.find((x) => x.id === n)!;
+              const Icon = meta.icon;
+              const list = slotsByNet[n] ?? [];
+              const enough = list.length >= videos.length;
+              return (
+                <div key={n} className="rounded-md border border-border/40 bg-background/30 p-2 space-y-1.5">
+                  <div className="flex items-center gap-2">
+                    <Icon size={12} className={meta.color} />
+                    <span className="font-medium">{meta.label}</span>
+                    <Badge variant="outline" className={`ml-auto text-[10px] ${enough ? "" : "border-destructive/60 text-destructive"}`}>
+                      {list.length}/{videos.length} slots
+                    </Badge>
+                  </div>
+                  <div className="grid grid-cols-2 gap-1 text-muted-foreground">
+                    <div>Primeiro: <span className="text-foreground font-medium">{list[0] ? fmt(list[0]) : "—"}</span></div>
+                    <div>Último: <span className="text-foreground font-medium">{list[videos.length - 1] ? fmt(list[videos.length - 1]) : "—"}</span></div>
+                  </div>
+                </div>
+              );
+            })}
             <div className="flex items-center gap-1.5 text-[11px] text-muted-foreground">
               <Sparkles size={11} className="text-gold" />
-              Legenda e hashtags serão geradas automaticamente para cada vídeo.
+              Legenda e hashtags são geradas automaticamente. Cada rede segue sua própria grade.
             </div>
           </div>
 
