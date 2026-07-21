@@ -124,7 +124,8 @@ Deno.serve(async (req) => {
 
     const tpl = templates[0];
     const adapted = await adaptWithAI(tpl.template, { title: post.title, description: post.description, product: cfg.product_name });
-    const finalText = adapted.replaceAll("[link]", cfg.affiliate_link);
+    // Garantia final: nenhum link/URL vai para o YouTube — o CTA aponta para a BIO.
+    const finalText = stripLinks(adapted) || stripLinks(tpl.template);
 
     const accessToken = await ensureAccessToken(supabase, post.account);
     const payload = {
