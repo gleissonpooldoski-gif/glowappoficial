@@ -529,7 +529,7 @@ Deno.serve(async (req) => {
         for (let attempt = 1; attempt <= MAX_CONTAINER_STATUS_ATTEMPTS; attempt++) {
           const requestTs = new Date().toISOString();
           const requestCount = await incrementContainerRequest(currentContainerId);
-          const statusUrl = `${FB_BASE}/${currentContainerId}?fields=id,status_code&access_token=${encodeURIComponent(token)}`;
+          const statusUrl = `${FB_BASE}/${assertGraphId(currentContainerId, "creation_id")}?fields=id,status_code&access_token=${encodeURIComponent(token)}`;
           let statusRes: any;
           try {
             statusRes = await metaGet(statusUrl, token);
