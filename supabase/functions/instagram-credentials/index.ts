@@ -66,19 +66,34 @@ async function validateAccount(token: string, igId: string): Promise<ValidationR
     return { ok: false, status: "UNKNOWN_ERROR", message: e?.message ?? "Falha ao validar permissões." };
   }
 
-  // 3) Business account
+  // 3) Business account — inclui account_type para detectar contas não-profissionais
   try {
-    const igRes = await fetch(`https://graph.facebook.com/${GRAPH_VERSION}/${encodeURIComponent(igId)}?fields=id,username&access_token=${encodeURIComponent(token)}`);
+    const igRes = await fetch(`https://graph.facebook.com/${GRAPH_VERSION}/${encodeURIComponent(igId)}?fields=id,username,account_type,ig_id&access_token=${encodeURIComponent(token)}`);
     const ig = await readMeta(igRes);
     if (ig.data?.error) {
       const code = ig.data.error.code;
-      if (isApiBlocked(ig.data.error)) return { ok: false, status: "API_BLOCKED", message: `${BLOCKED_MSG} (${ig.data.error.message ?? ""})` };
-      if (code === 190) return { ok: false, status: "TOKEN_EXPIRED", message: ig.data.error.message ?? "Token expirado." };
-      if (code === 100 || code === 803) return { ok: false, status: "IG_ID_INVALID", message: ig.data.error.message ?? "Instagram Business ID inválido." };
-      return { ok: false, status: "IG_ID_INVALID", message: ig.data.error.message ?? "Falha ao ler o Business ID." };
+      const meta = ig.data.error.message ?? "";
+      if (isApiBlocked(ig.data.error)) return { ok: false, status: "API_BLOCKED", message: `${BLOCKED_MSG} (${meta})` };
+      if (code === 190) return { ok: false, status: "TOKEN_EXPIRED", message: meta || "Token expirado." };
+      if (code === 100 || code === 803) {
+        return {
+          ok: false,
+          status: "IG_ID_INVALID",
+          message: `${meta} — Confirme que o ID informado é o Instagram Business/Professional Account ID (geralmente inicia com 17841…), e não o ID da Página do Facebook, User ID ou Business Manager ID. O token também precisa ter acesso admin a essa conta.`,
+        };
+      }
+      return { ok: false, status: "IG_ID_INVALID", message: meta || "Falha ao ler o Business ID." };
     }
     if (!ig.data?.id) return { ok: false, status: "IG_ID_INVALID", message: "Instagram Business ID não retornou dados." };
-    return { ok: true, status: "VALID", message: "Token válido.", username: ig.data.username ?? null, account_type: ig.data.account_type ?? null };
+    const accountType = ig.data.account_type ?? null;
+    if (accountType && accountType !== "BUSINESS" && accountType !== "MEDIA_CREATOR") {
+      return {
+        ok: false,
+        status: "IG_ID_INVALID",
+        message: `Conta encontrada, mas o tipo retornado é "${accountType}". É necessário ser Instagram Profissional (Business ou Creator) para publicar via API.`,
+      };
+    }
+    return { ok: true, status: "VALID", message: `Conta @${ig.data.username ?? "?"} validada (${accountType ?? "OK"}).`, username: ig.data.username ?? null, account_type: accountType };
   } catch (e: any) {
     return { ok: false, status: "UNKNOWN_ERROR", message: e?.message ?? "Falha ao consultar o Business ID." };
   }
