@@ -1,12 +1,12 @@
-// Upload de vídeo para o YouTube usando Data API v3 (videos.insert, multipart).
-// Recebe: { account?, video_id?, storage_bucket?, storage_path?, title, description?, tags?, category_id?, privacy_status? }
-// Se video_id for informado, busca em public.videos; senão usa storage_bucket + storage_path.
+// Upload de vídeo para o YouTube via Data API v3 usando upload RESUMABLE.
+// Streaming direto do Storage → YouTube, sem carregar o vídeo inteiro em memória
+// (evita HTTP 546 / resource limit no Edge Runtime).
 import { createClient } from "https://esm.sh/@supabase/supabase-js@2.45.4";
 import { corsHeaders } from "npm:@supabase/supabase-js@2/cors";
 
 const TOKEN_ENDPOINT = "https://oauth2.googleapis.com/token";
-const UPLOAD_ENDPOINT =
-  "https://www.googleapis.com/upload/youtube/v3/videos?uploadType=multipart&part=snippet,status";
+const RESUMABLE_INIT_ENDPOINT =
+  "https://www.googleapis.com/upload/youtube/v3/videos?uploadType=resumable&part=snippet,status";
 
 async function ensureAccessToken(
   supabase: any,
@@ -88,7 +88,6 @@ Deno.serve(async (req) => {
         .maybeSingle();
       if (vErr) throw vErr;
       if (!video) throw new Error("Vídeo não encontrado.");
-      // Prefere o arquivo processado (renderizado); usa o original como fallback.
       if (video.processed_path) {
         bucket = bucket ?? "videos-processed";
         path = video.processed_path;
@@ -102,50 +101,65 @@ Deno.serve(async (req) => {
     }
     if (!bucket || !path) throw new Error("Arquivo do vídeo não informado.");
 
+    // Baixa do Storage como Blob (mantém streamable — não força arrayBuffer).
     const { data: blobData, error: dlErr } = await supabase.storage.from(bucket).download(path);
     if (dlErr || !blobData) throw new Error(dlErr?.message ?? "Falha ao baixar vídeo do storage.");
-    const videoBytes = new Uint8Array(await blobData.arrayBuffer());
+    const totalSize = blobData.size;
+    if (!totalSize) throw new Error("Arquivo do vídeo está vazio no storage.");
 
     const { access_token } = await ensureAccessToken(supabase, account);
 
-    // Monta requisição multipart/related.
+    // === 1) Inicia sessão resumable com metadados ===
     const metadata = {
       snippet: { title, description, tags, categoryId },
       status: { privacyStatus, selfDeclaredMadeForKids: false },
     };
-    const boundary = `boundary_${crypto.randomUUID().replace(/-/g, "")}`;
-    const enc = new TextEncoder();
-    const preamble = enc.encode(
-      `--${boundary}\r\n` +
-      `Content-Type: application/json; charset=UTF-8\r\n\r\n` +
-      `${JSON.stringify(metadata)}\r\n` +
-      `--${boundary}\r\n` +
-      `Content-Type: ${mime}\r\n\r\n`,
-    );
-    const closing = enc.encode(`\r\n--${boundary}--\r\n`);
-    const bodyBytes = new Uint8Array(preamble.length + videoBytes.length + closing.length);
-    bodyBytes.set(preamble, 0);
-    bodyBytes.set(videoBytes, preamble.length);
-    bodyBytes.set(closing, preamble.length + videoBytes.length);
-
-    const uploadRes = await fetch(UPLOAD_ENDPOINT, {
+    const initRes = await fetch(RESUMABLE_INIT_ENDPOINT, {
       method: "POST",
       headers: {
         Authorization: `Bearer ${access_token}`,
-        "Content-Type": `multipart/related; boundary=${boundary}`,
-        "Content-Length": String(bodyBytes.length),
+        "Content-Type": "application/json; charset=UTF-8",
+        "X-Upload-Content-Type": mime,
+        "X-Upload-Content-Length": String(totalSize),
       },
-      body: bodyBytes,
+      body: JSON.stringify(metadata),
     });
-    const uploadJson: any = await uploadRes.json().catch(() => ({}));
+    if (!initRes.ok) {
+      const text = await initRes.text().catch(() => "");
+      let parsed: any = null;
+      try { parsed = JSON.parse(text); } catch { /* noop */ }
+      const msg = parsed?.error?.message ?? text ?? `Falha ao iniciar upload (${initRes.status}).`;
+      await supabase.from("youtube_credentials").update({
+        last_validated_at: new Date().toISOString(),
+        last_validation_status: "UPLOAD_INIT_FAILED",
+        last_validation_detail: msg.slice(0, 400),
+      }).eq("account", account);
+      throw new Error(`Init upload falhou: ${msg}`);
+    }
+    const uploadUrl = initRes.headers.get("location") ?? initRes.headers.get("Location");
+    if (!uploadUrl) throw new Error("YouTube não retornou URL de upload resumable.");
+
+    // === 2) Envia bytes via stream (sem carregar em memória) ===
+    const uploadRes = await fetch(uploadUrl, {
+      method: "PUT",
+      headers: {
+        "Content-Type": mime,
+        "Content-Length": String(totalSize),
+      },
+      // Blob nativo: fetch envia como stream, sem duplicar em Uint8Array.
+      body: blobData,
+    });
+    const uploadText = await uploadRes.text().catch(() => "");
+    let uploadJson: any = null;
+    try { uploadJson = uploadText ? JSON.parse(uploadText) : null; } catch { /* noop */ }
     if (!uploadRes.ok) {
-      const msg = uploadJson?.error?.message ?? `Falha no upload (${uploadRes.status}).`;
+      const msg = uploadJson?.error?.message ?? uploadText ?? `Falha no upload (${uploadRes.status}).`;
       await supabase.from("youtube_credentials").update({
         last_validated_at: new Date().toISOString(),
         last_validation_status: "UPLOAD_FAILED",
-        last_validation_detail: msg,
+        last_validation_detail: msg.slice(0, 400),
       }).eq("account", account);
-      return new Response(JSON.stringify({ error: msg, details: uploadJson }), {
+      return new Response(JSON.stringify({ error: msg, status: uploadRes.status }), {
         status: uploadRes.status,
         headers: { ...corsHeaders, "Content-Type": "application/json" },
       });
@@ -154,10 +168,10 @@ Deno.serve(async (req) => {
     return new Response(
       JSON.stringify({
         success: true,
-        video_id: uploadJson.id,
-        url: uploadJson.id ? `https://youtu.be/${uploadJson.id}` : null,
-        snippet: uploadJson.snippet,
-        status: uploadJson.status,
+        video_id: uploadJson?.id ?? null,
+        url: uploadJson?.id ? `https://youtu.be/${uploadJson.id}` : null,
+        snippet: uploadJson?.snippet,
+        status: uploadJson?.status,
       }),
       { status: 200, headers: { ...corsHeaders, "Content-Type": "application/json" } },
     );
