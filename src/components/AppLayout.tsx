@@ -203,6 +203,16 @@ export default function AppLayout() {
           <div className="mx-auto max-w-7xl px-4 py-8 md:px-8 md:py-10">
             <Outlet />
           </div>
+          <footer className="border-t border-border/60 px-4 py-6 md:px-8">
+            <div className="mx-auto flex max-w-7xl flex-col items-center justify-between gap-2 text-xs text-muted-foreground md:flex-row">
+              <div>© 2026 Viral Factory. All Rights Reserved.</div>
+              <div className="flex items-center gap-4">
+                <NavLink to="/privacy" className="hover:text-gold transition">Privacy Policy</NavLink>
+                <span className="text-border">•</span>
+                <NavLink to="/terms" className="hover:text-gold transition">Terms of Service</NavLink>
+              </div>
+            </div>
+          </footer>
         </main>
       </div>
     </div>
