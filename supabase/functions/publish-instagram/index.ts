@@ -201,10 +201,11 @@ Deno.serve(async (req) => {
         return;
       }
 
-      const publishUrl = `https://graph.facebook.com/${GRAPH_VERSION}/${igId}/media_publish`;
+      const publishUrl = `${IG_BASE}/${igId}/media_publish`;
       const publishRes = await metaPost(publishUrl, {
         creation_id: containerId,
       }, token);
+
       const publishId = publishRes.data?.id;
       await appendLog(postId, { event: "media_publish_response", status: publishRes.status, response: publishRes.data });
       if (!publishId) throw new Error(`Meta não retornou publish_id. Resposta: ${safeJson(publishRes.data)}`);
