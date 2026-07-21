@@ -488,6 +488,7 @@ export default function Publications() {
     onDelete: deletePost,
     onRetry: retry,
     onLogs: (p: InstagramPost) => setSelectedPost(p),
+    onEditNetworks: (p: InstagramPost) => setEditingNetworks(p),
   };
 
   return (
