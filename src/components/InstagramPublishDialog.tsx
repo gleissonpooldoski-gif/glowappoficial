@@ -222,7 +222,7 @@ export default function InstagramPublishDialog({
     const wantYT = nets.has("youtube");
     if (!wantIG && !wantYT) { toast.error("Selecione ao menos uma rede."); return; }
     if (wantIG && !account) {
-      toast.error("Selecione um projeto ativo (Frame ou Resenha) para publicar no Instagram.");
+      toast.error("Este projeto não tem uma conta do Instagram vinculada. Cadastre em Configurações → Instagram.");
       return;
     }
     if (wantYT && hasVideoFile === false) {
