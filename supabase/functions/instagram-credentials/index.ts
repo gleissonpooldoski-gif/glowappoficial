@@ -99,20 +99,22 @@ Deno.serve(async (req) => {
     if (action === "get") {
       const { data, error } = await supabase
         .from("instagram_credentials")
-        .select("account, ig_business_id, last_validated_at, last_validation_status, last_validation_detail, updated_at");
+        .select("account, ig_business_id, display_name, project_id, last_validated_at, last_validation_status, last_validation_detail, updated_at")
+        .order("created_at", { ascending: true });
       if (error) throw error;
       const map: Record<string, any> = {};
       for (const row of data ?? []) {
         map[row.account] = {
           account: row.account,
           ig_business_id: row.ig_business_id,
+          display_name: row.display_name,
+          project_id: row.project_id,
           last_validated_at: row.last_validated_at,
           last_validation_status: row.last_validation_status,
           last_validation_detail: row.last_validation_detail,
           updated_at: row.updated_at,
         };
       }
-      // Indica se há fallback via env
       const envFallback = {
         resenha: !!(Deno.env.get("META_RESENHA_ACCESS_TOKEN") && Deno.env.get("META_RESENHA_INSTAGRAM_ID")),
         frame: !!(Deno.env.get("META_FRAME_ACCESS_TOKEN") && Deno.env.get("META_FRAME_INSTAGRAM_ID")),
@@ -121,8 +123,15 @@ Deno.serve(async (req) => {
         { status: 200, headers: { ...corsHeaders, "Content-Type": "application/json" } });
     }
 
+    const slugify = (s: string) =>
+      s.toLowerCase().normalize("NFD").replace(/[\u0300-\u036f]/g, "")
+        .replace(/[^a-z0-9]+/g, "_").replace(/^_+|_+$/g, "").slice(0, 40) || `ig_${Date.now()}`;
+
     if (action === "save") {
-      const accounts = (body.accounts ?? []) as Array<{ account: Account; access_token: string; ig_business_id: string }>;
+      const accounts = (body.accounts ?? []) as Array<{
+        account: string; access_token?: string; ig_business_id?: string;
+        display_name?: string; project_id?: string | null;
+      }>;
       if (!Array.isArray(accounts) || accounts.length === 0) {
         return new Response(JSON.stringify({ error: "Nenhuma conta informada." }),
           { status: 400, headers: { ...corsHeaders, "Content-Type": "application/json" } });
@@ -130,40 +139,106 @@ Deno.serve(async (req) => {
 
       const results: Record<string, ValidationResult> = {};
       for (const item of accounts) {
-        const account = item.account;
-        if (!["resenha", "frame"].includes(account)) {
-          results[account] = { ok: false, status: "UNKNOWN_ERROR", message: "Conta inválida." };
+        const account = String(item.account ?? "").trim();
+        if (!account) {
+          results["_"] = { ok: false, status: "UNKNOWN_ERROR", message: "Slug da conta ausente." };
           continue;
         }
+
+        // Se veio token, valida e faz upsert completo. Senão, atualiza apenas metadata (display_name/project_id).
         const token = (item.access_token ?? "").trim();
         const igId = (item.ig_business_id ?? "").trim();
-        const validation = await validateAccount(token, igId);
 
-        if (token && igId) {
-          const nowIso = new Date().toISOString();
-          const { error: upsertError } = await supabase.from("instagram_credentials").upsert({
-            account,
-            access_token: token,
-            ig_business_id: igId,
-            last_validated_at: nowIso,
-            last_validation_status: validation.status,
-            last_validation_detail: validation.message,
-          }, { onConflict: "account" });
-          if (upsertError) {
-            results[account] = { ok: false, status: "UNKNOWN_ERROR", message: `Falha ao salvar: ${upsertError.message}` };
-            continue;
+        if (token || igId) {
+          const validation = await validateAccount(token, igId);
+          if (token && igId) {
+            const payload: any = {
+              account,
+              access_token: token,
+              ig_business_id: igId,
+              last_validated_at: new Date().toISOString(),
+              last_validation_status: validation.status,
+              last_validation_detail: validation.message,
+            };
+            if (item.display_name !== undefined) payload.display_name = item.display_name;
+            if (item.project_id !== undefined) payload.project_id = item.project_id;
+            const { error: upsertError } = await supabase.from("instagram_credentials")
+              .upsert(payload, { onConflict: "account" });
+            if (upsertError) {
+              results[account] = { ok: false, status: "UNKNOWN_ERROR", message: `Falha ao salvar: ${upsertError.message}` };
+              continue;
+            }
           }
+          results[account] = validation;
+        } else {
+          // Apenas metadata
+          const patch: any = {};
+          if (item.display_name !== undefined) patch.display_name = item.display_name;
+          if (item.project_id !== undefined) patch.project_id = item.project_id;
+          if (Object.keys(patch).length > 0) {
+            await supabase.from("instagram_credentials").update(patch).eq("account", account);
+          }
+          results[account] = { ok: true, status: "VALID", message: "Metadados atualizados." };
         }
-        results[account] = validation;
       }
 
       return new Response(JSON.stringify({ success: true, results }),
         { status: 200, headers: { ...corsHeaders, "Content-Type": "application/json" } });
     }
 
+    if (action === "create") {
+      const display_name = String(body.display_name ?? "").trim();
+      const access_token = String(body.access_token ?? "").trim();
+      const ig_business_id = String(body.ig_business_id ?? "").trim();
+      const project_id = body.project_id ?? null;
+      if (!display_name || !access_token || !ig_business_id) {
+        return new Response(JSON.stringify({ error: "Nome, Access Token e Business ID são obrigatórios." }),
+          { status: 400, headers: { ...corsHeaders, "Content-Type": "application/json" } });
+      }
+      // Gera slug único
+      let base = slugify(display_name);
+      let account = base;
+      let n = 1;
+      while (true) {
+        const { data: exists } = await supabase.from("instagram_credentials")
+          .select("account").eq("account", account).maybeSingle();
+        if (!exists) break;
+        n += 1;
+        account = `${base}_${n}`;
+      }
+      const validation = await validateAccount(access_token, ig_business_id);
+      const { error: insErr } = await supabase.from("instagram_credentials").insert({
+        account, display_name, access_token, ig_business_id, project_id,
+        last_validated_at: new Date().toISOString(),
+        last_validation_status: validation.status,
+        last_validation_detail: validation.message,
+      });
+      if (insErr) {
+        return new Response(JSON.stringify({ error: `Falha ao criar: ${insErr.message}` }),
+          { status: 400, headers: { ...corsHeaders, "Content-Type": "application/json" } });
+      }
+      return new Response(JSON.stringify({ success: true, account, result: validation }),
+        { status: 200, headers: { ...corsHeaders, "Content-Type": "application/json" } });
+    }
+
+    if (action === "delete") {
+      const account = String(body.account ?? "").trim();
+      if (!account) {
+        return new Response(JSON.stringify({ error: "Conta ausente." }),
+          { status: 400, headers: { ...corsHeaders, "Content-Type": "application/json" } });
+      }
+      const { error: delErr } = await supabase.from("instagram_credentials").delete().eq("account", account);
+      if (delErr) {
+        return new Response(JSON.stringify({ error: `Falha ao remover: ${delErr.message}` }),
+          { status: 400, headers: { ...corsHeaders, "Content-Type": "application/json" } });
+      }
+      return new Response(JSON.stringify({ success: true }),
+        { status: 200, headers: { ...corsHeaders, "Content-Type": "application/json" } });
+    }
+
     if (action === "validate") {
-      const account = body.account as Account;
-      if (!["resenha", "frame"].includes(account)) {
+      const account = String(body.account ?? "").trim();
+      if (!account) {
         return new Response(JSON.stringify({ error: "Conta inválida." }),
           { status: 400, headers: { ...corsHeaders, "Content-Type": "application/json" } });
       }
@@ -171,8 +246,13 @@ Deno.serve(async (req) => {
       let token = data?.access_token ?? "";
       let igId = data?.ig_business_id ?? "";
       if (!token || !igId) {
-        token = token || (account === "resenha" ? Deno.env.get("META_RESENHA_ACCESS_TOKEN") ?? "" : Deno.env.get("META_FRAME_ACCESS_TOKEN") ?? "");
-        igId = igId || (account === "resenha" ? Deno.env.get("META_RESENHA_INSTAGRAM_ID") ?? "" : Deno.env.get("META_FRAME_INSTAGRAM_ID") ?? "");
+        if (account === "resenha") {
+          token = token || (Deno.env.get("META_RESENHA_ACCESS_TOKEN") ?? "");
+          igId = igId || (Deno.env.get("META_RESENHA_INSTAGRAM_ID") ?? "");
+        } else if (account === "frame") {
+          token = token || (Deno.env.get("META_FRAME_ACCESS_TOKEN") ?? "");
+          igId = igId || (Deno.env.get("META_FRAME_INSTAGRAM_ID") ?? "");
+        }
       }
       const validation = await validateAccount(token, igId);
       if (data) {
