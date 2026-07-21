@@ -437,7 +437,7 @@ function PlatformSection({
       {showPublished && (
         <div className="space-y-2">
           <h3 className="text-xs font-semibold uppercase tracking-wider text-muted-foreground">Publicados</h3>
-          {grid(published, "published", `Ainda não há publicações no ${meta.label}.`)}
+          {grid(published, "published", `Ainda não há publicações em ${displayLabel}.`)}
         </div>
       )}
 
