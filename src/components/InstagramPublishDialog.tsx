@@ -81,6 +81,10 @@ export default function InstagramPublishDialog({
     if (s.size === 0) s.add(n); // sempre pelo menos 1
     return s;
   });
+
+  // Auto-gera legenda/hashtags ao abrir se não vieram prontos
+  useEffect(() => {
+    if (!open || !videoId) return;
     setCaption(defaultCaption);
     setHashtags(defaultHashtags);
     if (!defaultCaption && !defaultHashtags && videoMeta) {
