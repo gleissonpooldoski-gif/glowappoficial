@@ -114,9 +114,13 @@ export default function InstagramBatchScheduleDialog({ open, onOpenChange, video
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [open, igAccount, videos.length, startMode, startDate, startTime, selectedNets]);
 
-  const first = slots[0];
-  const last = slots[slots.length - 1];
-  const insufficient = slots.length < videos.length;
+  // Redes selecionadas com slots insuficientes:
+  const activeNets = Array.from(selectedNets).filter(
+    (n) => (NETWORKS.find((x) => x.id === n)?.available)
+      && (n === "youtube" || !!igAccount),
+  ) as NetworkId[];
+  const insufficientNets = activeNets.filter((n) => (slotsByNet[n]?.length ?? 0) < videos.length);
+  const insufficient = insufficientNets.length > 0;
 
   const genCaption = async (v: VideoMeta) => {
     try {
