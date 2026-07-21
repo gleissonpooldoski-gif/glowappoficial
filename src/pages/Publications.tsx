@@ -399,9 +399,9 @@ function PlatformSection({
         <div className="flex items-center gap-2">
           <Instagram size={18} className={meta.icon} />
           <h2 className="text-base font-semibold tracking-tight">
-            📱 Publicações {meta.label}
+            📁 {displayLabel}
           </h2>
-          <Badge variant="outline" className={`ml-2 text-[10px] ${meta.badge}`}>{meta.label.toUpperCase()}</Badge>
+          <Badge variant="outline" className={`ml-2 text-[10px] ${meta.badge}`}>{displayLabel.toUpperCase()}</Badge>
         </div>
         <div className="flex items-center gap-2 text-[11px] text-muted-foreground">
           <span>Agendados: <b className={meta.text}>{scheduled.length}</b></span>
