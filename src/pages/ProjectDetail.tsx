@@ -9,6 +9,7 @@ import { Button } from "@/components/ui/button";
 import { formatBytes, formatDuration } from "@/lib/format";
 import { format } from "date-fns";
 import { ptBR } from "date-fns/locale";
+import ProjectAffiliateCard from "@/components/ProjectAffiliateCard";
 
 export default function ProjectDetail() {
   const { id } = useParams();
