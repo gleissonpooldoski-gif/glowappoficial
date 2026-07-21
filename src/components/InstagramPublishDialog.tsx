@@ -75,12 +75,42 @@ export default function InstagramPublishDialog({
   const [slotBusy, setSlotBusy] = useState(false);
   const [autoSlot, setAutoSlot] = useState<Date | null>(null);
   const [nets, setNets] = useState<Set<NetId>>(new Set(["instagram"]));
+  const [hasVideoFile, setHasVideoFile] = useState<boolean | null>(null);
   const toggleNet = (n: NetId) => setNets((prev) => {
     const s = new Set(prev);
+    if (n === "youtube" && !s.has("youtube") && hasVideoFile === false) {
+      toast.error("Para publicar no YouTube, adicione um vídeo ao post.");
+      return prev;
+    }
     if (s.has(n)) s.delete(n); else s.add(n);
     if (s.size === 0) s.add(n); // sempre pelo menos 1
     return s;
   });
+
+  // Verifica se o vídeo tem arquivo (original ou processado) para habilitar YouTube.
+  useEffect(() => {
+    if (!open || !videoId) { setHasVideoFile(null); return; }
+    let cancelled = false;
+    (async () => {
+      const { data } = await supabase
+        .from("videos")
+        .select("original_path, processed_path")
+        .eq("id", videoId)
+        .maybeSingle();
+      if (cancelled) return;
+      const ok = Boolean((data as any)?.original_path || (data as any)?.processed_path);
+      setHasVideoFile(ok);
+      if (!ok) {
+        setNets((prev) => {
+          if (!prev.has("youtube")) return prev;
+          const s = new Set(prev); s.delete("youtube");
+          if (s.size === 0) s.add("instagram");
+          return s;
+        });
+      }
+    })();
+    return () => { cancelled = true; };
+  }, [open, videoId]);
 
   // Auto-gera legenda/hashtags ao abrir se não vieram prontos
   useEffect(() => {
@@ -178,6 +208,10 @@ export default function InstagramPublishDialog({
     if (!wantIG && !wantYT) { toast.error("Selecione ao menos uma rede."); return; }
     if (wantIG && !account) {
       toast.error("Selecione um projeto ativo (Frame ou Resenha) para publicar no Instagram.");
+      return;
+    }
+    if (wantYT && hasVideoFile === false) {
+      toast.error("Para publicar no YouTube, adicione um vídeo ao post.");
       return;
     }
     const netsLabel = [wantIG && "Instagram", wantYT && "YouTube"].filter(Boolean).join(" + ");
@@ -292,14 +326,26 @@ export default function InstagramPublishDialog({
                 <Instagram size={14} className="text-pink-400" />
                 <span className="flex-1">Instagram</span>
               </label>
-              <label className={`flex items-center gap-2 rounded-md border px-2.5 py-2 text-xs cursor-pointer transition-colors ${
-                nets.has("youtube") ? "border-gold/50 bg-gold/5" : "border-border/60 bg-background/30 hover:bg-background/60"
-              }`}>
-                <Checkbox checked={nets.has("youtube")} onCheckedChange={() => toggleNet("youtube")} disabled={busy} />
+              <label
+                title={hasVideoFile === false ? "Para publicar no YouTube, adicione um vídeo ao post." : undefined}
+                className={`flex items-center gap-2 rounded-md border px-2.5 py-2 text-xs transition-colors ${
+                  nets.has("youtube") ? "border-gold/50 bg-gold/5" : "border-border/60 bg-background/30 hover:bg-background/60"
+                } ${hasVideoFile === false ? "opacity-50 cursor-not-allowed" : "cursor-pointer"}`}
+              >
+                <Checkbox
+                  checked={nets.has("youtube")}
+                  onCheckedChange={() => toggleNet("youtube")}
+                  disabled={busy || hasVideoFile === false}
+                />
                 <Youtube size={14} className="text-red-400" />
                 <span className="flex-1">YouTube</span>
               </label>
             </div>
+            {hasVideoFile === false && (
+              <p className="text-[11px] text-muted-foreground">
+                Para publicar no YouTube, adicione um vídeo ao post.
+              </p>
+            )}
           </div>
 
           <div className="space-y-1.5">
