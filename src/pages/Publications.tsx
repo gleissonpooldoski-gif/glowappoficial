@@ -635,18 +635,49 @@ export default function Publications() {
                 posts={filteredPosts}
                 statusFilter={statusFilter}
                 ytByKey={ytByKey}
+                ttByKey={ttByKey}
+                selectedIds={selectedIds}
+                onToggleSelect={toggleSelect}
+                onToggleAll={toggleAll}
                 {...handlers}
               />
             ))}
           </TabsContent>
           <TabsContent value="frame">
-            <PlatformSection account="frame" posts={filteredPosts} statusFilter={statusFilter} ytByKey={ytByKey} {...handlers} />
+            <PlatformSection account="frame" posts={filteredPosts} statusFilter={statusFilter}
+              ytByKey={ytByKey} ttByKey={ttByKey} selectedIds={selectedIds}
+              onToggleSelect={toggleSelect} onToggleAll={toggleAll} {...handlers} />
           </TabsContent>
           <TabsContent value="resenha">
-            <PlatformSection account="resenha" posts={filteredPosts} statusFilter={statusFilter} ytByKey={ytByKey} {...handlers} />
+            <PlatformSection account="resenha" posts={filteredPosts} statusFilter={statusFilter}
+              ytByKey={ytByKey} ttByKey={ttByKey} selectedIds={selectedIds}
+              onToggleSelect={toggleSelect} onToggleAll={toggleAll} {...handlers} />
           </TabsContent>
         </Tabs>
       )}
+
+      {/* Bulk actions floating bar */}
+      {selectedIds.size > 0 && (
+        <div className="fixed bottom-6 left-1/2 z-40 -translate-x-1/2 flex items-center gap-3 rounded-full border border-gold/40 bg-background/95 px-5 py-2.5 shadow-lg backdrop-blur">
+          <Badge variant="outline" className="text-[11px] border-gold/50 text-gold bg-gold/10">
+            {selectedIds.size} selecionado(s)
+          </Badge>
+          <Button size="sm" className="h-8 bg-gold-gradient text-black gap-1.5" onClick={() => setBulkOpen(true)}>
+            <Plus size={12} /> Adicionar redes de publicação
+          </Button>
+          <Button size="sm" variant="ghost" className="h-8 text-xs text-muted-foreground" onClick={clearSelection}>
+            Limpar
+          </Button>
+        </div>
+      )}
+
+      {/* Bulk add networks dialog */}
+      <BulkAddNetworksDialog
+        posts={(posts ?? []).filter((p) => selectedIds.has(p.id))}
+        open={bulkOpen}
+        onOpenChange={setBulkOpen}
+        onSaved={() => { clearSelection(); load(); }}
+      />
 
       {/* Edit dialog */}
       <EditScheduledDialog
