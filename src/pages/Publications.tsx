@@ -383,17 +383,34 @@ function PlatformSection({
 
 export default function Publications() {
   const [posts, setPosts] = useState<InstagramPost[] | null>(null);
+  const [ytByKey, setYtByKey] = useState<Map<string, { status: string }>>(new Map());
   const [selectedPost, setSelectedPost] = useState<InstagramPost | null>(null);
   const [editing, setEditing] = useState<InstagramPost | null>(null);
+  const [editingNetworks, setEditingNetworks] = useState<InstagramPost | null>(null);
 
   const [statusFilter, setStatusFilter] = useState<StatusFilter>("all");
   const [periodFilter, setPeriodFilter] = useState<PeriodFilter>("all");
   const [customFrom, setCustomFrom] = useState("");
   const [customTo, setCustomTo] = useState("");
 
+  const loadYoutubeLinks = async () => {
+    const { data } = await supabase
+      .from("youtube_posts" as any)
+      .select("video_id, scheduled_at, status")
+      .not("scheduled_at", "is", null)
+      .order("scheduled_at", { ascending: false })
+      .limit(500);
+    const map = new Map<string, { status: string }>();
+    for (const r of (data ?? []) as any[]) {
+      if (!r.video_id || !r.scheduled_at) continue;
+      map.set(`${r.video_id}|${r.scheduled_at}`, { status: r.status });
+    }
+    setYtByKey(map);
+  };
+
   const load = async () => {
     try {
-      const nextPosts = await listInstagramPosts();
+      const [nextPosts] = await Promise.all([listInstagramPosts(), loadYoutubeLinks()]);
       setPosts(nextPosts);
       const publishing = nextPosts.filter((p) => p.status === "PUBLICANDO" && p.container_id);
       if (publishing.length > 0) {
