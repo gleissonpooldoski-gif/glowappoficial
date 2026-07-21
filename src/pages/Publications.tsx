@@ -665,12 +665,8 @@ export default function Publications() {
         projectName: proj?.name ?? null,
       });
     }
-    // 2) Contas encontradas em posts que ainda não apareceram
-    for (const p of posts ?? []) {
-      if (!seen.has(p.account)) {
-        seen.set(p.account, { slug: p.account, displayName: labelForAccount(p.account), projectId: null, projectName: null });
-      }
-    }
+    // Contas legadas encontradas apenas em posts antigos são ignoradas —
+    // exibimos apenas pastas com credencial ativa vinculada a um projeto.
     // Ordena: FRAME primeiro, RESENHA depois, restante alfabético
     return Array.from(seen.values()).sort((a, b) => {
       const rank = (s: string) => (s === "frame" ? 0 : s === "resenha" ? 1 : 2);
