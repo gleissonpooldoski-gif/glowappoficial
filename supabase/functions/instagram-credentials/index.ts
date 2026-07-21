@@ -57,15 +57,17 @@ async function validateAccount(rawToken: string, rawIgId: string): Promise<Valid
   if (!token || !igId) {
     return { ok: false, status: "EMPTY", message: "Access Token ou Instagram Business ID vazio." };
   }
+  if (!isValidTokenFormat(token)) {
+    return { ok: false, status: "TOKEN_INVALID", message: "Token inválido ou formato incorreto. Verifique se não há espaços, quebras de linha ou caracteres especiais." };
+  }
 
   const grantedPerms: string[] = [];
   const permissionWarning = "";
 
   try {
-    const igRes = await fetch(
-      `${FB_BASE}/${encodeURIComponent(igId)}?fields=id,username,name,profile_picture_url&access_token=${encodeURIComponent(token)}`,
-      { headers: { Authorization: `Bearer ${token}` } },
-    );
+    const url = `${FB_BASE}/${encodeURIComponent(igId)}?fields=id,username,name,profile_picture_url&access_token=${encodeURIComponent(token)}`;
+    console.log(`[instagram-credentials] validate GET ${FB_BASE}/${igId}?fields=... ig_id=${igId} token_len=${token.length}`);
+    const igRes = await fetch(url);
     const ig = await readMeta(igRes);
     if (ig.data?.error) {
 
