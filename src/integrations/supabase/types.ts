@@ -390,6 +390,7 @@ export type Database = {
           category: string | null
           created_at: string
           id: string
+          network: string
           posts_per_day: number
           sequence_start_at: string | null
           times: Json
@@ -401,6 +402,7 @@ export type Database = {
           category?: string | null
           created_at?: string
           id?: string
+          network?: string
           posts_per_day?: number
           sequence_start_at?: string | null
           times?: Json
@@ -412,6 +414,7 @@ export type Database = {
           category?: string | null
           created_at?: string
           id?: string
+          network?: string
           posts_per_day?: number
           sequence_start_at?: string | null
           times?: Json
