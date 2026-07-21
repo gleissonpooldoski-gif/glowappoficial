@@ -828,11 +828,13 @@ export type Database = {
           created_at: string
           expires_at: string | null
           id: string
+          label: string | null
           last_validated_at: string | null
           last_validation_detail: string | null
           last_validation_status: string | null
           refresh_token: string | null
           scope: string | null
+          status: string
           thumbnail: string | null
           updated_at: string
           user_id: string | null
@@ -845,11 +847,13 @@ export type Database = {
           created_at?: string
           expires_at?: string | null
           id?: string
+          label?: string | null
           last_validated_at?: string | null
           last_validation_detail?: string | null
           last_validation_status?: string | null
           refresh_token?: string | null
           scope?: string | null
+          status?: string
           thumbnail?: string | null
           updated_at?: string
           user_id?: string | null
@@ -862,11 +866,13 @@ export type Database = {
           created_at?: string
           expires_at?: string | null
           id?: string
+          label?: string | null
           last_validated_at?: string | null
           last_validation_detail?: string | null
           last_validation_status?: string | null
           refresh_token?: string | null
           scope?: string | null
+          status?: string
           thumbnail?: string | null
           updated_at?: string
           user_id?: string | null
