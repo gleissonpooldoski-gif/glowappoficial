@@ -1,8 +1,9 @@
 import { useEffect, useMemo, useState } from "react";
 import {
-  Instagram, Loader2, CheckCircle2, AlertCircle, Clock, Trash2, Calendar,
-  ScrollText, RotateCcw, Pencil, ExternalLink, Filter,
+  Instagram, Youtube, Loader2, CheckCircle2, AlertCircle, Clock, Trash2, Calendar,
+  ScrollText, RotateCcw, Pencil, ExternalLink, Filter, Share2,
 } from "lucide-react";
+import EditPostNetworksDialog from "@/components/EditPostNetworksDialog";
 import { Card, CardContent } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
