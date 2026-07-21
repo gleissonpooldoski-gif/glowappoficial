@@ -177,10 +177,11 @@ function EditScheduledDialog({
 /* ---------- post card ---------- */
 
 function PostCard({
-  post, kind, linkedYT, linkedTT, selectable, selected, onToggleSelect,
+  post, meta, kind, linkedYT, linkedTT, selectable, selected, onToggleSelect,
   onEdit, onCancel, onDelete, onRetry, onLogs, onEditNetworks, onToggleAutoComment,
 }: {
   post: InstagramPost;
+  meta: PlatformMeta;
   kind: "scheduled" | "published";
   linkedYT?: { id: string; status: string; auto_comment_enabled: boolean } | null;
   linkedTT?: { status: string } | null;
@@ -195,7 +196,6 @@ function PostCard({
   onEditNetworks: (p: InstagramPost) => void;
   onToggleAutoComment: (ytId: string, enable: boolean) => void;
 }) {
-  const meta = PLATFORM_META[post.account];
   const dt =
     kind === "scheduled" && post.scheduled_at
       ? new Date(post.scheduled_at)
