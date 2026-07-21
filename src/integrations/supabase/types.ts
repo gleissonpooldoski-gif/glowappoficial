@@ -543,6 +543,47 @@ export type Database = {
         }
         Relationships: []
       }
+      publish_events: {
+        Row: {
+          created_at: string
+          detail: Json | null
+          event: string
+          id: string
+          platform: string
+          status: string | null
+          target_id: string | null
+          video_id: string | null
+        }
+        Insert: {
+          created_at?: string
+          detail?: Json | null
+          event: string
+          id?: string
+          platform: string
+          status?: string | null
+          target_id?: string | null
+          video_id?: string | null
+        }
+        Update: {
+          created_at?: string
+          detail?: Json | null
+          event?: string
+          id?: string
+          platform?: string
+          status?: string | null
+          target_id?: string | null
+          video_id?: string | null
+        }
+        Relationships: [
+          {
+            foreignKeyName: "publish_events_target_id_fkey"
+            columns: ["target_id"]
+            isOneToOne: false
+            referencedRelation: "publish_targets"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
       publish_schedules: {
         Row: {
           account: string
@@ -639,6 +680,76 @@ export type Database = {
             foreignKeyName: "publish_schedules_multi_youtube_post_id_fkey"
             columns: ["youtube_post_id"]
             isOneToOne: false
+            referencedRelation: "youtube_posts"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
+      publish_targets: {
+        Row: {
+          account: string | null
+          created_at: string
+          error_message: string | null
+          id: string
+          instagram_post_id: string | null
+          platform: string
+          published_at: string | null
+          scheduled_at: string | null
+          status: string
+          tiktok_post_id: string | null
+          updated_at: string
+          video_id: string | null
+          youtube_post_id: string | null
+        }
+        Insert: {
+          account?: string | null
+          created_at?: string
+          error_message?: string | null
+          id?: string
+          instagram_post_id?: string | null
+          platform: string
+          published_at?: string | null
+          scheduled_at?: string | null
+          status?: string
+          tiktok_post_id?: string | null
+          updated_at?: string
+          video_id?: string | null
+          youtube_post_id?: string | null
+        }
+        Update: {
+          account?: string | null
+          created_at?: string
+          error_message?: string | null
+          id?: string
+          instagram_post_id?: string | null
+          platform?: string
+          published_at?: string | null
+          scheduled_at?: string | null
+          status?: string
+          tiktok_post_id?: string | null
+          updated_at?: string
+          video_id?: string | null
+          youtube_post_id?: string | null
+        }
+        Relationships: [
+          {
+            foreignKeyName: "publish_targets_instagram_post_id_fkey"
+            columns: ["instagram_post_id"]
+            isOneToOne: true
+            referencedRelation: "instagram_posts"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "publish_targets_tiktok_post_id_fkey"
+            columns: ["tiktok_post_id"]
+            isOneToOne: true
+            referencedRelation: "tiktok_posts"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "publish_targets_youtube_post_id_fkey"
+            columns: ["youtube_post_id"]
+            isOneToOne: true
             referencedRelation: "youtube_posts"
             referencedColumns: ["id"]
           },
@@ -1147,7 +1258,7 @@ export type Database = {
       [_ in never]: never
     }
     Functions: {
-      [_ in never]: never
+      normalize_platform_status: { Args: { _status: string }; Returns: string }
     }
     Enums: {
       edit_status: "draft" | "editing" | "processing" | "completed" | "failed"
