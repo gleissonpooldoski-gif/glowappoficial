@@ -65,9 +65,10 @@ async function validateAccount(token: string, igId: string): Promise<ValidationR
     const perm = await readMeta(permRes);
     if (perm.data?.error) {
       const code = perm.data.error.code;
-      if (isApiBlocked(perm.data.error)) return { ok: false, status: "API_BLOCKED", message: `${BLOCKED_MSG} (${perm.data.error.message ?? ""})` };
       if (code === 190) return { ok: false, status: "TOKEN_EXPIRED", message: perm.data.error.message ?? "Token expirado." };
-      // /me/permissions falha em tokens de Página/System User — seguimos e confiamos no teste do IG ID.
+      // /me/permissions falha em tokens de Página/System User — inclusive com avisos de API bloqueada.
+      // Não bloqueia a conta: seguimos e confiamos no teste direto do IG ID + publish real.
+      if (isApiBlocked(perm.data.error)) permissionWarning = ` /me/permissions retornou aviso da Meta, mas o teste direto do IG ID foi usado como fonte de verdade: ${perm.data.error.message ?? "sem detalhe"}.`;
     } else {
       const list = Array.isArray(perm.data?.data) ? perm.data.data : [];
       grantedPerms = list.filter((p: any) => p?.status === "granted").map((p: any) => p.permission);
@@ -101,7 +102,7 @@ async function validateAccount(token: string, igId: string): Promise<ValidationR
         if (linked.length > 0) {
           accessibleHint = `\n\nContas Instagram que este token PODE acessar:\n${linked.join("\n")}\n\nUse um dos IDs acima em vez de ${igId}.`;
         } else {
-          accessibleHint = `\n\nEste token não tem NENHUMA conta Instagram Business vinculada a uma Página do Facebook acessível. Verifique se: (a) o usuário do token é admin da Página, (b) a Página está vinculada a uma conta Instagram Profissional, (c) o app da Meta pediu 'pages_show_list' + 'instagram_basic' no login.`;
+          accessibleHint = `\n\nEste token não retornou contas Instagram vinculadas em /me/accounts. Isso pode ser normal para Token de Página/System User; confirme se o Instagram Business Account ID informado pertence ao token usado.`;
         }
       } catch { /* ignora */ }
 
