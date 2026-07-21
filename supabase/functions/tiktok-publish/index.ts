@@ -178,16 +178,27 @@ Deno.serve(async (req) => {
     }
 
     const publishId = json?.data?.publish_id ?? null;
+    const finalStatus = ENABLE_DIRECT_PUBLISH ? "PUBLICADO" : "RASCUNHO";
     await supabase.from("tiktok_posts").update({
-      status: "PUBLICADO",
+      status: finalStatus,
       publish_id: publishId,
       video_url: videoUrl,
       published_at: new Date().toISOString(),
-      logs: [{ at: new Date().toISOString(), step: "publish/init", ok: true, response: json }],
+      logs: [{ at: new Date().toISOString(), step: ENABLE_DIRECT_PUBLISH ? "publish/init" : "inbox/init", ok: true, response: json }],
     }).eq("id", postRow.id);
 
-    return new Response(JSON.stringify({ success: true, publish_id: publishId, post: { ...postRow, publish_id: publishId } }),
-      { status: 200, headers: { ...corsHeaders, "Content-Type": "application/json" } });
+    return new Response(
+      JSON.stringify({
+        success: true,
+        draft: !ENABLE_DIRECT_PUBLISH,
+        publish_id: publishId,
+        message: ENABLE_DIRECT_PUBLISH
+          ? "Vídeo publicado no TikTok."
+          : "Vídeo enviado como rascunho para a caixa de entrada do TikTok. Finalize a publicação pelo app.",
+        post: { ...postRow, publish_id: publishId, status: finalStatus },
+      }),
+      { status: 200, headers: { ...corsHeaders, "Content-Type": "application/json" } },
+    );
   } catch (e: any) {
     console.error("[tiktok-publish]", e?.message);
     return new Response(JSON.stringify({ error: e?.message ?? "Erro ao publicar no TikTok." }),
