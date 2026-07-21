@@ -304,21 +304,37 @@ export default function InstagramPublishDialog({
 
           <div className="space-y-1.5">
             <Label className="text-xs flex items-center gap-1"><Lock size={10} /> Publicando em</Label>
-            <div className="flex items-center gap-2 rounded-md border border-border/60 bg-background/40 px-3 py-2">
-              <Instagram size={14} className={account === "frame" ? "text-blue-300" : account === "resenha" ? "text-purple-300" : "text-muted-foreground"} />
-              <Badge variant="outline" className={`text-[10px] font-semibold ${platformClass}`}>
-                📱 {platformLabel}
-              </Badge>
-              <span className="text-[11px] text-muted-foreground ml-1">
-                {activeProject ? `Projeto ativo: ${activeProject.name}` : "Nenhum projeto ativo selecionado"}
-              </span>
+            <div className="rounded-md border border-border/60 bg-background/40 px-3 py-2 space-y-1.5">
+              {nets.has("instagram") && (
+                <div className="flex items-center gap-2">
+                  <Instagram size={14} className={account === "frame" ? "text-blue-300" : account === "resenha" ? "text-purple-300" : "text-pink-400"} />
+                  <Badge variant="outline" className={`text-[10px] font-semibold ${platformClass}`}>
+                    📱 Instagram · {platformLabel}
+                  </Badge>
+                  <span className="text-[11px] text-muted-foreground ml-1">
+                    {activeProject ? `Projeto: ${activeProject.name}` : "Nenhum projeto ativo"}
+                  </span>
+                </div>
+              )}
+              {nets.has("youtube") && (
+                <div className="flex items-center gap-2">
+                  <Youtube size={14} className="text-red-400" />
+                  <Badge variant="outline" className="text-[10px] font-semibold bg-red-500/15 text-red-300 border-red-400/40">
+                    ▶️ YouTube · Canal principal
+                  </Badge>
+                </div>
+              )}
+              {nets.size === 0 && (
+                <span className="text-[11px] text-muted-foreground">Selecione ao menos uma rede acima.</span>
+              )}
             </div>
-            {!account && (
+            {nets.has("instagram") && !account && (
               <p className="text-[11px] text-destructive">
-                Selecione um projeto ativo (Frame ou Resenha) no menu superior para publicar.
+                Selecione um projeto ativo (Frame ou Resenha) no menu superior para publicar no Instagram.
               </p>
             )}
           </div>
+
 
           <div className="space-y-1.5">
             <div className="flex items-center justify-between">
