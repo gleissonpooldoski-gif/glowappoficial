@@ -321,7 +321,7 @@ function PlatformSection({
   account: InstagramAccount;
   posts: InstagramPost[];
   statusFilter: StatusFilter;
-  ytByKey: Map<string, { status: string }>;
+  ytByKey: Map<string, { id: string; status: string; auto_comment_enabled: boolean }>;
   ttByKey: Map<string, { status: string }>;
   selectedIds: Set<string>;
   onToggleSelect: (p: InstagramPost) => void;
@@ -332,6 +332,7 @@ function PlatformSection({
   onRetry: (p: InstagramPost) => void;
   onLogs: (p: InstagramPost) => void;
   onEditNetworks: (p: InstagramPost) => void;
+  onToggleAutoComment: (ytId: string, enable: boolean) => void;
 }) {
   const meta = PLATFORM_META[account];
   const own = posts.filter((p) => p.account === account);
