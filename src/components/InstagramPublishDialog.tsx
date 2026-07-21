@@ -408,41 +408,14 @@ export default function InstagramPublishDialog({
           </div>
 
           {nets.has("youtube") && (
-            <div className="space-y-2 rounded-lg border border-red-400/30 bg-red-500/5 p-3">
-              <div className="flex items-center gap-1.5 text-[11px] font-semibold text-red-300">
-                <Youtube size={12} /> Detalhes do vídeo no YouTube
-              </div>
-              <div className="space-y-1.5">
-                <Label className="text-xs">Título do vídeo</Label>
-                <Input
-                  value={ytTitle}
-                  onChange={(e) => setYtTitle(e.target.value)}
-                  maxLength={100}
-                  placeholder="Se vazio, geramos a partir do conteúdo do post"
-                />
-                <p className="text-[10px] text-muted-foreground">
-                  {ytTitle.length}/100 · o nome do arquivo nunca é usado como título.
-                </p>
-              </div>
-              <div className="space-y-1.5">
-                <Label className="text-xs">Descrição do vídeo</Label>
-                <Textarea
-                  value={ytDescription}
-                  onChange={(e) => setYtDescription(e.target.value)}
-                  rows={3}
-                  placeholder="Se vazio, usamos a legenda + hashtags."
-                />
-              </div>
-              <div className="space-y-1.5">
-                <Label className="text-xs">Tags (opcional, separadas por vírgula)</Label>
-                <Input
-                  value={ytTags}
-                  onChange={(e) => setYtTags(e.target.value)}
-                  placeholder="skincare, rotina, dicas"
-                />
-              </div>
+            <div className="flex items-start gap-2 rounded-md border border-red-400/30 bg-red-500/5 px-3 py-2 text-[11px] text-red-200">
+              <Youtube size={12} className="mt-0.5 shrink-0" />
+              <span>
+                Título, descrição e tags do YouTube são gerados automaticamente a partir da legenda do post — o nome do arquivo nunca é usado.
+              </span>
             </div>
           )}
+
 
 
 
