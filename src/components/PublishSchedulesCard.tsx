@@ -222,7 +222,7 @@ function ScheduleEditor({
       </div>
 
       <div className="flex flex-wrap items-center gap-2">
-        <TimeInput value={newTime || "09:00"} onChange={(v) => setNewTime(v)} />
+        
         <Button size="sm" variant="outline" onClick={add}>
           <Plus size={12} className="mr-1" /> Adicionar horário
         </Button>
