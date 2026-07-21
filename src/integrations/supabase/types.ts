@@ -187,36 +187,50 @@ export type Database = {
           access_token: string
           account: string
           created_at: string
+          display_name: string | null
           id: string
           ig_business_id: string
           last_validated_at: string | null
           last_validation_detail: string | null
           last_validation_status: string | null
+          project_id: string | null
           updated_at: string
         }
         Insert: {
           access_token: string
           account: string
           created_at?: string
+          display_name?: string | null
           id?: string
           ig_business_id: string
           last_validated_at?: string | null
           last_validation_detail?: string | null
           last_validation_status?: string | null
+          project_id?: string | null
           updated_at?: string
         }
         Update: {
           access_token?: string
           account?: string
           created_at?: string
+          display_name?: string | null
           id?: string
           ig_business_id?: string
           last_validated_at?: string | null
           last_validation_detail?: string | null
           last_validation_status?: string | null
+          project_id?: string | null
           updated_at?: string
         }
-        Relationships: []
+        Relationships: [
+          {
+            foreignKeyName: "instagram_credentials_project_id_fkey"
+            columns: ["project_id"]
+            isOneToOne: false
+            referencedRelation: "projects"
+            referencedColumns: ["id"]
+          },
+        ]
       }
       instagram_posts: {
         Row: {
