@@ -722,6 +722,10 @@ export default function Publications() {
           <Button size="sm" className="h-8 bg-gold-gradient text-black gap-1.5" onClick={() => setBulkOpen(true)}>
             <Plus size={12} /> Adicionar redes de publicação
           </Button>
+          <Button size="sm" variant="outline" className="h-8 gap-1.5 border-emerald-400/50 text-emerald-300 hover:bg-emerald-500/10"
+            onClick={bulkEnableAutoComment}>
+            <MessageSquare size={12} /> Ativar comentário auto
+          </Button>
           <Button size="sm" variant="ghost" className="h-8 text-xs text-muted-foreground" onClick={clearSelection}>
             Limpar
           </Button>
