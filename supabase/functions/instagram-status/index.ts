@@ -153,7 +153,7 @@ Deno.serve(async (req) => {
       throw new Error("Publicação ainda não possui creation_id/container_id salvo.");
     }
 
-    const statusRes = await metaGet(`${FB_BASE}/${post.container_id}?fields=status_code,status&access_token=${encodeURIComponent(token)}`);
+    const statusRes = await metaGet(`${FB_BASE}/${post.container_id}?fields=id,status_code&access_token=${encodeURIComponent(token)}`);
     const statusCode = statusRes.data?.status_code ?? "UNKNOWN";
     await appendLog(post.id, { event: "manual_container_status_response", status_code: statusCode, response: statusRes.data });
 
