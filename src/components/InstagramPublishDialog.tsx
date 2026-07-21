@@ -209,6 +209,9 @@ export default function InstagramPublishDialog({
     if (wantIG && !account) {
       toast.error("Selecione um projeto ativo (Frame ou Resenha) para publicar no Instagram.");
       return;
+    if (wantYT && hasVideoFile === false) {
+      toast.error("Para publicar no YouTube, adicione um vídeo ao post.");
+      return;
     }
     const netsLabel = [wantIG && "Instagram", wantYT && "YouTube"].filter(Boolean).join(" + ");
     const confirmMsg =
