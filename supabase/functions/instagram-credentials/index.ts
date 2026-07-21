@@ -51,35 +51,30 @@ async function validateAccount(token: string, igId: string): Promise<ValidationR
     }
   } catch (_) { /* segue validação */ }
 
-  // 2) Permissões — checa apenas as ESSENCIAIS para publicar.
-  // A Meta oferece dois fluxos de login com escopos diferentes:
-  //   • Facebook Login for Business: instagram_basic + instagram_content_publish (+ pages_*)
-  //   • Instagram API with Instagram Login: instagram_business_basic + instagram_business_content_publish
-  // Aceitamos qualquer um. pages_show_list / pages_read_engagement NÃO bloqueiam mais.
-  const PUBLISH_SCOPES = ["instagram_content_publish", "instagram_business_content_publish"];
-  const BASIC_SCOPES = ["instagram_basic", "instagram_business_basic"];
+  // 2) Permissões — diagnóstico não-bloqueante para tokens de Página/System User.
+  // A Meta oferece fluxos diferentes e nem todo token responde /me/permissions:
+  //   • Facebook Login: instagram_basic + instagram_content_publish
+  //   • Instagram Login: instagram_business_basic + instagram_business_content_publish
+  //   • Página/System User: pode falhar em /me/permissions, mas publicar se o IG ID for acessível.
+  // pages_show_list / pages_read_engagement NÃO são obrigatórias aqui.
+  const ACCEPTED_SCOPES = ["instagram_content_publish", "instagram_basic"];
   let grantedPerms: string[] = [];
+  let permissionWarning = "";
   try {
     const permRes = await fetch(`https://graph.facebook.com/${GRAPH_VERSION}/me/permissions?access_token=${encodeURIComponent(token)}`);
     const perm = await readMeta(permRes);
     if (perm.data?.error) {
       const code = perm.data.error.code;
-      if (isApiBlocked(perm.data.error)) return { ok: false, status: "API_BLOCKED", message: `${BLOCKED_MSG} (${perm.data.error.message ?? ""})` };
       if (code === 190) return { ok: false, status: "TOKEN_EXPIRED", message: perm.data.error.message ?? "Token expirado." };
-      // /me/permissions falha em tokens de Página/System User — seguimos e confiamos no teste do IG ID.
+      // /me/permissions falha em tokens de Página/System User — inclusive com avisos de API bloqueada.
+      // Não bloqueia a conta: seguimos e confiamos no teste direto do IG ID + publish real.
+      if (isApiBlocked(perm.data.error)) permissionWarning = ` /me/permissions retornou aviso da Meta, mas o teste direto do IG ID foi usado como fonte de verdade: ${perm.data.error.message ?? "sem detalhe"}.`;
     } else {
       const list = Array.isArray(perm.data?.data) ? perm.data.data : [];
       grantedPerms = list.filter((p: any) => p?.status === "granted").map((p: any) => p.permission);
-      const hasPublish = PUBLISH_SCOPES.some((p) => grantedPerms.includes(p));
-      const hasBasic = BASIC_SCOPES.some((p) => grantedPerms.includes(p));
-      if (grantedPerms.length > 0 && (!hasPublish || !hasBasic)) {
-        const need = [!hasBasic && `um de [${BASIC_SCOPES.join(", ")}]`, !hasPublish && `um de [${PUBLISH_SCOPES.join(", ")}]`]
-          .filter(Boolean).join(" + ");
-        return {
-          ok: false,
-          status: "PERMISSION_MISSING",
-          message: `Permissões essenciais ausentes (${need}). Escopos concedidos: ${grantedPerms.join(", ") || "nenhum"}.`,
-        };
+      const hasAcceptedInstagramScope = grantedPerms.some((p) => ACCEPTED_SCOPES.includes(p) || p.startsWith("instagram_business_"));
+      if (grantedPerms.length > 0 && !hasAcceptedInstagramScope) {
+        permissionWarning = ` /me/permissions não listou escopos Instagram reconhecidos; validação seguirá pelo acesso direto ao IG ID. Escopos: ${grantedPerms.join(", ") || "nenhum"}.`;
       }
     }
   } catch (_) { /* segue para teste do Business ID */ }
@@ -107,7 +102,7 @@ async function validateAccount(token: string, igId: string): Promise<ValidationR
         if (linked.length > 0) {
           accessibleHint = `\n\nContas Instagram que este token PODE acessar:\n${linked.join("\n")}\n\nUse um dos IDs acima em vez de ${igId}.`;
         } else {
-          accessibleHint = `\n\nEste token não tem NENHUMA conta Instagram Business vinculada a uma Página do Facebook acessível. Verifique se: (a) o usuário do token é admin da Página, (b) a Página está vinculada a uma conta Instagram Profissional, (c) o app da Meta pediu 'pages_show_list' + 'instagram_basic' no login.`;
+          accessibleHint = `\n\nEste token não retornou contas Instagram vinculadas em /me/accounts. Isso pode ser normal para Token de Página/System User; confirme se o Instagram Business Account ID informado pertence ao token usado.`;
         }
       } catch { /* ignora */ }
 
@@ -129,7 +124,7 @@ async function validateAccount(token: string, igId: string): Promise<ValidationR
         message: `Conta encontrada, mas o tipo retornado é "${accountType}". É necessário ser Instagram Profissional (Business ou Creator) para publicar via API.`,
       };
     }
-    return { ok: true, status: "VALID", message: `Conta @${ig.data.username ?? "?"} validada (${accountType ?? "OK"})${grantedPerms.length ? `. Escopos: ${grantedPerms.join(", ")}` : ""}.`, username: ig.data.username ?? null, account_type: accountType };
+    return { ok: true, status: "VALID", message: `Conta @${ig.data.username ?? "?"} validada (${accountType ?? "OK"})${grantedPerms.length ? `. Escopos: ${grantedPerms.join(", ")}` : ""}${permissionWarning}.`, username: ig.data.username ?? null, account_type: accountType };
   } catch (e: any) {
     return { ok: false, status: "UNKNOWN_ERROR", message: e?.message ?? "Falha ao consultar o Business ID." };
   }
