@@ -555,6 +555,134 @@ export type Database = {
           },
         ]
       }
+      tiktok_credentials: {
+        Row: {
+          access_token: string | null
+          account: string
+          created_at: string
+          expires_at: string | null
+          id: string
+          last_validated_at: string | null
+          last_validation_detail: string | null
+          last_validation_status: string | null
+          open_id: string | null
+          refresh_expires_at: string | null
+          refresh_token: string | null
+          scope: string | null
+          updated_at: string
+          username: string | null
+        }
+        Insert: {
+          access_token?: string | null
+          account: string
+          created_at?: string
+          expires_at?: string | null
+          id?: string
+          last_validated_at?: string | null
+          last_validation_detail?: string | null
+          last_validation_status?: string | null
+          open_id?: string | null
+          refresh_expires_at?: string | null
+          refresh_token?: string | null
+          scope?: string | null
+          updated_at?: string
+          username?: string | null
+        }
+        Update: {
+          access_token?: string | null
+          account?: string
+          created_at?: string
+          expires_at?: string | null
+          id?: string
+          last_validated_at?: string | null
+          last_validation_detail?: string | null
+          last_validation_status?: string | null
+          open_id?: string | null
+          refresh_expires_at?: string | null
+          refresh_token?: string | null
+          scope?: string | null
+          updated_at?: string
+          username?: string | null
+        }
+        Relationships: []
+      }
+      tiktok_oauth_states: {
+        Row: {
+          account: string
+          code_verifier: string
+          created_at: string
+          state: string
+        }
+        Insert: {
+          account: string
+          code_verifier: string
+          created_at?: string
+          state: string
+        }
+        Update: {
+          account?: string
+          code_verifier?: string
+          created_at?: string
+          state?: string
+        }
+        Relationships: []
+      }
+      tiktok_posts: {
+        Row: {
+          account: string
+          caption: string
+          created_at: string
+          error_message: string | null
+          id: string
+          logs: Json
+          publish_id: string | null
+          published_at: string | null
+          scheduled_at: string | null
+          status: string
+          updated_at: string
+          video_id: string | null
+          video_url: string | null
+        }
+        Insert: {
+          account: string
+          caption?: string
+          created_at?: string
+          error_message?: string | null
+          id?: string
+          logs?: Json
+          publish_id?: string | null
+          published_at?: string | null
+          scheduled_at?: string | null
+          status?: string
+          updated_at?: string
+          video_id?: string | null
+          video_url?: string | null
+        }
+        Update: {
+          account?: string
+          caption?: string
+          created_at?: string
+          error_message?: string | null
+          id?: string
+          logs?: Json
+          publish_id?: string | null
+          published_at?: string | null
+          scheduled_at?: string | null
+          status?: string
+          updated_at?: string
+          video_id?: string | null
+          video_url?: string | null
+        }
+        Relationships: [
+          {
+            foreignKeyName: "tiktok_posts_video_id_fkey"
+            columns: ["video_id"]
+            isOneToOne: false
+            referencedRelation: "videos"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
       videos: {
         Row: {
           created_at: string
