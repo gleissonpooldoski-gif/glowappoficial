@@ -766,6 +766,15 @@ export default function Publications() {
         onSaved={() => { clearSelection(); load(); }}
       />
 
+      {/* Migração automática de agendamentos antigos */}
+      <BulkAddNetworksDialog
+        posts={legacyOnlyIg}
+        open={migrateOpen}
+        onOpenChange={setMigrateOpen}
+        onSaved={() => { setMigrateOpen(false); load(); }}
+      />
+
+
       {/* Edit dialog */}
       <EditScheduledDialog
         post={editing}
