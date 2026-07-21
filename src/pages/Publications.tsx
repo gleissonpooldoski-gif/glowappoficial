@@ -380,7 +380,7 @@ function PlatformSection({
       <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-3">
         {items.map((p) => (
           <PostCard
-            key={p.id} post={p} kind={kind}
+            key={p.id} post={p} meta={meta} kind={kind}
             linkedYT={ytByKey.get(linkKey(p))}
             linkedTT={ttByKey.get(linkKey(p))}
             selectable={kind === "scheduled" && p.status === "AGENDADO"}
