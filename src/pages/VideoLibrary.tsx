@@ -960,6 +960,20 @@ export default function VideoLibrary() {
             <Button
               size="sm"
               variant="outline"
+              onClick={editWithoutTemplate}
+              disabled={applying}
+              className="border-gold/40 text-gold hover:text-gold"
+            >
+              {applying ? (
+                <Loader2 size={13} className="mr-1 animate-spin" />
+              ) : (
+                <Sparkles size={13} className="mr-1" />
+              )}
+              Editar sem template
+            </Button>
+            <Button
+              size="sm"
+              variant="outline"
               onClick={downloadSelected}
               disabled={downloading}
             >
