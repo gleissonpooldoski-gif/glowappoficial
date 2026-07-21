@@ -1,13 +1,20 @@
 import { useEffect, useState } from "react";
-import { Clock, Plus, Trash2, Save, Loader2, CalendarClock, RotateCcw, Sparkles } from "lucide-react";
+import { Clock, Plus, Trash2, Save, Loader2, CalendarClock, RotateCcw, Sparkles, Instagram, Youtube } from "lucide-react";
 import { Card, CardContent } from "@/components/ui/card";
 import { Label } from "@/components/ui/label";
 import { Input } from "@/components/ui/input";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
 import { toast } from "sonner";
-import { ACCOUNTS, InstagramAccount } from "@/lib/instagram";
-import { DEFAULT_TIMES, PublishSchedule, getSchedule, upsertSchedule, findNextSlot } from "@/lib/schedules";
+import { ACCOUNTS } from "@/lib/instagram";
+import {
+  DEFAULT_TIMES,
+  PublishSchedule,
+  ScheduleNetwork,
+  getSchedule,
+  upsertSchedule,
+  findNextSlot,
+} from "@/lib/schedules";
 
 function formatDateTimeBR(d: Date) {
   return d.toLocaleString("pt-BR", {
@@ -30,9 +37,21 @@ function toLocalInputValue(iso: string | null): { date: string; time: string } {
   };
 }
 
-function AccountScheduleEditor({ account, label }: { account: InstagramAccount; label: string }) {
-  const [times, setTimes] = useState<string[]>(DEFAULT_TIMES);
-  const [perDay, setPerDay] = useState<number>(5);
+function ScheduleEditor({
+  network,
+  account,
+  label,
+  defaultTimes = DEFAULT_TIMES,
+  defaultPerDay = 5,
+}: {
+  network: ScheduleNetwork;
+  account: string;
+  label: string;
+  defaultTimes?: string[];
+  defaultPerDay?: number;
+}) {
+  const [times, setTimes] = useState<string[]>(defaultTimes);
+  const [perDay, setPerDay] = useState<number>(defaultPerDay);
   const [newTime, setNewTime] = useState("");
   const [loading, setLoading] = useState(true);
   const [saving, setSaving] = useState(false);
@@ -43,7 +62,7 @@ function AccountScheduleEditor({ account, label }: { account: InstagramAccount; 
 
   const loadNextSlot = async () => {
     try {
-      const n = await findNextSlot(account);
+      const n = await findNextSlot(network, account);
       setNextSlot(n);
     } catch {
       setNextSlot(null);
@@ -53,10 +72,10 @@ function AccountScheduleEditor({ account, label }: { account: InstagramAccount; 
   useEffect(() => {
     (async () => {
       try {
-        const sched: PublishSchedule | null = await getSchedule(account, null);
+        const sched: PublishSchedule | null = await getSchedule(network, account, null);
         if (sched) {
-          setTimes(sched.times.length ? sched.times : DEFAULT_TIMES);
-          setPerDay(sched.posts_per_day || 5);
+          setTimes(sched.times.length ? sched.times : defaultTimes);
+          setPerDay(sched.posts_per_day || defaultPerDay);
           setSeqStartAt(sched.sequence_start_at);
           const { date, time } = toLocalInputValue(sched.sequence_start_at);
           setSeqDate(date);
@@ -70,7 +89,7 @@ function AccountScheduleEditor({ account, label }: { account: InstagramAccount; 
       }
     })();
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [account]);
+  }, [network, account]);
 
   const add = () => {
     if (!/^\d{1,2}:\d{2}$/.test(newTime)) return toast.error("Formato HH:MM");
@@ -104,7 +123,7 @@ function AccountScheduleEditor({ account, label }: { account: InstagramAccount; 
     setSaving(true);
     try {
       const sequence_start_at = buildSeqIso();
-      await upsertSchedule({ account, times, posts_per_day: perDay, sequence_start_at });
+      await upsertSchedule({ network, account, times, posts_per_day: perDay, sequence_start_at });
       setSeqStartAt(sequence_start_at);
       await loadNextSlot();
       toast.success(`Configurações salvas: ${label}`);
@@ -118,7 +137,7 @@ function AccountScheduleEditor({ account, label }: { account: InstagramAccount; 
   const resetSequence = async () => {
     setSaving(true);
     try {
-      await upsertSchedule({ account, times, posts_per_day: perDay, sequence_start_at: null });
+      await upsertSchedule({ network, account, times, posts_per_day: perDay, sequence_start_at: null });
       setSeqDate("");
       setSeqTime("");
       setSeqStartAt(null);
@@ -132,7 +151,6 @@ function AccountScheduleEditor({ account, label }: { account: InstagramAccount; 
   };
 
   if (loading) return null;
-
 
   return (
     <div className="rounded-lg border border-border/50 p-4 space-y-4">
@@ -210,11 +228,11 @@ function AccountScheduleEditor({ account, label }: { account: InstagramAccount; 
       <div className="rounded-md border border-border/50 bg-background/30 p-3 space-y-3">
         <div className="flex items-center gap-2">
           <Sparkles size={14} className="text-gold" />
-          <p className="text-sm font-medium">Sequência de publicações</p>
+          <p className="text-sm font-medium">Data inicial dos agendamentos</p>
         </div>
         <p className="text-[11px] text-muted-foreground">
-          Defina o ponto de partida da fila. O sistema seguirá esta grade automaticamente
-          e nunca sugerirá horários anteriores ao último agendamento.
+          Ponto de partida da fila desta rede. Após iniciar, o sistema segue os horários acima
+          automaticamente e nunca sugere horários anteriores ao último agendamento.
         </p>
 
         <div className="flex flex-wrap items-end gap-2">
@@ -251,7 +269,7 @@ function AccountScheduleEditor({ account, label }: { account: InstagramAccount; 
             </span>
           </div>
           <div>
-            <span className="text-muted-foreground">Próxima publicação: </span>
+            <span className="text-muted-foreground">Próximo slot desta rede: </span>
             <span className="font-medium text-gold">
               {nextSlot ? formatDateTimeBR(nextSlot) : "—"}
             </span>
@@ -265,21 +283,41 @@ function AccountScheduleEditor({ account, label }: { account: InstagramAccount; 
 export default function PublishSchedulesCard() {
   return (
     <Card className="glass border-border/50">
-      <CardContent className="space-y-4 p-6">
+      <CardContent className="space-y-5 p-6">
         <div>
           <h2 className="text-base font-semibold tracking-tight">Horários de publicação</h2>
           <p className="text-xs text-muted-foreground">
-            Configure a grade de horários por conta. Ao agendar em modo automático, o sistema
-            escolhe o próximo espaço livre desta grade.
+            Cada rede tem sua própria data inicial e grade de horários. O próximo slot é
+            calculado de forma independente por rede.
           </p>
         </div>
-        <div className="space-y-3">
+
+        <section className="space-y-3">
+          <div className="flex items-center gap-2">
+            <Instagram size={14} className="text-pink-400" />
+            <h3 className="text-sm font-semibold">Instagram</h3>
+          </div>
           {ACCOUNTS.map((a) => (
-            <AccountScheduleEditor key={a.value} account={a.value} label={a.label} />
+            <ScheduleEditor key={`ig-${a.value}`} network="instagram" account={a.value} label={a.label} />
           ))}
-        </div>
+        </section>
+
+        <section className="space-y-3">
+          <div className="flex items-center gap-2">
+            <Youtube size={14} className="text-red-400" />
+            <h3 className="text-sm font-semibold">YouTube</h3>
+          </div>
+          <ScheduleEditor
+            network="youtube"
+            account="default"
+            label="Canal principal"
+            defaultTimes={["10:00", "15:00", "20:00"]}
+            defaultPerDay={3}
+          />
+        </section>
+
         <p className="text-[11px] text-muted-foreground">
-          Em breve: horários diferentes por categoria de conteúdo (memes, educativo, vendas, entretenimento).
+          Em breve: TikTok, Facebook e LinkedIn — cada um com sua própria grade.
         </p>
       </CardContent>
     </Card>

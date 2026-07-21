@@ -10,7 +10,7 @@ import { Checkbox } from "@/components/ui/checkbox";
 import { toast } from "sonner";
 import { supabase } from "@/integrations/supabase/client";
 import { InstagramAccount, publishInstagram, friendlyError, platformFromProject, PLATFORM_LABEL } from "@/lib/instagram";
-import { findNextSlots } from "@/lib/schedules";
+import { findNextSlots, ScheduleNetwork, scheduleAccountFor } from "@/lib/schedules";
 import { useActiveProject } from "@/context/ProjectContext";
 import { extractVideoFrames } from "@/lib/videoFrames";
 import { NETWORKS, NetworkId } from "@/lib/publish-networks";
@@ -53,7 +53,9 @@ export default function InstagramBatchScheduleDialog({ open, onOpenChange, video
     return n;
   });
 
-  const [slots, setSlots] = useState<Date[]>([]);
+  const [slotsByNet, setSlotsByNet] = useState<Record<NetworkId, Date[]>>({
+    instagram: [], youtube: [], tiktok: [], facebook: [], linkedin: [],
+  });
   const [slotBusy, setSlotBusy] = useState(false);
   const [busy, setBusy] = useState(false);
   const [done, setDone] = useState(0);
@@ -74,17 +76,30 @@ export default function InstagramBatchScheduleDialog({ open, onOpenChange, video
   };
 
   const compute = async () => {
-    if (!igAccount) { setSlots([]); return; }
     setSlotBusy(true);
     try {
       const startFrom = parseStart();
       if (startMode === "manual" && startFrom && startFrom.getTime() < Date.now() + 60_000) {
         toast.error("Selecione uma data/hora futura para começar.");
-        setSlots([]);
+        setSlotsByNet({ instagram: [], youtube: [], tiktok: [], facebook: [], linkedin: [] });
         return;
       }
-      const s = await findNextSlots(igAccount, videos.length, { startFrom });
-      setSlots(s);
+      const results: Record<NetworkId, Date[]> = {
+        instagram: [], youtube: [], tiktok: [], facebook: [], linkedin: [],
+      };
+      await Promise.all(
+        (["instagram", "youtube", "tiktok"] as const).map(async (net) => {
+          if (!selectedNets.has(net)) return;
+          const acc = scheduleAccountFor(net, igAccount);
+          if (!acc) return;
+          try {
+            results[net] = await findNextSlots(
+              net as ScheduleNetwork, acc, videos.length, { startFrom },
+            );
+          } catch { /* ignore */ }
+        }),
+      );
+      setSlotsByNet(results);
     } catch (e: any) {
       toast.error(e?.message ?? "Falha ao calcular horários");
     } finally {
@@ -97,11 +112,15 @@ export default function InstagramBatchScheduleDialog({ open, onOpenChange, video
     setDone(0); setErrors([]);
     void compute();
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [open, igAccount, videos.length, startMode, startDate, startTime]);
+  }, [open, igAccount, videos.length, startMode, startDate, startTime, selectedNets]);
 
-  const first = slots[0];
-  const last = slots[slots.length - 1];
-  const insufficient = slots.length < videos.length;
+  // Redes selecionadas com slots insuficientes:
+  const activeNets = Array.from(selectedNets).filter(
+    (n) => (NETWORKS.find((x) => x.id === n)?.available)
+      && (n === "youtube" || !!igAccount),
+  ) as NetworkId[];
+  const insufficientNets = activeNets.filter((n) => (slotsByNet[n]?.length ?? 0) < videos.length);
+  const insufficient = insufficientNets.length > 0;
 
   const genCaption = async (v: VideoMeta) => {
     try {
@@ -138,16 +157,15 @@ export default function InstagramBatchScheduleDialog({ open, onOpenChange, video
   };
 
   const scheduleOne = async (
-    v: VideoMeta, slot: Date, caption: string, hashtags: string, nets: NetworkId[],
+    v: VideoMeta, slotFor: Partial<Record<NetworkId, Date>>, caption: string, hashtags: string, nets: NetworkId[],
   ): Promise<string[]> => {
     const errs: string[] = [];
-    const iso = slot.toISOString();
-    const ig_id: string | null = null;
     let igPostId: string | null = null;
     let ttPostId: string | null = null;
     let ytPostId: string | null = null;
 
-    if (nets.includes("instagram")) {
+    if (nets.includes("instagram") && slotFor.instagram) {
+      const iso = slotFor.instagram.toISOString();
       if (!igAccount) errs.push("Instagram: projeto ativo inválido");
       else {
         try {
@@ -156,14 +174,17 @@ export default function InstagramBatchScheduleDialog({ open, onOpenChange, video
             publishNow: false, scheduledAt: iso,
           });
           igPostId = res?.post?.id ?? null;
-        } catch (e: any) {
-          errs.push(`Instagram: ${friendlyError(e)}`);
-        }
+          await supabase.from("publish_schedules_multi" as any).insert({
+            video_id: v.id, networks: ["instagram"], scheduled_at: iso,
+            instagram_post_id: igPostId, youtube_post_id: null, tiktok_post_id: null,
+          });
+        } catch (e: any) { errs.push(`Instagram: ${friendlyError(e)}`); }
       }
     }
 
-    if (nets.includes("tiktok")) {
-      const ttAccount = igAccount; // mesmo mapeamento frame/resenha
+    if (nets.includes("tiktok") && slotFor.tiktok) {
+      const iso = slotFor.tiktok.toISOString();
+      const ttAccount = igAccount;
       if (!ttAccount) errs.push("TikTok: projeto ativo inválido");
       else {
         try {
@@ -174,11 +195,16 @@ export default function InstagramBatchScheduleDialog({ open, onOpenChange, video
           }).select("id").maybeSingle();
           if (error) throw error;
           ttPostId = (data as any)?.id ?? null;
+          await supabase.from("publish_schedules_multi" as any).insert({
+            video_id: v.id, networks: ["tiktok"], scheduled_at: iso,
+            instagram_post_id: null, youtube_post_id: null, tiktok_post_id: ttPostId,
+          });
         } catch (e: any) { errs.push(`TikTok: ${e?.message ?? "erro"}`); }
       }
     }
 
-    if (nets.includes("youtube")) {
+    if (nets.includes("youtube") && slotFor.youtube) {
+      const iso = slotFor.youtube.toISOString();
       try {
         const title = (v.filename ?? "Vídeo").replace(/\.[^.]+$/, "").slice(0, 100);
         const desc = [caption, hashtags].filter(Boolean).join("\n\n").slice(0, 5000);
@@ -191,33 +217,25 @@ export default function InstagramBatchScheduleDialog({ open, onOpenChange, video
         }).select("id").maybeSingle();
         if (error) throw error;
         ytPostId = (data as any)?.id ?? null;
+        await supabase.from("publish_schedules_multi" as any).insert({
+          video_id: v.id, networks: ["youtube"], scheduled_at: iso,
+          instagram_post_id: null, youtube_post_id: ytPostId, tiktok_post_id: null,
+        });
       } catch (e: any) { errs.push(`YouTube: ${e?.message ?? "erro"}`); }
     }
-
-    // Registro consolidado
-    try {
-      await supabase.from("publish_schedules_multi" as any).insert({
-        video_id: v.id,
-        networks: nets,
-        scheduled_at: iso,
-        instagram_post_id: igPostId,
-        youtube_post_id: ytPostId,
-        tiktok_post_id: ttPostId,
-      });
-    } catch { /* não bloqueia */ }
 
     return errs;
   };
 
   const run = async () => {
-    const nets = Array.from(selectedNets).filter((n) => NETWORKS.find((x) => x.id === n)?.available);
+    const nets = activeNets;
     if (nets.length === 0) { toast.error("Selecione ao menos uma rede social."); return; }
     if (nets.includes("instagram") && !igAccount) {
       toast.error("Selecione um projeto ativo (Frame/Resenha) para publicar no Instagram."); return;
     }
-    if (videos.length === 0 || slots.length === 0) return;
+    if (videos.length === 0) return;
     if (insufficient) {
-      toast.error(`Só há ${slots.length} slots livres para ${videos.length} vídeos.`);
+      toast.error(`Slots insuficientes em: ${insufficientNets.join(", ")}.`);
       return;
     }
     if (!confirm(`Agendar ${videos.length} vídeo(s) em ${nets.length} rede(s): ${nets.join(", ")}?`)) return;
@@ -225,9 +243,10 @@ export default function InstagramBatchScheduleDialog({ open, onOpenChange, video
     const allErrs: string[] = [];
     for (let i = 0; i < videos.length; i++) {
       const v = videos[i];
-      const slot = slots[i];
+      const slotFor: Partial<Record<NetworkId, Date>> = {};
+      for (const n of nets) slotFor[n] = slotsByNet[n]?.[i];
       const { caption, hashtags } = await genCaption(v);
-      const errs = await scheduleOne(v, slot, caption, hashtags, nets);
+      const errs = await scheduleOne(v, slotFor, caption, hashtags, nets);
       errs.forEach((e) => allErrs.push(`Vídeo ${i + 1} (${v.filename ?? v.id}): ${e}`));
       setDone(i + 1);
     }
@@ -244,7 +263,6 @@ export default function InstagramBatchScheduleDialog({ open, onOpenChange, video
   };
 
   const progress = videos.length ? Math.round((done / videos.length) * 100) : 0;
-  const preview = useMemo(() => slots.slice(0, 10), [slots]);
 
   return (
     <Dialog open={open} onOpenChange={(o) => !busy && onOpenChange(o)}>
@@ -333,40 +351,43 @@ export default function InstagramBatchScheduleDialog({ open, onOpenChange, video
             )}
           </div>
 
-          {/* Resumo */}
-          <div className="rounded-lg border border-border/50 bg-background/40 p-3 space-y-2 text-xs">
+          {/* Resumo por rede */}
+          <div className="rounded-lg border border-border/50 bg-background/40 p-3 space-y-3 text-xs">
             <div className="flex items-center justify-between">
-              <span className="font-medium">Resumo do lote</span>
+              <span className="font-medium">Resumo do lote ({videos.length} vídeo(s))</span>
               <Button type="button" size="sm" variant="ghost" className="h-7 text-[11px]"
                 onClick={compute} disabled={slotBusy || busy}>
                 {slotBusy ? <Loader2 size={12} className="mr-1 animate-spin" /> : <RefreshCw size={12} className="mr-1" />}
                 Recalcular
               </Button>
             </div>
-            <div className="grid grid-cols-2 gap-2 text-muted-foreground">
-              <div>Vídeos: <span className="text-foreground font-medium">{videos.length}</span></div>
-              <div>Slots: <span className={insufficient ? "text-destructive font-medium" : "text-foreground font-medium"}>{slots.length}</span></div>
-              <div>Primeiro: <span className="text-foreground font-medium">{first ? fmt(first) : "—"}</span></div>
-              <div>Último: <span className="text-foreground font-medium">{last ? fmt(last) : "—"}</span></div>
-            </div>
-            {preview.length > 0 && (
-              <div className="mt-2 max-h-40 overflow-auto rounded border border-border/40 divide-y divide-border/40">
-                {preview.map((s, i) => (
-                  <div key={i} className="flex justify-between px-2 py-1">
-                    <span className="text-muted-foreground">Vídeo {i + 1}</span>
-                    <span className="text-foreground">{fmt(s)}</span>
-                  </div>
-                ))}
-                {slots.length > preview.length && (
-                  <div className="px-2 py-1 text-center text-muted-foreground">
-                    + {slots.length - preview.length} vídeo(s)…
-                  </div>
-                )}
-              </div>
+            {activeNets.length === 0 && (
+              <p className="text-[11px] text-muted-foreground">Selecione ao menos uma rede acima.</p>
             )}
+            {activeNets.map((n) => {
+              const meta = NETWORKS.find((x) => x.id === n)!;
+              const Icon = meta.icon;
+              const list = slotsByNet[n] ?? [];
+              const enough = list.length >= videos.length;
+              return (
+                <div key={n} className="rounded-md border border-border/40 bg-background/30 p-2 space-y-1.5">
+                  <div className="flex items-center gap-2">
+                    <Icon size={12} className={meta.color} />
+                    <span className="font-medium">{meta.label}</span>
+                    <Badge variant="outline" className={`ml-auto text-[10px] ${enough ? "" : "border-destructive/60 text-destructive"}`}>
+                      {list.length}/{videos.length} slots
+                    </Badge>
+                  </div>
+                  <div className="grid grid-cols-2 gap-1 text-muted-foreground">
+                    <div>Primeiro: <span className="text-foreground font-medium">{list[0] ? fmt(list[0]) : "—"}</span></div>
+                    <div>Último: <span className="text-foreground font-medium">{list[videos.length - 1] ? fmt(list[videos.length - 1]) : "—"}</span></div>
+                  </div>
+                </div>
+              );
+            })}
             <div className="flex items-center gap-1.5 text-[11px] text-muted-foreground">
               <Sparkles size={11} className="text-gold" />
-              Legenda e hashtags serão geradas automaticamente para cada vídeo.
+              Legenda e hashtags são geradas automaticamente. Cada rede segue sua própria grade.
             </div>
           </div>
 
@@ -391,7 +412,7 @@ export default function InstagramBatchScheduleDialog({ open, onOpenChange, video
           <Button variant="ghost" disabled={busy} onClick={() => onOpenChange(false)}>Fechar</Button>
           <Button
             onClick={run}
-            disabled={busy || slotBusy || videos.length === 0 || slots.length === 0 || insufficient || selectedNets.size === 0}
+            disabled={busy || slotBusy || videos.length === 0 || activeNets.length === 0 || insufficient}
             className="bg-gold-gradient text-black"
           >
             {busy ? <Loader2 size={14} className="mr-1.5 animate-spin" /> : <CalendarClock size={14} className="mr-1.5" />}

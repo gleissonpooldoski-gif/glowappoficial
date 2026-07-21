@@ -11,7 +11,7 @@ import { toast } from "sonner";
 import { supabase } from "@/integrations/supabase/client";
 import { InstagramAccount, publishInstagram, friendlyError, platformFromProject, PLATFORM_LABEL } from "@/lib/instagram";
 import { uploadToYoutube } from "@/lib/youtube";
-import { findNextSlot } from "@/lib/schedules";
+import { findNextSlot, ScheduleNetwork, scheduleAccountFor } from "@/lib/schedules";
 import { useActiveProject } from "@/context/ProjectContext";
 import { extractVideoFrames } from "@/lib/videoFrames";
 
@@ -73,7 +73,7 @@ export default function InstagramPublishDialog({
   const [genBusy, setGenBusy] = useState(false);
   const [scheduleMode, setScheduleMode] = useState<"auto" | "manual">("auto");
   const [slotBusy, setSlotBusy] = useState(false);
-  const [autoSlot, setAutoSlot] = useState<Date | null>(null);
+  const [autoSlots, setAutoSlots] = useState<{ instagram: Date | null; youtube: Date | null }>({ instagram: null, youtube: null });
   const [nets, setNets] = useState<Set<NetId>>(new Set(["instagram"]));
   const [hasVideoFile, setHasVideoFile] = useState<boolean | null>(null);
   const toggleNet = (n: NetId) => setNets((prev) => {
@@ -123,22 +123,33 @@ export default function InstagramPublishDialog({
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [open, videoId]);
 
-  // Ao abrir em modo agendar OU quando trocar conta em modo auto, calcula próximo slot
+  // Ao abrir em modo agendar (ou quando trocar redes/conta), calcula próximo slot POR REDE
   useEffect(() => {
     if (!open || mode !== "schedule" || scheduleMode !== "auto") return;
     void computeAutoSlot();
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [open, mode, scheduleMode, account]);
+  }, [open, mode, scheduleMode, account, nets]);
 
   const computeAutoSlot = async () => {
-    if (!account) return;
     setSlotBusy(true);
     try {
-      const slot = await findNextSlot(account);
-      setAutoSlot(slot);
-      if (slot) {
-        setDate(`${slot.getFullYear()}-${String(slot.getMonth() + 1).padStart(2, "0")}-${String(slot.getDate()).padStart(2, "0")}`);
-        setTime(slot.toTimeString().slice(0, 5));
+      const results: { instagram: Date | null; youtube: Date | null } = { instagram: null, youtube: null };
+      await Promise.all(
+        (["instagram", "youtube"] as const).map(async (net) => {
+          if (!nets.has(net)) return;
+          const acc = scheduleAccountFor(net, account);
+          if (!acc) return;
+          try {
+            results[net] = await findNextSlot(net as ScheduleNetwork, acc);
+          } catch { /* ignore */ }
+        }),
+      );
+      setAutoSlots(results);
+      // Preenche date/time visíveis com o primeiro slot disponível (para exibição/manual)
+      const first = results.instagram ?? results.youtube;
+      if (first) {
+        setDate(`${first.getFullYear()}-${String(first.getMonth() + 1).padStart(2, "0")}-${String(first.getDate()).padStart(2, "0")}`);
+        setTime(first.toTimeString().slice(0, 5));
       }
     } catch (e: any) {
       console.error(e);
@@ -222,11 +233,20 @@ export default function InstagramPublishDialog({
     if (!confirm(confirmMsg)) return;
     setBusy(true);
     try {
-      let iso: string | null = null;
+      // Modo schedule: cada rede pode ter seu próprio horário (modo auto) ou o mesmo (modo manual).
+      const manualIso = mode === "schedule" ? localDateTimeToIso(date, time) : null;
+      const igIso = mode === "schedule"
+        ? (scheduleMode === "auto" ? (autoSlots.instagram?.toISOString() ?? null) : manualIso)
+        : null;
+      const ytIso = mode === "schedule"
+        ? (scheduleMode === "auto" ? (autoSlots.youtube?.toISOString() ?? null) : manualIso)
+        : null;
       if (mode === "schedule") {
-        iso = localDateTimeToIso(date, time);
-        if (!iso || new Date(iso).getTime() < Date.now() + 60_000) {
-          throw new Error("Selecione uma data/hora futura (mín. 1 minuto).");
+        if (wantIG && (!igIso || new Date(igIso).getTime() < Date.now() + 60_000)) {
+          throw new Error("Instagram: horário indisponível. Configure a grade em Configurações.");
+        }
+        if (wantYT && (!ytIso || new Date(ytIso).getTime() < Date.now() + 60_000)) {
+          throw new Error("YouTube: horário indisponível. Configure a grade em Configurações.");
         }
       }
       let igPostId: string | null = null;
@@ -236,7 +256,7 @@ export default function InstagramPublishDialog({
       if (wantIG && account) {
         try {
           if (mode === "schedule") {
-            const res: any = await publishInstagram({ account, videoId, caption, hashtags, publishNow: false, scheduledAt: iso! });
+            const res: any = await publishInstagram({ account, videoId, caption, hashtags, publishNow: false, scheduledAt: igIso! });
             igPostId = res?.post?.id ?? null;
           } else {
             toast.message("Enviando para o Instagram…");
@@ -282,7 +302,7 @@ export default function InstagramPublishDialog({
               video_id: videoId, account: "default",
               title, description: desc, tags,
               category_id: "22", privacy_status: "public",
-              status: "AGENDADO", scheduled_at: iso,
+              status: "AGENDADO", scheduled_at: ytIso,
             }).select("id").maybeSingle();
             if (error) throw error;
             ytPostId = (data as any)?.id ?? null;
@@ -297,18 +317,20 @@ export default function InstagramPublishDialog({
         } catch (e: any) { errs.push(`YouTube: ${e?.message ?? "erro"}`); }
       }
 
-      // Registro consolidado (para o calendário exibir os ícones)
-      if (mode === "schedule" && iso) {
-        try {
-          await supabase.from("publish_schedules_multi" as any).insert({
-            video_id: videoId,
-            networks: Array.from(nets),
-            scheduled_at: iso,
-            instagram_post_id: igPostId,
-            youtube_post_id: ytPostId,
-            tiktok_post_id: null,
-          });
-        } catch { /* não bloqueia */ }
+      // Registro consolidado por rede (para o calendário exibir os ícones).
+      if (mode === "schedule") {
+        const rows: any[] = [];
+        if (wantIG && igIso) rows.push({
+          video_id: videoId, networks: ["instagram"], scheduled_at: igIso,
+          instagram_post_id: igPostId, youtube_post_id: null, tiktok_post_id: null,
+        });
+        if (wantYT && ytIso) rows.push({
+          video_id: videoId, networks: ["youtube"], scheduled_at: ytIso,
+          instagram_post_id: null, youtube_post_id: ytPostId, tiktok_post_id: null,
+        });
+        if (rows.length) {
+          try { await supabase.from("publish_schedules_multi" as any).insert(rows); } catch { /* não bloqueia */ }
+        }
       }
 
       if (errs.length === 0) {
@@ -512,17 +534,38 @@ export default function InstagramPublishDialog({
               </div>
 
               {scheduleMode === "auto" ? (
-                <div className="text-xs text-muted-foreground">
-                  {slotBusy && "Buscando próximo espaço livre…"}
-                  {!slotBusy && autoSlot && (
-                    <>Próximo slot: <span className="text-foreground font-medium">
-                      {autoSlot.toLocaleString("pt-BR", { dateStyle: "short", timeStyle: "short" })}
-                    </span></>
-                  )}
-                  {!slotBusy && !autoSlot && (
-                    <span className="text-destructive">
-                      Nenhum horário configurado. Vá em Configurações → Horários de publicação.
-                    </span>
+                <div className="space-y-1 text-xs text-muted-foreground">
+                  {slotBusy && <div>Buscando próximos slots por rede…</div>}
+                  {!slotBusy && (
+                    <>
+                      {nets.has("instagram") && (
+                        <div className="flex items-center gap-2">
+                          <Instagram size={11} className="text-pink-400" />
+                          <span>Instagram:</span>
+                          <span className="text-foreground font-medium">
+                            {autoSlots.instagram
+                              ? autoSlots.instagram.toLocaleString("pt-BR", { dateStyle: "short", timeStyle: "short" })
+                              : "grade não configurada"}
+                          </span>
+                        </div>
+                      )}
+                      {nets.has("youtube") && (
+                        <div className="flex items-center gap-2">
+                          <Youtube size={11} className="text-red-400" />
+                          <span>YouTube:</span>
+                          <span className="text-foreground font-medium">
+                            {autoSlots.youtube
+                              ? autoSlots.youtube.toLocaleString("pt-BR", { dateStyle: "short", timeStyle: "short" })
+                              : "grade não configurada"}
+                          </span>
+                        </div>
+                      )}
+                      {!autoSlots.instagram && !autoSlots.youtube && (
+                        <div className="text-destructive">
+                          Nenhum horário configurado. Vá em Configurações → Horários de publicação.
+                        </div>
+                      )}
+                    </>
                   )}
                 </div>
               ) : (
