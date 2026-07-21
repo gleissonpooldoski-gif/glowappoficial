@@ -1,12 +1,16 @@
-// Publica um vídeo no TikTok usando a Content Posting API (modo PULL_FROM_URL).
+// Envia um vídeo como DRAFT para a caixa de entrada do TikTok (Content Posting API - Inbox).
+// Usa apenas o escopo `video.upload`. A publicação final é feita manualmente pelo criador no app TikTok.
+// A publicação automática (`video.publish`) está preparada mas desativada até aprovação do escopo.
 // Body: { videoId, account, caption, scheduledAt?, privacy_level? }
-// - Se scheduledAt for futuro, cria registro em tiktok_posts com status AGENDADO;
-//   o scheduler (a implementar via pg_cron) reinvoca sem scheduledAt para publicar.
-// - Sem scheduledAt (ou passado), chama /post/publish/video/init/ imediatamente.
 import { createClient } from "https://esm.sh/@supabase/supabase-js@2.45.4";
 import { corsHeaders } from "npm:@supabase/supabase-js@2/cors";
 
+// Endpoint de INBOX (draft) — requer somente `video.upload`.
+const INBOX_INIT_ENDPOINT = "https://open.tiktokapis.com/v2/post/publish/inbox/video/init/";
+// Endpoint de publicação direta — requer `video.publish` (mantido para futuro).
 const PUBLISH_INIT_ENDPOINT = "https://open.tiktokapis.com/v2/post/publish/video/init/";
+// Flag para religar publicação direta assim que o escopo for aprovado.
+const ENABLE_DIRECT_PUBLISH = false;
 const TOKEN_ENDPOINT = "https://open.tiktokapis.com/v2/oauth/token/";
 type Account = "resenha" | "frame";
 
@@ -68,7 +72,7 @@ async function resolveVideoUrl(supabase: any, videoId: string): Promise<string> 
 function friendlyTikTokError(msg: string): string {
   const m = msg.toLowerCase();
   if (m.includes("scope_not_authorized") || m.includes("scope not authorized"))
-    return "Escopo não autorizado (video.publish/video.upload). Reconecte o TikTok concedendo as permissões.";
+    return "Escopo não autorizado. Reconecte o TikTok concedendo a permissão `video.upload`.";
   if (m.includes("access_token_invalid") || m.includes("token")) return "Token do TikTok inválido ou expirado — reconecte a conta.";
   if (m.includes("url_ownership_unverified")) return "URL do vídeo não verificada pelo TikTok. O domínio precisa estar na lista de URL Properties do app.";
   if (m.includes("spam_risk") || m.includes("rate_limit")) return "Limite de publicações atingido no TikTok. Tente novamente mais tarde.";
@@ -128,18 +132,25 @@ Deno.serve(async (req) => {
     // URL do vídeo (PULL_FROM_URL)
     const videoUrl = await resolveVideoUrl(supabase, videoId);
 
-    // Chamada de publicação
-    const payload = {
-      post_info: {
-        title: cap,
-        privacy_level: privacy_level ?? "SELF_ONLY", // apps não auditados só publicam privado
-        disable_duet: false, disable_comment: false, disable_stitch: false,
-        video_cover_timestamp_ms: 1000,
-      },
-      source_info: { source: "PULL_FROM_URL", video_url: videoUrl },
-    };
+    // Envio como DRAFT (Inbox). O endpoint de inbox aceita apenas source_info.
+    // Quando `video.publish` for aprovado, defina ENABLE_DIRECT_PUBLISH=true para
+    // habilitar publicação direta com post_info/privacy_level.
+    const endpoint = ENABLE_DIRECT_PUBLISH ? PUBLISH_INIT_ENDPOINT : INBOX_INIT_ENDPOINT;
+    const payload: Record<string, unknown> = ENABLE_DIRECT_PUBLISH
+      ? {
+          post_info: {
+            title: cap,
+            privacy_level: privacy_level ?? "SELF_ONLY",
+            disable_duet: false, disable_comment: false, disable_stitch: false,
+            video_cover_timestamp_ms: 1000,
+          },
+          source_info: { source: "PULL_FROM_URL", video_url: videoUrl },
+        }
+      : {
+          source_info: { source: "PULL_FROM_URL", video_url: videoUrl },
+        };
 
-    const res = await fetch(PUBLISH_INIT_ENDPOINT, {
+    const res = await fetch(endpoint, {
       method: "POST",
       headers: {
         Authorization: `Bearer ${fresh.access_token}`,
@@ -167,16 +178,27 @@ Deno.serve(async (req) => {
     }
 
     const publishId = json?.data?.publish_id ?? null;
+    const finalStatus = ENABLE_DIRECT_PUBLISH ? "PUBLICADO" : "RASCUNHO";
     await supabase.from("tiktok_posts").update({
-      status: "PUBLICADO",
+      status: finalStatus,
       publish_id: publishId,
       video_url: videoUrl,
       published_at: new Date().toISOString(),
-      logs: [{ at: new Date().toISOString(), step: "publish/init", ok: true, response: json }],
+      logs: [{ at: new Date().toISOString(), step: ENABLE_DIRECT_PUBLISH ? "publish/init" : "inbox/init", ok: true, response: json }],
     }).eq("id", postRow.id);
 
-    return new Response(JSON.stringify({ success: true, publish_id: publishId, post: { ...postRow, publish_id: publishId } }),
-      { status: 200, headers: { ...corsHeaders, "Content-Type": "application/json" } });
+    return new Response(
+      JSON.stringify({
+        success: true,
+        draft: !ENABLE_DIRECT_PUBLISH,
+        publish_id: publishId,
+        message: ENABLE_DIRECT_PUBLISH
+          ? "Vídeo publicado no TikTok."
+          : "Vídeo enviado como rascunho para a caixa de entrada do TikTok. Finalize a publicação pelo app.",
+        post: { ...postRow, publish_id: publishId, status: finalStatus },
+      }),
+      { status: 200, headers: { ...corsHeaders, "Content-Type": "application/json" } },
+    );
   } catch (e: any) {
     console.error("[tiktok-publish]", e?.message);
     return new Response(JSON.stringify({ error: e?.message ?? "Erro ao publicar no TikTok." }),

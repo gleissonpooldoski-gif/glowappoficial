@@ -4,7 +4,8 @@ import { createClient } from "https://esm.sh/@supabase/supabase-js@2.45.4";
 import { corsHeaders } from "npm:@supabase/supabase-js@2/cors";
 
 const AUTH_ENDPOINT = "https://www.tiktok.com/v2/auth/authorize/";
-const DEFAULT_SCOPES = ["user.info.basic", "video.publish", "video.upload"];
+// Apenas escopos aprovados. `video.publish` será adicionado quando aprovado pelo TikTok.
+const DEFAULT_SCOPES = ["user.info.basic", "video.upload"];
 
 function base64url(buf: ArrayBuffer): string {
   const bytes = new Uint8Array(buf);
