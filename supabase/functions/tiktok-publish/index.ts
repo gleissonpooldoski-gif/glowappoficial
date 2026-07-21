@@ -72,7 +72,7 @@ async function resolveVideoUrl(supabase: any, videoId: string): Promise<string> 
 function friendlyTikTokError(msg: string): string {
   const m = msg.toLowerCase();
   if (m.includes("scope_not_authorized") || m.includes("scope not authorized"))
-    return "Escopo não autorizado (video.publish/video.upload). Reconecte o TikTok concedendo as permissões.";
+    return "Escopo não autorizado. Reconecte o TikTok concedendo a permissão `video.upload`.";
   if (m.includes("access_token_invalid") || m.includes("token")) return "Token do TikTok inválido ou expirado — reconecte a conta.";
   if (m.includes("url_ownership_unverified")) return "URL do vídeo não verificada pelo TikTok. O domínio precisa estar na lista de URL Properties do app.";
   if (m.includes("spam_risk") || m.includes("rate_limit")) return "Limite de publicações atingido no TikTok. Tente novamente mais tarde.";
