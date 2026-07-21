@@ -3,8 +3,25 @@ import { createClient } from "https://esm.sh/@supabase/supabase-js@2.45.4";
 import { corsHeaders } from "npm:@supabase/supabase-js@2/cors";
 
 const GRAPH_VERSION = "v25.0";
-// Instagram API with Instagram Login: usa graph.instagram.com com o IG User ID direto.
-const IG_BASE = `https://graph.instagram.com/${GRAPH_VERSION}`;
+const FB_BASE = `https://graph.facebook.com/${GRAPH_VERSION}`;
+const IG_LOGIN_BASE = `https://graph.instagram.com/${GRAPH_VERSION}`;
+
+// Sanitiza o Access Token: remove aspas, espaços, quebras de linha e caracteres invisíveis.
+function sanitizeToken(raw: string | undefined | null): string {
+  if (!raw) return "";
+  let t = String(raw).trim();
+  t = t.replace(/^['"]+|['"]+$/g, "");
+  t = t.replace(/[\s\r\n\t]+/g, "");
+  t = t.replace(/[\u0000-\u001F\u007F\uFEFF]/g, "");
+  return t.trim();
+}
+
+// EAA... => Facebook Graph. IGAA/IGQ... => Instagram API with Instagram Login.
+function baseForToken(token: string): string {
+  const t = sanitizeToken(token);
+  if (t.startsWith("IGAA") || t.startsWith("IGQ")) return IG_LOGIN_BASE;
+  return FB_BASE;
+}
 
 type ConnectionStatus = "CONNECTED" | "PENDING" | "ERROR";
 
