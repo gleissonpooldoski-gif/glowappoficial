@@ -477,7 +477,7 @@ export default function Publications() {
 
   const load = async () => {
     try {
-      const [nextPosts] = await Promise.all([listInstagramPosts(), loadYoutubeLinks()]);
+      const [nextPosts] = await Promise.all([listInstagramPosts(), loadYoutubeLinks(), loadTiktokLinks()]);
       setPosts(nextPosts);
       const publishing = nextPosts.filter((p) => p.status === "PUBLICANDO" && p.container_id);
       if (publishing.length > 0) {
