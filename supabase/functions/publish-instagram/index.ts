@@ -7,7 +7,7 @@ const FB_BASE = `https://graph.facebook.com/${GRAPH_VERSION}`;
 const BUCKET = "videos-processed";
 const POLL_INTERVAL_MS = 5000;
 const MAX_CONTAINER_STATUS_ATTEMPTS = 12;
-const PUBLISH_STABILIZATION_MS = 7000;
+const PUBLISH_STABILIZATION_MS = 8000;
 const MAX_PUBLICATION_CYCLES = 3;
 
 // Sanitiza o Access Token: trim + remove aspas, whitespace interno, BOM,
@@ -419,11 +419,41 @@ Deno.serve(async (req) => {
 
         if (!(await ensureNotAlreadyPublished())) return;
 
+        // Revalidação obrigatória: status_code precisa estar FINISHED antes de publicar.
+        const preCheckUrl = `${FB_BASE}/${containerId}?fields=id,status_code&access_token=${encodeURIComponent(token)}`;
+        const preCheck = await metaGet(preCheckUrl, token);
+        const preStatus = preCheck.data?.status_code ?? "UNKNOWN";
+        await appendLog(postId, { event: "publish_precheck_status", cycle, creation_id: containerId, status_code: preStatus });
+        if (preStatus !== "FINISHED") {
+          const err: any = new Error(`Container não está FINISHED antes do publish (status=${preStatus}). Publicação abortada neste ciclo.`);
+          err.metaData = { error: { message: `status_code=${preStatus}`, type: "ContainerNotFinished", code: preStatus }, container_status: preCheck.data };
+          lastPublishErr = err;
+          await appendLog(postId, { event: "media_publish_skipped_not_finished", cycle, creation_id: containerId, status_code: preStatus });
+          if (cycle === MAX_PUBLICATION_CYCLES) throw err;
+          if (!(await ensureNotAlreadyPublished("new_container_skipped_already_published"))) return;
+          containerId = await createReplacementContainer(cycle + 1);
+          continue;
+        }
+
+        const captionLength = fullCaption?.length ?? 0;
+        const hashtagCount = (fullCaption?.match(/#\w+/g) ?? []).length;
         const publishPayload = { creation_id: containerId };
         const publishRequestedAt = new Date().toISOString();
         try {
-          await appendLog(postId, { event: "media_publish_attempt", cycle, attempt: 1, ig_id: igId, creation_id: containerId, publish_requested_at: publishRequestedAt, payload: publishPayload });
-          // media_publish: enviar SOMENTE creation_id no body; access_token vai na query string.
+          await appendLog(postId, {
+            event: "media_publish_attempt",
+            cycle,
+            attempt: 1,
+            endpoint: publishUrl,
+            ig_user_id: igId,
+            creation_id: containerId,
+            container_status: preStatus,
+            caption_length: captionLength,
+            hashtag_count: hashtagCount,
+            publish_requested_at: publishRequestedAt,
+            payload: publishPayload,
+          });
+          // media_publish: enviar SOMENTE creation_id no body; access_token vai na query string. Uma única tentativa por ciclo.
           const publishRes = await metaPost(
             `${publishUrl}?access_token=${encodeURIComponent(token)}`,
             { creation_id: containerId },
@@ -446,11 +476,24 @@ Deno.serve(async (req) => {
           return;
         } catch (err: any) {
           lastPublishErr = err;
+          // Consulta best-effort ao status atual do container para diagnóstico.
+          let postErrorStatus: string | null = null;
+          try {
+            const s = await metaGet(`${FB_BASE}/${containerId}?fields=id,status_code&access_token=${encodeURIComponent(token)}`, token);
+            postErrorStatus = s.data?.status_code ?? null;
+          } catch (_) { /* ignore */ }
+
           await appendLog(postId, {
             event: "media_publish_error",
             cycle,
             attempt: 1,
+            endpoint: publishUrl,
+            ig_user_id: igId,
             creation_id: containerId,
+            container_status_before: preStatus,
+            container_status_after_error: postErrorStatus,
+            caption_length: captionLength,
+            hashtag_count: hashtagCount,
             publish_requested_at: publishRequestedAt,
             failed_at: new Date().toISOString(),
             next_action: cycle < MAX_PUBLICATION_CYCLES ? "create_new_container" : "fail_post",
