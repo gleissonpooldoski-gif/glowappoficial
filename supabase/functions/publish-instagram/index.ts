@@ -250,7 +250,7 @@ Deno.serve(async (req) => {
       const start = Date.now();
       let lastStatus: any = null;
       while (Date.now() - start < MAX_POLL_MS) {
-      const statusUrl = `${FB_BASE}/${containerId}?fields=status_code,status&access_token=${encodeURIComponent(token)}`;
+        const statusUrl = `${FB_BASE}/${containerId}?fields=status_code,status&access_token=${encodeURIComponent(token)}`;
         const statusRes = await metaGet(statusUrl, token);
         lastStatus = statusRes.data;
 
@@ -459,7 +459,7 @@ Deno.serve(async (req) => {
   } catch (e: any) {
     const rawMessage = e?.message ?? "Erro desconhecido.";
     const blocked = isApiBlockedError(e?.metaData, rawMessage);
-    const message = blocked ? FRIENDLY_BLOCKED_MESSAGE : userFacingMetaError(body?.account, rawMessage, e?.metaData);
+    const message = blocked ? FRIENDLY_BLOCKED_MESSAGE : userFacingMetaError(activeAccount ?? body?.account, rawMessage, e?.metaData);
     console.error("[publish-instagram]", rawMessage);
     if (blocked && activeAccount) {
       await markCredentialsBlocked(supabase, activeAccount as Account, rawMessage);
