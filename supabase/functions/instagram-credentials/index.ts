@@ -3,7 +3,7 @@ import { createClient } from "https://esm.sh/@supabase/supabase-js@2.45.4";
 import { corsHeaders } from "npm:@supabase/supabase-js@2/cors";
 
 const GRAPH_VERSION = "v25.0";
-type Account = "resenha" | "frame";
+type ConnectionStatus = "CONNECTED" | "PENDING" | "ERROR";
 
 type ValidationResult = {
   ok: boolean;
@@ -12,6 +12,10 @@ type ValidationResult = {
   username?: string | null;
   account_type?: string | null;
 };
+
+function connectionStatusFromValidation(validation: ValidationResult): ConnectionStatus {
+  return validation.ok ? "CONNECTED" : "ERROR";
+}
 
 function isApiBlocked(err: any): boolean {
   if (!err) return false;
@@ -144,7 +148,7 @@ Deno.serve(async (req) => {
     if (action === "get") {
       const { data, error } = await supabase
         .from("instagram_credentials")
-        .select("account, ig_business_id, display_name, project_id, last_validated_at, last_validation_status, last_validation_detail, updated_at")
+        .select("account, ig_business_id, display_name, project_id, connection_status, last_validated_at, last_validation_status, last_validation_detail, updated_at")
         .order("created_at", { ascending: true });
       if (error) throw error;
       const map: Record<string, any> = {};
@@ -154,6 +158,7 @@ Deno.serve(async (req) => {
           ig_business_id: row.ig_business_id,
           display_name: row.display_name,
           project_id: row.project_id,
+          connection_status: row.connection_status ?? "CONNECTED",
           last_validated_at: row.last_validated_at,
           last_validation_status: row.last_validation_status,
           last_validation_detail: row.last_validation_detail,
@@ -190,7 +195,8 @@ Deno.serve(async (req) => {
           continue;
         }
 
-        // Se veio token, valida e faz upsert completo. Senão, atualiza apenas metadata (display_name/project_id).
+        // Se veio token, valida e faz upsert completo da CONTA INFORMADA apenas.
+        // Falha de uma conta nunca altera as demais.
         const token = (item.access_token ?? "").trim();
         const igId = (item.ig_business_id ?? "").trim();
 
@@ -204,6 +210,7 @@ Deno.serve(async (req) => {
               last_validated_at: new Date().toISOString(),
               last_validation_status: validation.status,
               last_validation_detail: validation.message,
+              connection_status: connectionStatusFromValidation(validation),
             };
             if (item.display_name !== undefined) payload.display_name = item.display_name;
             if (item.project_id !== undefined) payload.project_id = item.project_id;
@@ -223,7 +230,7 @@ Deno.serve(async (req) => {
           if (Object.keys(patch).length > 0) {
             await supabase.from("instagram_credentials").update(patch).eq("account", account);
           }
-          results[account] = { ok: true, status: "VALID", message: "Metadados atualizados." };
+          results[account] = { ok: true, status: "VALID", message: "Metadados atualizados. Status de conexão preservado." };
         }
       }
 
@@ -248,38 +255,76 @@ Deno.serve(async (req) => {
         }), { status: 400, headers: { ...corsHeaders, "Content-Type": "application/json" } });
       }
 
-      // Valida ANTES de inserir — não cria a conta se a Meta rejeitar
-      const validation = await validateAccount(access_token, ig_business_id);
-      if (!validation.ok) {
-        return new Response(JSON.stringify({
-          error: validation.message,
-          status: validation.status,
-          result: validation,
-        }), { status: 400, headers: { ...corsHeaders, "Content-Type": "application/json" } });
-      }
-
-      // Gera slug único (só depois de validar)
+      // Gera slug único. Se já existir uma tentativa pendente/erro com o mesmo nome,
+      // reaproveita essa conta para a nova tentativa, sem tocar em contas CONNECTED.
       let base = slugify(display_name);
       let account = base;
       let n = 1;
       while (true) {
         const { data: exists } = await supabase.from("instagram_credentials")
-          .select("account").eq("account", account).maybeSingle();
+          .select("account, connection_status").eq("account", account).maybeSingle();
         if (!exists) break;
+        if (exists.connection_status && exists.connection_status !== "CONNECTED") break;
         n += 1;
         account = `${base}_${n}`;
       }
+
+      // Salva a NOVA conta como PENDING antes da validação para isolar o erro nela.
+      // Não atualiza nem revalida contas já conectadas.
+      const { error: pendingErr } = await supabase.from("instagram_credentials").upsert({
+        account,
+        display_name,
+        access_token,
+        ig_business_id,
+        project_id,
+        connection_status: "PENDING",
+        last_validated_at: new Date().toISOString(),
+        last_validation_status: "EMPTY",
+        last_validation_detail: "Validação em andamento.",
+      }, { onConflict: "account" });
+      if (pendingErr) {
+        return new Response(JSON.stringify({ error: `Falha ao preparar conta: ${pendingErr.message}` }),
+          { status: 400, headers: { ...corsHeaders, "Content-Type": "application/json" } });
+      }
+
+      const validation = await validateAccount(access_token, ig_business_id);
+      const connection_status = connectionStatusFromValidation(validation);
       const { error: insErr } = await supabase.from("instagram_credentials").insert({
-        account, display_name, access_token, ig_business_id, project_id,
+        account, display_name, access_token, ig_business_id, project_id, connection_status,
         last_validated_at: new Date().toISOString(),
         last_validation_status: validation.status,
         last_validation_detail: validation.message,
-      });
-      if (insErr) {
+      }).select("account").maybeSingle();
+      if (insErr?.code === "23505") {
+        const { error: updErr } = await supabase.from("instagram_credentials").update({
+          display_name,
+          access_token,
+          ig_business_id,
+          project_id,
+          connection_status,
+          last_validated_at: new Date().toISOString(),
+          last_validation_status: validation.status,
+          last_validation_detail: validation.message,
+        }).eq("account", account);
+        if (updErr) {
+          return new Response(JSON.stringify({ error: `Falha ao atualizar tentativa: ${updErr.message}` }),
+            { status: 400, headers: { ...corsHeaders, "Content-Type": "application/json" } });
+        }
+      } else if (insErr) {
         return new Response(JSON.stringify({ error: `Falha ao salvar: ${insErr.message}` }),
           { status: 400, headers: { ...corsHeaders, "Content-Type": "application/json" } });
       }
-      return new Response(JSON.stringify({ success: true, account, result: validation }),
+
+      if (!validation.ok) {
+        return new Response(JSON.stringify({
+          error: validation.message,
+          status: validation.status,
+          connection_status,
+          account,
+          result: validation,
+        }), { status: 400, headers: { ...corsHeaders, "Content-Type": "application/json" } });
+      }
+      return new Response(JSON.stringify({ success: true, account, connection_status, result: validation }),
         { status: 200, headers: { ...corsHeaders, "Content-Type": "application/json" } });
     }
 
@@ -322,6 +367,7 @@ Deno.serve(async (req) => {
           last_validated_at: new Date().toISOString(),
           last_validation_status: validation.status,
           last_validation_detail: validation.message,
+          connection_status: connectionStatusFromValidation(validation),
         }).eq("account", account);
       }
       return new Response(JSON.stringify({ success: true, account, result: validation }),
