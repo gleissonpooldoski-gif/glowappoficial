@@ -47,7 +47,14 @@ async function validateAccount(token: string, igId: string): Promise<ValidationR
     }
   } catch (_) { /* segue validação */ }
 
-  // 2) Permissões
+  // 2) Permissões — checa todas as necessárias para publicar
+  const REQUIRED_PERMS = [
+    "instagram_basic",
+    "instagram_content_publish",
+    "pages_show_list",
+    "pages_read_engagement",
+  ];
+  let grantedPerms: string[] = [];
   try {
     const permRes = await fetch(`https://graph.facebook.com/${GRAPH_VERSION}/me/permissions?access_token=${encodeURIComponent(token)}`);
     const perm = await readMeta(permRes);
@@ -58,15 +65,20 @@ async function validateAccount(token: string, igId: string): Promise<ValidationR
       return { ok: false, status: "TOKEN_INVALID", message: perm.data.error.message ?? "Token inválido." };
     }
     const list = Array.isArray(perm.data?.data) ? perm.data.data : [];
-    const publish = list.find((p: any) => p?.permission === "instagram_content_publish");
-    if (!publish || publish.status !== "granted") {
-      return { ok: false, status: "PERMISSION_MISSING", message: "Permissão instagram_content_publish ausente ou não concedida." };
+    grantedPerms = list.filter((p: any) => p?.status === "granted").map((p: any) => p.permission);
+    const missing = REQUIRED_PERMS.filter((p) => !grantedPerms.includes(p));
+    if (missing.length > 0) {
+      return {
+        ok: false,
+        status: "PERMISSION_MISSING",
+        message: `Permissões ausentes no token: ${missing.join(", ")}. Reautentique o app da Meta concedendo todas as permissões: ${REQUIRED_PERMS.join(", ")}.`,
+      };
     }
   } catch (e: any) {
     return { ok: false, status: "UNKNOWN_ERROR", message: e?.message ?? "Falha ao validar permissões." };
   }
 
-  // 3) Business account — inclui account_type para detectar contas não-profissionais
+  // 3) Business account — busca o IG informado
   try {
     const igRes = await fetch(`https://graph.facebook.com/${GRAPH_VERSION}/${encodeURIComponent(igId)}?fields=id,username,account_type,ig_id&access_token=${encodeURIComponent(token)}`);
     const ig = await readMeta(igRes);
@@ -75,14 +87,32 @@ async function validateAccount(token: string, igId: string): Promise<ValidationR
       const meta = ig.data.error.message ?? "";
       if (isApiBlocked(ig.data.error)) return { ok: false, status: "API_BLOCKED", message: `${BLOCKED_MSG} (${meta})` };
       if (code === 190) return { ok: false, status: "TOKEN_EXPIRED", message: meta || "Token expirado." };
+
+      // Se falhou, lista as contas IG que ESTE token realmente pode acessar (via /me/accounts)
+      let accessibleHint = "";
+      try {
+        const pagesRes = await fetch(`https://graph.facebook.com/${GRAPH_VERSION}/me/accounts?fields=name,instagram_business_account{id,username}&limit=50&access_token=${encodeURIComponent(token)}`);
+        const pages = await readMeta(pagesRes);
+        const linked: string[] = [];
+        for (const p of pages.data?.data ?? []) {
+          const iba = p?.instagram_business_account;
+          if (iba?.id) linked.push(`• Página "${p.name}" → IG ${iba.id}${iba.username ? ` (@${iba.username})` : ""}`);
+        }
+        if (linked.length > 0) {
+          accessibleHint = `\n\nContas Instagram que este token PODE acessar:\n${linked.join("\n")}\n\nUse um dos IDs acima em vez de ${igId}.`;
+        } else {
+          accessibleHint = `\n\nEste token não tem NENHUMA conta Instagram Business vinculada a uma Página do Facebook acessível. Verifique se: (a) o usuário do token é admin da Página, (b) a Página está vinculada a uma conta Instagram Profissional, (c) o app da Meta pediu 'pages_show_list' + 'instagram_basic' no login.`;
+        }
+      } catch { /* ignora */ }
+
       if (code === 100 || code === 803) {
         return {
           ok: false,
           status: "IG_ID_INVALID",
-          message: `${meta} — Confirme que o ID informado é o Instagram Business/Professional Account ID (geralmente inicia com 17841…), e não o ID da Página do Facebook, User ID ou Business Manager ID. O token também precisa ter acesso admin a essa conta.`,
+          message: `${meta}\n\nDiagnóstico: o ID ${igId} não existe OU este token não tem acesso a ele. Confirme que é o Instagram Business/Professional Account ID (não Page ID, User ID ou Business Manager ID) e que o token pertence a um admin da Página vinculada.${accessibleHint}`,
         };
       }
-      return { ok: false, status: "IG_ID_INVALID", message: meta || "Falha ao ler o Business ID." };
+      return { ok: false, status: "IG_ID_INVALID", message: `${meta || "Falha ao ler o Business ID."}${accessibleHint}` };
     }
     if (!ig.data?.id) return { ok: false, status: "IG_ID_INVALID", message: "Instagram Business ID não retornou dados." };
     const accountType = ig.data.account_type ?? null;
@@ -93,7 +123,7 @@ async function validateAccount(token: string, igId: string): Promise<ValidationR
         message: `Conta encontrada, mas o tipo retornado é "${accountType}". É necessário ser Instagram Profissional (Business ou Creator) para publicar via API.`,
       };
     }
-    return { ok: true, status: "VALID", message: `Conta @${ig.data.username ?? "?"} validada (${accountType ?? "OK"}).`, username: ig.data.username ?? null, account_type: accountType };
+    return { ok: true, status: "VALID", message: `Conta @${ig.data.username ?? "?"} validada (${accountType ?? "OK"}). Permissões OK: ${grantedPerms.filter((p) => REQUIRED_PERMS.includes(p)).join(", ")}.`, username: ig.data.username ?? null, account_type: accountType };
   } catch (e: any) {
     return { ok: false, status: "UNKNOWN_ERROR", message: e?.message ?? "Falha ao consultar o Business ID." };
   }
