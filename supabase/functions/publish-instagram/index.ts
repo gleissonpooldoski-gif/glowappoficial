@@ -856,6 +856,18 @@ Deno.serve(async (req) => {
         throw new Error(`Meta não retornou creation_id. Resposta: ${safeJson(containerRes.data)}`);
       } catch (err: any) {
         lastContainerErr = err;
+        // code=4 na criação: cooldown 5min e aborta.
+        if (isAppRateLimitError(err?.metaData, err?.message)) {
+          const until = await setAccountCooldown(igId, post.id, CODE_4_COOLDOWN_MS, 4);
+          await appendLog(post.id, {
+            event: "rate_limit_code_4",
+            stage: "container_create",
+            attempt,
+            cooldown_until: until,
+            meta_error: metaErrorDetails(err?.metaData, err?.message),
+          });
+          throw err;
+        }
         const retryable = isCodeOneMetaError(err?.metaData, err?.message);
         await appendLog(post.id, {
           event: "media_container_create_error",
@@ -872,15 +884,12 @@ Deno.serve(async (req) => {
     }
     if (!containerId) throw lastContainerErr ?? new Error("Falha ao criar container de mídia no Instagram.");
 
-
-
+    activeCreationId = containerId;
     await supabase.from("instagram_posts").update({ container_id: containerId }).eq("id", post.id);
     await appendLog(post.id, {
       event: "creation_id_saved",
       creation_id: containerId,
       created_at: containerRes?.created_at ?? new Date().toISOString(),
-      video_url_sent: signed.signedUrl,
-      container_response: containerRes?.data ?? null,
     });
 
     const background = completePublication(post.id, containerId, token, igId, account as Account, signed.signedUrl, fullCaption, tokenSource);
