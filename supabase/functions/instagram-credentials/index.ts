@@ -289,29 +289,18 @@ Deno.serve(async (req) => {
 
       const validation = await validateAccount(access_token, ig_business_id);
       const connection_status = connectionStatusFromValidation(validation);
-      const { error: insErr } = await supabase.from("instagram_credentials").insert({
-        account, display_name, access_token, ig_business_id, project_id, connection_status,
+      const { error: saveAttemptErr } = await supabase.from("instagram_credentials").update({
+        display_name,
+        access_token,
+        ig_business_id,
+        project_id,
+        connection_status,
         last_validated_at: new Date().toISOString(),
         last_validation_status: validation.status,
         last_validation_detail: validation.message,
-      }).select("account").maybeSingle();
-      if (insErr?.code === "23505") {
-        const { error: updErr } = await supabase.from("instagram_credentials").update({
-          display_name,
-          access_token,
-          ig_business_id,
-          project_id,
-          connection_status,
-          last_validated_at: new Date().toISOString(),
-          last_validation_status: validation.status,
-          last_validation_detail: validation.message,
-        }).eq("account", account);
-        if (updErr) {
-          return new Response(JSON.stringify({ error: `Falha ao atualizar tentativa: ${updErr.message}` }),
-            { status: 400, headers: { ...corsHeaders, "Content-Type": "application/json" } });
-        }
-      } else if (insErr) {
-        return new Response(JSON.stringify({ error: `Falha ao salvar: ${insErr.message}` }),
+      }).eq("account", account);
+      if (saveAttemptErr) {
+        return new Response(JSON.stringify({ error: `Falha ao salvar tentativa: ${saveAttemptErr.message}` }),
           { status: 400, headers: { ...corsHeaders, "Content-Type": "application/json" } });
       }
 
