@@ -37,9 +37,10 @@ export default function InstagramBatchDialog({ open, onOpenChange, videoIds, onD
   const [errors, setErrors] = useState<string[]>([]);
 
   const run = async () => {
-    if (!account) { toast.error("Selecione um projeto ativo (Frame ou Resenha)."); return; }
+    if (accLoading) { toast.info("Carregando conta do projeto…"); return; }
+    if (!account) { toast.error("Este projeto não tem uma conta do Instagram vinculada. Cadastre-a em Configurações."); return; }
     if (videoIds.length === 0) return;
-    if (!confirm(`Estas ${videoIds.length} publicações serão enviadas agora ao projeto ${platformLabel}. Confirmar?`)) return;
+    if (!confirm(`Estas ${videoIds.length} publicações serão enviadas agora para ${platformLabel}. Confirmar?`)) return;
     setBusy(true); setDone(0); setErrors([]);
     for (let i = 0; i < videoIds.length; i++) {
       const id = videoIds[i];
