@@ -650,13 +650,50 @@ export default function Publications() {
     });
   }, [posts, ytByKey, ttByKey]);
 
+  // Lista de "pastas" (contas IG) a exibir. Cada projeto vira uma pasta.
+  // Prioriza contas vinculadas a projetos; adiciona contas legadas encontradas em posts.
+  const accountsList = useMemo(() => {
+    const seen = new Map<string, { slug: string; displayName: string; projectId: string | null; projectName: string | null }>();
+    // 1) Contas vinculadas a projetos (via instagram_credentials)
+    for (const c of igAccounts) {
+      const proj = projects.find((p) => p.id === c.project_id);
+      seen.set(c.account, {
+        slug: c.account,
+        displayName: labelForAccount(c.account, c.display_name ?? proj?.name),
+        projectId: c.project_id,
+        projectName: proj?.name ?? null,
+      });
+    }
+    // 2) Contas encontradas em posts que ainda não apareceram
+    for (const p of posts ?? []) {
+      if (!seen.has(p.account)) {
+        seen.set(p.account, { slug: p.account, displayName: labelForAccount(p.account), projectId: null, projectName: null });
+      }
+    }
+    // Ordena: FRAME primeiro, RESENHA depois, restante alfabético
+    return Array.from(seen.values()).sort((a, b) => {
+      const rank = (s: string) => (s === "frame" ? 0 : s === "resenha" ? 1 : 2);
+      const r = rank(a.slug) - rank(b.slug);
+      return r !== 0 ? r : a.displayName.localeCompare(b.displayName);
+    });
+  }, [igAccounts, projects, posts]);
+
+  // Conta vinculada ao projeto ativo (para banner de identificação)
+  const activeAccount = useMemo(() => {
+    if (!activeProject) return null;
+    return accountsList.find((a) => a.projectId === activeProject.id) ?? null;
+  }, [accountsList, activeProject]);
+  const activeMeta = activeAccount
+    ? themeForAccount(activeAccount.slug, accountsList.findIndex((a) => a.slug === activeAccount.slug))
+    : null;
+
   return (
     <div className="space-y-6">
       <header className="flex items-start justify-between gap-3">
         <div className="flex flex-col gap-1">
           <h1 className="text-2xl font-semibold tracking-tight">Publicações</h1>
           <p className="text-sm text-muted-foreground">
-            Calendário independente por conta — cada plataforma organizada e visível de imediato.
+            Uma pasta por projeto — Frame, Resenha e Segredo das Promoções organizados lado a lado.
           </p>
         </div>
         {legacyOnlyIg.length > 0 && (
@@ -671,6 +708,34 @@ export default function Publications() {
           </Button>
         )}
       </header>
+
+      {/* Banner do projeto ativo — evita erros de postagem */}
+      {activeProject && (
+        <Card className={`glass border ${activeMeta?.ring ?? "border-gold/40"} bg-gradient-to-r ${activeMeta?.tint ?? "from-gold/10 to-transparent"}`}>
+          <CardContent className="flex flex-wrap items-center gap-3 p-4">
+            <div className="flex h-10 w-10 items-center justify-center overflow-hidden rounded-md bg-gold-gradient text-black">
+              {activeProject.logo_url ? (
+                <img src={activeProject.logo_url} alt="" className="h-full w-full object-cover" />
+              ) : (
+                <FolderKanban size={18} />
+              )}
+            </div>
+            <div className="min-w-0 flex-1">
+              <div className="text-[10px] uppercase tracking-[0.18em] text-muted-foreground">Projeto ativo</div>
+              <div className="truncate text-sm font-semibold">{activeProject.name}</div>
+            </div>
+            {activeAccount ? (
+              <Badge variant="outline" className={`gap-1 text-[10px] ${activeMeta?.badge ?? ""}`}>
+                <Instagram size={11} /> Publicando em {activeAccount.displayName}
+              </Badge>
+            ) : (
+              <Badge variant="outline" className="gap-1 text-[10px] border-amber-400/40 text-amber-300 bg-amber-500/10">
+                <AlertCircle size={11} /> Nenhuma conta Instagram vinculada a este projeto
+              </Badge>
+            )}
+          </CardContent>
+        </Card>
+      )}
 
       <MultiScheduleTimeline />
 
@@ -727,17 +792,24 @@ export default function Publications() {
         </div>
       ) : (
         <Tabs defaultValue="all" className="space-y-6">
-          <TabsList>
+          <TabsList className="flex-wrap">
             <TabsTrigger value="all">Todos</TabsTrigger>
-            <TabsTrigger value="frame" className="data-[state=active]:text-blue-300">Frame</TabsTrigger>
-            <TabsTrigger value="resenha" className="data-[state=active]:text-purple-300">Resenha</TabsTrigger>
+            {accountsList.map((a, i) => {
+              const m = themeForAccount(a.slug, i);
+              return (
+                <TabsTrigger key={a.slug} value={a.slug} className={`data-[state=active]:${m.text}`}>
+                  📁 {a.displayName}
+                </TabsTrigger>
+              );
+            })}
           </TabsList>
 
           <TabsContent value="all" className="space-y-10">
-            {ACCOUNTS.map((a) => (
+            {accountsList.map((a, i) => (
               <PlatformSection
-                key={a.value}
-                account={a.value}
+                key={a.slug}
+                account={a.slug}
+                meta={themeForAccount(a.slug, i)}
                 posts={filteredPosts}
                 statusFilter={statusFilter}
                 ytByKey={ytByKey}
@@ -749,18 +821,21 @@ export default function Publications() {
               />
             ))}
           </TabsContent>
-          <TabsContent value="frame">
-            <PlatformSection account="frame" posts={filteredPosts} statusFilter={statusFilter}
-              ytByKey={ytByKey} ttByKey={ttByKey} selectedIds={selectedIds}
-              onToggleSelect={toggleSelect} onToggleAll={toggleAll} {...handlers} />
-          </TabsContent>
-          <TabsContent value="resenha">
-            <PlatformSection account="resenha" posts={filteredPosts} statusFilter={statusFilter}
-              ytByKey={ytByKey} ttByKey={ttByKey} selectedIds={selectedIds}
-              onToggleSelect={toggleSelect} onToggleAll={toggleAll} {...handlers} />
-          </TabsContent>
+          {accountsList.map((a, i) => (
+            <TabsContent key={a.slug} value={a.slug}>
+              <PlatformSection
+                account={a.slug}
+                meta={themeForAccount(a.slug, i)}
+                posts={filteredPosts}
+                statusFilter={statusFilter}
+                ytByKey={ytByKey} ttByKey={ttByKey} selectedIds={selectedIds}
+                onToggleSelect={toggleSelect} onToggleAll={toggleAll} {...handlers}
+              />
+            </TabsContent>
+          ))}
         </Tabs>
       )}
+
 
       {/* Bulk actions floating bar */}
       {selectedIds.size > 0 && (
