@@ -165,15 +165,17 @@ function EditScheduledDialog({
 /* ---------- post card ---------- */
 
 function PostCard({
-  post, kind, onEdit, onCancel, onDelete, onRetry, onLogs,
+  post, kind, linkedYT, onEdit, onCancel, onDelete, onRetry, onLogs, onEditNetworks,
 }: {
   post: InstagramPost;
   kind: "scheduled" | "published";
+  linkedYT?: { status: string } | null;
   onEdit: (p: InstagramPost) => void;
   onCancel: (p: InstagramPost) => void;
   onDelete: (p: InstagramPost) => void;
   onRetry: (p: InstagramPost) => void;
   onLogs: (p: InstagramPost) => void;
+  onEditNetworks: (p: InstagramPost) => void;
 }) {
   const meta = PLATFORM_META[post.account];
   const dt =
@@ -202,6 +204,18 @@ function PostCard({
         </Badge>
       </div>
       <CardContent className="space-y-2 p-3">
+        {/* Histórico por rede */}
+        <div className="flex flex-wrap items-center gap-1">
+          <Badge variant="outline" className="text-[10px] gap-1 border-pink-400/40 text-pink-300 bg-pink-500/10">
+            <Instagram size={10} /> Instagram: {post.status.toLowerCase()}
+          </Badge>
+          {linkedYT && (
+            <Badge variant="outline" className="text-[10px] gap-1 border-red-400/40 text-red-300 bg-red-500/10">
+              <Youtube size={10} /> YouTube: {linkedYT.status.toLowerCase()}
+            </Badge>
+          )}
+        </div>
+
         <div className="flex items-center justify-between gap-2 text-[11px]">
           <div className="flex items-center gap-1.5 text-muted-foreground">
             <Calendar size={11} />
@@ -212,6 +226,10 @@ function PostCard({
           <div className="flex items-center gap-0.5">
             {kind === "scheduled" && post.status === "AGENDADO" && (
               <>
+                <Button size="icon" variant="ghost" className="h-6 w-6 text-muted-foreground hover:text-gold"
+                  onClick={() => onEditNetworks(post)} title="Editar redes de publicação">
+                  <Share2 size={12} />
+                </Button>
                 <Button size="icon" variant="ghost" className="h-6 w-6 text-muted-foreground hover:text-gold"
                   onClick={() => onEdit(post)} title="Editar">
                   <Pencil size={12} />
