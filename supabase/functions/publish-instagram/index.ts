@@ -625,6 +625,19 @@ Deno.serve(async (req) => {
         const payloadBytes = new URLSearchParams(publishBody).toString().length;
         const publishRequestedAt = new Date().toISOString();
         try {
+          if (isSessionDaResenha(account) || String(igId).trim() === "17841410630040919") {
+            await appendLog(postId, {
+              event: "resenha_publish_diagnostic",
+              account: "resenha",
+              instagram_business_id: "17841410630040919",
+              creation_id: containerId,
+              caption_used: fullCaption,
+              caption_length: captionLength,
+              hashtag_count: 0,
+              payload_bytes: payloadBytes,
+              timestamp: new Date().toISOString(),
+            });
+          }
           await appendLog(postId, {
             event: "media_publish_attempt",
             cycle,
