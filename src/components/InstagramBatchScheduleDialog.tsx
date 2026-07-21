@@ -245,7 +245,7 @@ export default function InstagramBatchScheduleDialog({ open, onOpenChange, video
     const nets = activeNets;
     if (nets.length === 0) { toast.error("Selecione ao menos uma rede social."); return; }
     if (nets.includes("instagram") && !igAccount) {
-      toast.error("Selecione um projeto ativo (Frame/Resenha) para publicar no Instagram."); return;
+      toast.error(igLoading ? "Carregando conta do projeto…" : "Este projeto não tem uma conta do Instagram vinculada. Cadastre em Configurações → Instagram."); return;
     }
     if (nets.includes("youtube") && ytChannels.length === 0) {
       toast.error("Selecione ao menos um canal do YouTube."); return;
