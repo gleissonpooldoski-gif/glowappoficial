@@ -359,7 +359,7 @@ Deno.serve(async (req) => {
         const startedAt = Date.now();
         let lastStatus: any = null;
         for (let attempt = 1; attempt <= MAX_CONTAINER_STATUS_ATTEMPTS; attempt++) {
-          const statusUrl = `${FB_BASE}/${currentContainerId}?fields=status_code,status&access_token=${encodeURIComponent(token)}`;
+          const statusUrl = `${FB_BASE}/${currentContainerId}?fields=id,status_code&access_token=${encodeURIComponent(token)}`;
           const statusRes = await metaGet(statusUrl, token);
           lastStatus = statusRes.data;
 
