@@ -73,7 +73,7 @@ export default function InstagramPublishDialog({
   const [genBusy, setGenBusy] = useState(false);
   const [scheduleMode, setScheduleMode] = useState<"auto" | "manual">("auto");
   const [slotBusy, setSlotBusy] = useState(false);
-  const [autoSlot, setAutoSlot] = useState<Date | null>(null);
+  const [autoSlots, setAutoSlots] = useState<{ instagram: Date | null; youtube: Date | null }>({ instagram: null, youtube: null });
   const [nets, setNets] = useState<Set<NetId>>(new Set(["instagram"]));
   const [hasVideoFile, setHasVideoFile] = useState<boolean | null>(null);
   const toggleNet = (n: NetId) => setNets((prev) => {
