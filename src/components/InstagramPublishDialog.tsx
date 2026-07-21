@@ -1,17 +1,21 @@
 import { useEffect, useState } from "react";
-import { Loader2, Instagram, CalendarClock, Send, Sparkles, RefreshCw, Wand2, Hand, Lock } from "lucide-react";
+import { Loader2, Instagram, Youtube, CalendarClock, Send, Sparkles, RefreshCw, Wand2, Hand, Lock } from "lucide-react";
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter, DialogDescription } from "@/components/ui/dialog";
 import { Button } from "@/components/ui/button";
 import { Label } from "@/components/ui/label";
 import { Input } from "@/components/ui/input";
 import { Textarea } from "@/components/ui/textarea";
 import { Badge } from "@/components/ui/badge";
+import { Checkbox } from "@/components/ui/checkbox";
 import { toast } from "sonner";
 import { supabase } from "@/integrations/supabase/client";
 import { InstagramAccount, publishInstagram, friendlyError, platformFromProject, PLATFORM_LABEL } from "@/lib/instagram";
+import { uploadToYoutube } from "@/lib/youtube";
 import { findNextSlot } from "@/lib/schedules";
 import { useActiveProject } from "@/context/ProjectContext";
 import { extractVideoFrames } from "@/lib/videoFrames";
+
+type NetId = "instagram" | "youtube";
 
 type VideoMeta = {
   filename?: string;
@@ -70,6 +74,13 @@ export default function InstagramPublishDialog({
   const [scheduleMode, setScheduleMode] = useState<"auto" | "manual">("auto");
   const [slotBusy, setSlotBusy] = useState(false);
   const [autoSlot, setAutoSlot] = useState<Date | null>(null);
+  const [nets, setNets] = useState<Set<NetId>>(new Set(["instagram"]));
+  const toggleNet = (n: NetId) => setNets((prev) => {
+    const s = new Set(prev);
+    if (s.has(n)) s.delete(n); else s.add(n);
+    if (s.size === 0) s.add(n); // sempre pelo menos 1
+    return s;
+  });
 
   // Auto-gera legenda/hashtags ao abrir se não vieram prontos
   useEffect(() => {
@@ -162,31 +173,92 @@ export default function InstagramPublishDialog({
 
   const submit = async () => {
     if (!videoId) { toast.error("Vídeo inválido."); return; }
-    if (!account) {
-      toast.error("Selecione um projeto ativo (Frame ou Resenha) no menu superior.");
+    const wantIG = nets.has("instagram");
+    const wantYT = nets.has("youtube");
+    if (!wantIG && !wantYT) { toast.error("Selecione ao menos uma rede."); return; }
+    if (wantIG && !account) {
+      toast.error("Selecione um projeto ativo (Frame ou Resenha) para publicar no Instagram.");
       return;
     }
+    const netsLabel = [wantIG && "Instagram", wantYT && "YouTube"].filter(Boolean).join(" + ");
     const confirmMsg =
       mode === "schedule"
-        ? `Esta publicação será agendada no projeto ${platformLabel}. Confirmar?`
-        : `Esta publicação será enviada agora ao ${platformLabel}. Confirmar?`;
+        ? `Agendar em ${netsLabel}. Confirmar?`
+        : `Publicar agora em ${netsLabel}. Confirmar?`;
     if (!confirm(confirmMsg)) return;
     setBusy(true);
     try {
+      let iso: string | null = null;
       if (mode === "schedule") {
-        const iso = localDateTimeToIso(date, time);
+        iso = localDateTimeToIso(date, time);
         if (!iso || new Date(iso).getTime() < Date.now() + 60_000) {
           throw new Error("Selecione uma data/hora futura (mín. 1 minuto).");
         }
-        await publishInstagram({ account, videoId, caption, hashtags, publishNow: false, scheduledAt: iso });
-        toast.success("Publicação agendada!");
-      } else {
-        toast.message("Enviando para o Instagram… isso pode levar alguns minutos.");
-        await publishInstagram({ account, videoId, caption, hashtags, publishNow: true });
-        toast.success("Publicação iniciada. Acompanhe o status em Publicações.");
       }
-      onOpenChange(false);
-      onDone?.();
+      let igPostId: string | null = null;
+      let ytPostId: string | null = null;
+      const errs: string[] = [];
+
+      if (wantIG && account) {
+        try {
+          if (mode === "schedule") {
+            const res: any = await publishInstagram({ account, videoId, caption, hashtags, publishNow: false, scheduledAt: iso! });
+            igPostId = res?.post?.id ?? null;
+          } else {
+            toast.message("Enviando para o Instagram…");
+            const res: any = await publishInstagram({ account, videoId, caption, hashtags, publishNow: true });
+            igPostId = res?.post?.id ?? null;
+          }
+        } catch (e: any) { errs.push(`Instagram: ${friendlyError(e)}`); }
+      }
+
+      if (wantYT) {
+        try {
+          const title = (videoMeta?.filename ?? caption ?? "Vídeo").replace(/\.[^.]+$/, "").slice(0, 100) || "Vídeo";
+          const desc = [caption, hashtags].filter(Boolean).join("\n\n").slice(0, 5000);
+          const tags = hashtags.split(/\s+/).map((t) => t.replace(/^#/, "")).filter(Boolean).slice(0, 15);
+          if (mode === "schedule") {
+            const { data, error } = await supabase.from("youtube_posts" as any).insert({
+              video_id: videoId, account: "default",
+              title, description: desc, tags,
+              category_id: "22", privacy_status: "public",
+              status: "AGENDADO", scheduled_at: iso,
+            }).select("id").maybeSingle();
+            if (error) throw error;
+            ytPostId = (data as any)?.id ?? null;
+          } else {
+            toast.message("Enviando para o YouTube…");
+            await uploadToYoutube({
+              account: "default", video_id: videoId,
+              title, description: desc, tags,
+              category_id: "22", privacy_status: "public",
+            });
+          }
+        } catch (e: any) { errs.push(`YouTube: ${e?.message ?? "erro"}`); }
+      }
+
+      // Registro consolidado (para o calendário exibir os ícones)
+      if (mode === "schedule" && iso) {
+        try {
+          await supabase.from("publish_schedules_multi" as any).insert({
+            video_id: videoId,
+            networks: Array.from(nets),
+            scheduled_at: iso,
+            instagram_post_id: igPostId,
+            youtube_post_id: ytPostId,
+            tiktok_post_id: null,
+          });
+        } catch { /* não bloqueia */ }
+      }
+
+      if (errs.length === 0) {
+        toast.success(mode === "schedule" ? "Publicação agendada!" : "Publicação iniciada. Acompanhe em Publicações.");
+        onOpenChange(false);
+        onDone?.();
+      } else {
+        toast.warning(`Concluído com erros: ${errs.join(" | ")}`);
+        onDone?.();
+      }
     } catch (e: any) {
       toast.error(friendlyError(e));
     } finally {
@@ -210,6 +282,26 @@ export default function InstagramPublishDialog({
         </DialogHeader>
 
         <div className="space-y-3">
+          <div className="space-y-1.5">
+            <Label className="text-xs">Redes sociais</Label>
+            <div className="grid grid-cols-2 gap-2">
+              <label className={`flex items-center gap-2 rounded-md border px-2.5 py-2 text-xs cursor-pointer transition-colors ${
+                nets.has("instagram") ? "border-gold/50 bg-gold/5" : "border-border/60 bg-background/30 hover:bg-background/60"
+              }`}>
+                <Checkbox checked={nets.has("instagram")} onCheckedChange={() => toggleNet("instagram")} disabled={busy} />
+                <Instagram size={14} className="text-pink-400" />
+                <span className="flex-1">Instagram</span>
+              </label>
+              <label className={`flex items-center gap-2 rounded-md border px-2.5 py-2 text-xs cursor-pointer transition-colors ${
+                nets.has("youtube") ? "border-gold/50 bg-gold/5" : "border-border/60 bg-background/30 hover:bg-background/60"
+              }`}>
+                <Checkbox checked={nets.has("youtube")} onCheckedChange={() => toggleNet("youtube")} disabled={busy} />
+                <Youtube size={14} className="text-red-400" />
+                <span className="flex-1">YouTube</span>
+              </label>
+            </div>
+          </div>
+
           <div className="space-y-1.5">
             <Label className="text-xs flex items-center gap-1"><Lock size={10} /> Publicando em</Label>
             <div className="flex items-center gap-2 rounded-md border border-border/60 bg-background/40 px-3 py-2">
@@ -359,7 +451,7 @@ export default function InstagramPublishDialog({
 
         <DialogFooter>
           <Button variant="ghost" disabled={busy} onClick={() => onOpenChange(false)}>Cancelar</Button>
-          <Button onClick={submit} disabled={busy || genBusy || !account} className="bg-gold-gradient text-black">
+          <Button onClick={submit} disabled={busy || genBusy || (nets.has("instagram") && !account)} className="bg-gold-gradient text-black">
             {busy ? <Loader2 size={14} className="mr-1.5 animate-spin" /> :
               mode === "now" ? <Send size={14} className="mr-1.5" /> : <CalendarClock size={14} className="mr-1.5" />}
             {mode === "now" ? "Publicar" : "Agendar"}
