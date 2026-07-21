@@ -567,15 +567,16 @@ export default function Publications() {
                 account={a.value}
                 posts={filteredPosts}
                 statusFilter={statusFilter}
+                ytByKey={ytByKey}
                 {...handlers}
               />
             ))}
           </TabsContent>
           <TabsContent value="frame">
-            <PlatformSection account="frame" posts={filteredPosts} statusFilter={statusFilter} {...handlers} />
+            <PlatformSection account="frame" posts={filteredPosts} statusFilter={statusFilter} ytByKey={ytByKey} {...handlers} />
           </TabsContent>
           <TabsContent value="resenha">
-            <PlatformSection account="resenha" posts={filteredPosts} statusFilter={statusFilter} {...handlers} />
+            <PlatformSection account="resenha" posts={filteredPosts} statusFilter={statusFilter} ytByKey={ytByKey} {...handlers} />
           </TabsContent>
         </Tabs>
       )}
@@ -585,6 +586,14 @@ export default function Publications() {
         post={editing}
         open={!!editing}
         onOpenChange={(o) => !o && setEditing(null)}
+        onSaved={load}
+      />
+
+      {/* Edit networks dialog */}
+      <EditPostNetworksDialog
+        post={editingNetworks}
+        open={!!editingNetworks}
+        onOpenChange={(o) => !o && setEditingNetworks(null)}
         onSaved={load}
       />
 
