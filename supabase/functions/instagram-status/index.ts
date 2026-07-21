@@ -24,6 +24,19 @@ function sanitizeToken(raw: string | undefined | null): string {
   return t.trim();
 }
 
+// Impede que URLs (ex.: signed video URL) sejam usadas como ID de recurso Graph API.
+function assertGraphId(value: unknown, field: string): string {
+  const raw = value == null ? "" : String(value).trim();
+  if (!raw) throw new Error(`[instagram-status] ${field} vazio ao montar URL Graph API.`);
+  if (/^https?:\/\//i.test(raw) || raw.includes("/") || raw.includes("?") || raw.includes(" ")) {
+    console.error(`[instagram-status] invalid_graph_id field=${field} value_preview=${raw.slice(0, 60)}`);
+    throw new Error(`[instagram-status] ${field} inválido: recebeu URL/caminho em vez do ID numérico da Meta.`);
+  }
+  return raw;
+}
+
+
+
 
 function envCredentialsFor(account: string) {
   if (account === "resenha") {
@@ -209,7 +222,10 @@ Deno.serve(async (req) => {
         { status: 200, headers: { ...corsHeaders, "Content-Type": "application/json" } });
     }
 
-    const statusRes = await metaGet(`${FB_BASE}/${post.container_id}?fields=id,status_code&access_token=${encodeURIComponent(token)}`);
+    const safeContainerId = assertGraphId(post.container_id, "creation_id");
+    const safeIgIdForStatus = assertGraphId(igId, "ig_business_id");
+    const statusRes = await metaGet(`${FB_BASE}/${safeContainerId}?fields=id,status_code&access_token=${encodeURIComponent(token)}`);
+
     const statusCode = statusRes.data?.status_code ?? "UNKNOWN";
     await appendLog(post.id, { event: "manual_container_status_response", status_code: statusCode, response: statusRes.data });
 
@@ -230,9 +246,10 @@ Deno.serve(async (req) => {
       }
 
       const publishRes = await metaPost(
-        `${FB_BASE}/${igId}/media_publish`,
-        { creation_id: post.container_id, access_token: token },
+        `${FB_BASE}/${safeIgIdForStatus}/media_publish`,
+        { creation_id: assertGraphId(post.container_id, "creation_id"), access_token: token },
       );
+
       const publishId = publishRes.data?.id;
       await appendLog(post.id, { event: "manual_media_publish_response", status: publishRes.status, response: publishRes.data });
       if (!publishId) throw new Error(`Meta não retornou publish_id. Resposta: ${safeJson(publishRes.data)}`);

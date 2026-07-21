@@ -38,6 +38,22 @@ function assertValidToken(token: string | null | undefined, account?: string | n
   }
 }
 
+// Garante que um valor usado como ID de recurso Graph API (ig_business_id,
+// creation_id) NÃO seja uma URL nem contenha caracteres de path/query. Evita
+// o bug GraphMethodException code=100 / subcode=33 ("Object with ID '[https:'
+// does not exist") causado quando uma URL de vídeo vaza no lugar do ID.
+function assertGraphId(value: unknown, field: string): string {
+  const raw = value == null ? "" : String(value).trim();
+  if (!raw) throw new Error(`[publish-instagram] ${field} vazio ao montar URL Graph API.`);
+  if (/^https?:\/\//i.test(raw) || raw.includes("/") || raw.includes("?") || raw.includes(" ")) {
+    console.error(`[publish-instagram] invalid_graph_id field=${field} value_preview=${raw.slice(0, 60)}`);
+    throw new Error(`[publish-instagram] ${field} inválido: recebeu URL/caminho em vez do ID numérico da Meta.`);
+  }
+  return raw;
+}
+
+
+
 
 type Account = string;
 
@@ -479,9 +495,11 @@ Deno.serve(async (req) => {
 
   const completePublication = async (postId: string, initialContainerId: string, token: string, igId: string, account: Account, videoUrl: string, fullCaption: string, tokenSource: string) => {
     try {
-      let containerId = initialContainerId;
-      const publishUrl = `${FB_BASE}/${igId}/media_publish`;
-      const containerUrl = `${FB_BASE}/${igId}/media`;
+      let containerId = assertGraphId(initialContainerId, "creation_id");
+      const safeIgId = assertGraphId(igId, "ig_business_id");
+      const publishUrl = `${FB_BASE}/${safeIgId}/media_publish`;
+      const containerUrl = `${FB_BASE}/${safeIgId}/media`;
+
 
       const ensureNotAlreadyPublished = async (event = "publish_skipped_already_published") => {
         const { data: current } = await supabase.from("instagram_posts").select("status, publish_id").eq("id", postId).maybeSingle();
@@ -511,7 +529,7 @@ Deno.serve(async (req) => {
         for (let attempt = 1; attempt <= MAX_CONTAINER_STATUS_ATTEMPTS; attempt++) {
           const requestTs = new Date().toISOString();
           const requestCount = await incrementContainerRequest(currentContainerId);
-          const statusUrl = `${FB_BASE}/${currentContainerId}?fields=id,status_code&access_token=${encodeURIComponent(token)}`;
+          const statusUrl = `${FB_BASE}/${assertGraphId(currentContainerId, "creation_id")}?fields=id,status_code&access_token=${encodeURIComponent(token)}`;
           let statusRes: any;
           try {
             statusRes = await metaGet(statusUrl, token);
@@ -903,7 +921,7 @@ Deno.serve(async (req) => {
       fullCaption = diagnosticCaption;
     }
 
-    const containerUrl = `${FB_BASE}/${igId}/media`;
+    const containerUrl = `${FB_BASE}/${assertGraphId(igId, "ig_business_id")}/media`;
     const MAX_CONTAINER_ATTEMPTS = 3;
     let containerRes: any = null;
     let containerId: string | undefined;
