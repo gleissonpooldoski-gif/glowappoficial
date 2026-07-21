@@ -10,6 +10,7 @@ import { Badge } from "@/components/ui/badge";
 import { toast } from "sonner";
 import { supabase } from "@/integrations/supabase/client";
 import { buildYoutubeMetaFromCaption } from "@/lib/youtube-meta";
+import { buildTiktokCaptionFromBase } from "@/lib/tiktok-meta";
 import YoutubeChannelPicker from "./YoutubeChannelPicker";
 import type { InstagramPost } from "@/lib/instagram";
 
@@ -66,12 +67,13 @@ async function ensureTiktok(post: InstagramPost) {
     .maybeSingle();
   if (existing) return { skipped: "já vinculado" };
 
-  const caption = [post.caption ?? "", post.hashtags ?? ""].filter(Boolean).join("\n\n").slice(0, 2200);
+  // Caption adaptada para TikTok (gancho + hashtags de descoberta).
+  const tt = await buildTiktokCaptionFromBase(post.caption ?? "", post.hashtags ?? "");
 
   const { error } = await supabase.from("tiktok_posts" as any).insert({
     video_id: post.video_id,
     account: post.account ?? "default",
-    caption,
+    caption: tt.caption,
     status: "AGENDADO",
     scheduled_at: post.scheduled_at,
   });

@@ -190,9 +190,14 @@ export default function InstagramBatchScheduleDialog({ open, onOpenChange, video
       if (!ttAccount) errs.push("TikTok: projeto ativo inválido");
       else {
         try {
+          // Caption adaptada para TikTok (gancho + hashtags de descoberta).
+          const { buildTiktokCaptionFromBase } = await import("@/lib/tiktok-meta");
+          const tt = await buildTiktokCaptionFromBase(caption, hashtags, {
+            projectName: v.projectName ?? null, projectCategory: v.projectCategory ?? null,
+          });
           const { data, error } = await supabase.from("tiktok_posts" as any).insert({
             video_id: v.id, account: ttAccount,
-            caption: [caption, hashtags].filter(Boolean).join("\n\n").slice(0, 2200),
+            caption: tt.caption,
             status: "AGENDADO", scheduled_at: iso,
           }).select("id").maybeSingle();
           if (error) throw error;
