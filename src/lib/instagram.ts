@@ -7,8 +7,8 @@ import { supabase } from "@/integrations/supabase/client";
 export type InstagramAccount = string;
 
 export const ACCOUNTS: { value: InstagramAccount; label: string }[] = [
-  { value: "resenha", label: "Sessão da Resenha" },
-  { value: "frame", label: "Sessão da Frame" },
+  { value: "resenha", label: "SESSÃO DA RESENHA" },
+  { value: "frame", label: "SESSÃO DA FRAME" },
 ];
 
 /**
