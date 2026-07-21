@@ -444,7 +444,7 @@ function PlatformSection({
 
 export default function Publications() {
   const [posts, setPosts] = useState<InstagramPost[] | null>(null);
-  const [ytByKey, setYtByKey] = useState<Map<string, { status: string }>>(new Map());
+  const [ytByKey, setYtByKey] = useState<Map<string, { id: string; status: string; auto_comment_enabled: boolean }>>(new Map());
   const [ttByKey, setTtByKey] = useState<Map<string, { status: string }>>(new Map());
   const [selectedIds, setSelectedIds] = useState<Set<string>>(new Set());
   const [bulkOpen, setBulkOpen] = useState(false);
@@ -457,9 +457,25 @@ export default function Publications() {
   const [customFrom, setCustomFrom] = useState("");
   const [customTo, setCustomTo] = useState("");
 
-  const loadLinkedByTable = async (table: "youtube_posts" | "tiktok_posts") => {
+  const loadYoutubeLinks = async () => {
     const { data } = await supabase
-      .from(table as any)
+      .from("youtube_posts" as any)
+      .select("id, video_id, scheduled_at, status, auto_comment_enabled")
+      .not("scheduled_at", "is", null)
+      .order("scheduled_at", { ascending: false })
+      .limit(500);
+    const map = new Map<string, { id: string; status: string; auto_comment_enabled: boolean }>();
+    for (const r of (data ?? []) as any[]) {
+      if (!r.video_id || !r.scheduled_at) continue;
+      map.set(`${r.video_id}|${r.scheduled_at}`, {
+        id: r.id, status: r.status, auto_comment_enabled: !!r.auto_comment_enabled,
+      });
+    }
+    setYtByKey(map);
+  };
+  const loadTiktokLinks = async () => {
+    const { data } = await supabase
+      .from("tiktok_posts" as any)
       .select("video_id, scheduled_at, status")
       .not("scheduled_at", "is", null)
       .order("scheduled_at", { ascending: false })
@@ -469,11 +485,8 @@ export default function Publications() {
       if (!r.video_id || !r.scheduled_at) continue;
       map.set(`${r.video_id}|${r.scheduled_at}`, { status: r.status });
     }
-    return map;
+    setTtByKey(map);
   };
-
-  const loadYoutubeLinks = async () => setYtByKey(await loadLinkedByTable("youtube_posts"));
-  const loadTiktokLinks = async () => setTtByKey(await loadLinkedByTable("tiktok_posts"));
 
   const toggleSelect = (p: InstagramPost) => {
     setSelectedIds((prev) => {
