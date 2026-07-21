@@ -579,6 +579,32 @@ export default function Publications() {
     });
   }, [posts, periodFilter, customFrom, customTo]);
 
+  const toggleAutoComment = async (ytId: string, enable: boolean) => {
+    const { error } = await (supabase as any)
+      .from("youtube_posts").update({ auto_comment_enabled: enable }).eq("id", ytId);
+    if (error) return toast.error(error.message);
+    toast.success(enable ? "Comentário automático ativado" : "Comentário automático desativado");
+    loadYoutubeLinks();
+  };
+
+  const bulkEnableAutoComment = async () => {
+    const ytIds: string[] = [];
+    for (const p of (posts ?? []).filter((x) => selectedIds.has(x.id))) {
+      const linked = ytByKey.get(`${p.video_id ?? ""}|${p.scheduled_at ?? ""}`);
+      if (linked && !linked.auto_comment_enabled) ytIds.push(linked.id);
+    }
+    if (ytIds.length === 0) {
+      toast.info("Nenhum post selecionado tem YouTube agendado para ativar.");
+      return;
+    }
+    const { error } = await (supabase as any)
+      .from("youtube_posts").update({ auto_comment_enabled: true }).in("id", ytIds);
+    if (error) return toast.error(error.message);
+    toast.success(`Comentário automático ativado em ${ytIds.length} vídeo(s)`);
+    clearSelection();
+    loadYoutubeLinks();
+  };
+
   const handlers = {
     onEdit: (p: InstagramPost) => setEditing(p),
     onCancel: cancelScheduled,
@@ -586,6 +612,7 @@ export default function Publications() {
     onRetry: retry,
     onLogs: (p: InstagramPost) => setSelectedPost(p),
     onEditNetworks: (p: InstagramPost) => setEditingNetworks(p),
+    onToggleAutoComment: toggleAutoComment,
   };
 
   return (
