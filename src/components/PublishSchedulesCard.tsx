@@ -54,7 +54,7 @@ function ScheduleEditor({
 }) {
   const [times, setTimes] = useState<string[]>(defaultTimes);
   const [perDay, setPerDay] = useState<number>(defaultPerDay);
-  const [newTime, setNewTime] = useState("");
+  const [newTime, setNewTime] = useState("09:00");
   const [loading, setLoading] = useState(true);
   const [saving, setSaving] = useState(false);
   const [seqDate, setSeqDate] = useState("");
