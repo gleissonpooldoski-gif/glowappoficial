@@ -23,7 +23,9 @@ import {
 import { format } from "date-fns";
 import { ptBR } from "date-fns/locale";
 import {
-  listInstagramPosts, InstagramPost, ACCOUNTS, InstagramAccount, getInstagramStatus,
+  listInstagramPosts, InstagramPost, InstagramAccount, getInstagramStatus,
+  fetchInstagramAccounts, subscribeInstagramAccounts, labelForAccount,
+  type InstagramAccountInfo,
 } from "@/lib/instagram";
 import { supabase } from "@/integrations/supabase/client";
 import { toast } from "sonner";
@@ -31,9 +33,11 @@ import MultiScheduleTimeline from "@/components/MultiScheduleTimeline";
 
 /* ---------- visual identity per platform ---------- */
 
-const PLATFORM_META: Record<InstagramAccount, {
+type PlatformMeta = {
   label: string; badge: string; ring: string; tint: string; icon: string; text: string;
-}> = {
+};
+
+const LEGACY_PLATFORM_META: Record<string, PlatformMeta> = {
   frame: {
     label: "Frame",
     badge: "bg-blue-500/15 text-blue-300 border-blue-400/40",
@@ -51,6 +55,32 @@ const PLATFORM_META: Record<InstagramAccount, {
     text: "text-purple-300",
   },
 };
+
+const DYNAMIC_PALETTES: PlatformMeta[] = [
+  { label: "", badge: "bg-pink-500/15 text-pink-300 border-pink-400/40", ring: "border-pink-400/30", tint: "from-pink-500/10 to-transparent", icon: "text-pink-300", text: "text-pink-300" },
+  { label: "", badge: "bg-emerald-500/15 text-emerald-300 border-emerald-400/40", ring: "border-emerald-400/30", tint: "from-emerald-500/10 to-transparent", icon: "text-emerald-300", text: "text-emerald-300" },
+  { label: "", badge: "bg-amber-500/15 text-amber-300 border-amber-400/40", ring: "border-amber-400/30", tint: "from-amber-500/10 to-transparent", icon: "text-amber-300", text: "text-amber-300" },
+  { label: "", badge: "bg-cyan-500/15 text-cyan-300 border-cyan-400/40", ring: "border-cyan-400/30", tint: "from-cyan-500/10 to-transparent", icon: "text-cyan-300", text: "text-cyan-300" },
+  { label: "", badge: "bg-fuchsia-500/15 text-fuchsia-300 border-fuchsia-400/40", ring: "border-fuchsia-400/30", tint: "from-fuchsia-500/10 to-transparent", icon: "text-fuchsia-300", text: "text-fuchsia-300" },
+];
+
+function metaFor(account: string): PlatformMeta {
+  const legacy = LEGACY_PLATFORM_META[account];
+  if (legacy) return legacy;
+  const idx = Math.abs(hashString(account)) % DYNAMIC_PALETTES.length;
+  return { ...DYNAMIC_PALETTES[idx], label: labelForAccount(account) };
+}
+
+function hashString(s: string) {
+  let h = 0;
+  for (let i = 0; i < s.length; i++) h = (h * 31 + s.charCodeAt(i)) | 0;
+  return h;
+}
+
+// Proxy compat: PLATFORM_META[account] continua funcionando.
+const PLATFORM_META = new Proxy({} as Record<string, PlatformMeta>, {
+  get: (_t, key: string) => metaFor(key),
+});
 
 const statusStyles: Record<InstagramPost["status"], string> = {
   AGENDADO: "border-blue-400/40 text-blue-300 bg-blue-500/10",
