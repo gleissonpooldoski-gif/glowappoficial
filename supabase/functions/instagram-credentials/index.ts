@@ -55,19 +55,23 @@ async function readMeta(res: Response) {
   return { status: res.status, data, text };
 }
 
-async function validateAccount(token: string, igId: string): Promise<ValidationResult> {
+async function validateAccount(rawToken: string, rawIgId: string): Promise<ValidationResult> {
+  const token = sanitizeToken(rawToken);
+  const igId = String(rawIgId ?? "").trim();
   if (!token || !igId) {
     return { ok: false, status: "EMPTY", message: "Access Token ou Instagram Business ID vazio." };
   }
 
-  // Fluxo "Instagram API with Instagram Login": não consultamos debug_token nem /me/permissions
-  // (endpoints do Facebook Graph). A validação é feita direto contra graph.instagram.com/{ig_user_id}.
+  // Roteamento por tipo de token: EAA → Facebook Graph, IGAA/IGQ → Instagram API with Instagram Login.
+  const base = baseForToken(token);
   const grantedPerms: string[] = [];
   const permissionWarning = "";
 
-  // Business account — busca o IG informado usando apenas campos válidos da IG Graph API.
   try {
-    const igRes = await fetch(`${IG_BASE}/${encodeURIComponent(igId)}?fields=id,username,name,profile_picture_url&access_token=${encodeURIComponent(token)}`);
+    const igRes = await fetch(
+      `${base}/${encodeURIComponent(igId)}?fields=id,username,name,profile_picture_url&access_token=${encodeURIComponent(token)}`,
+      { headers: { Authorization: `Bearer ${token}` } },
+    );
     const ig = await readMeta(igRes);
     if (ig.data?.error) {
 
