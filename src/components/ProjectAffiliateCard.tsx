@@ -71,7 +71,7 @@ export default function ProjectAffiliateCard({ projectId, projectName }: { proje
   const addTemplate = async () => {
     const nextPos = (templates.at(-1)?.position ?? -1) + 1;
     const { error } = await supabase.from("project_comment_templates" as any).insert({
-      project_id: projectId, template: "🔥 Novo modelo — inclua [link] onde o afiliado deve entrar.", position: nextPos,
+      project_id: projectId, template: "🔥 Curtiu o conteúdo?\nConfira nossa indicação na BIO 👆", position: nextPos,
     });
     if (error) return toast.error(error.message);
     load();
