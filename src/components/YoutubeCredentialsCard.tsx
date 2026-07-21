@@ -1,5 +1,5 @@
 import { useEffect, useState } from "react";
-import { Youtube, Loader2, CheckCircle2, XCircle, LogIn, LogOut, RefreshCw, ExternalLink } from "lucide-react";
+import { Youtube, Loader2, CheckCircle2, XCircle, LogIn, LogOut, RefreshCw, ExternalLink, Upload } from "lucide-react";
 import { Card, CardContent } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { toast } from "sonner";
@@ -12,11 +12,13 @@ import {
   refreshYoutubeToken,
   startYoutubeAuth,
 } from "@/lib/youtube";
+import YoutubeUploadDialog from "./YoutubeUploadDialog";
 
 export default function YoutubeCredentialsCard() {
   const [creds, setCreds] = useState<Record<YoutubeAccount, YoutubeCredential | undefined>>({} as any);
   const [loading, setLoading] = useState(true);
   const [busy, setBusy] = useState<YoutubeAccount | null>(null);
+  const [uploadFor, setUploadFor] = useState<YoutubeAccount | null>(null);
 
   const load = async () => {
     setLoading(true);
@@ -116,6 +118,9 @@ export default function YoutubeCredentialsCard() {
                       <Button variant="outline" size="sm" disabled={busy === value} onClick={() => disconnect(value)}>
                         <LogOut size={13} className="mr-1" /> Desconectar
                       </Button>
+                      <Button variant="outline" size="sm" onClick={() => setUploadFor(value)}>
+                        <Upload size={13} className="mr-1" /> Enviar vídeo para YouTube
+                      </Button>
                       <Button size="sm" disabled={busy === value} onClick={() => connect(value)} className="bg-gold-gradient text-black">
                         <ExternalLink size={13} className="mr-1" /> Reconectar
                       </Button>
@@ -132,6 +137,11 @@ export default function YoutubeCredentialsCard() {
           })}
         </div>
       </CardContent>
+      <YoutubeUploadDialog
+        open={!!uploadFor}
+        onOpenChange={(v) => !v && setUploadFor(null)}
+        account={uploadFor ?? "default"}
+      />
     </Card>
   );
 }
