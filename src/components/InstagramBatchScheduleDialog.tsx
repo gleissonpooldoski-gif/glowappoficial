@@ -148,13 +148,13 @@ export default function InstagramBatchScheduleDialog({ open, onOpenChange, video
           frames,
         },
       });
-      if (error || (data as any)?.error) throw new Error((data as any)?.error ?? error?.message);
-      return {
-        caption: String((data as any)?.caption ?? ""),
-        hashtags: flattenHashtags((data as any)?.hashtags),
-      };
-    } catch {
-      return { caption: "", hashtags: "" };
+      if (error || (data as any)?.error) throw new Error((data as any)?.error ?? error?.message ?? "Falha ao gerar legenda");
+      const caption = String((data as any)?.caption ?? "").trim();
+      const hashtags = flattenHashtags((data as any)?.hashtags);
+      if (!caption) throw new Error("IA retornou legenda vazia");
+      return { caption, hashtags };
+    } catch (e: any) {
+      throw new Error(e?.message ?? "Falha ao gerar legenda");
     }
   };
 
