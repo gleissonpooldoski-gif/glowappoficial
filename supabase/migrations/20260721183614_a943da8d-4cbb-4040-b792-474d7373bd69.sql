@@ -1,0 +1,1 @@
+ALTER TABLE public.youtube_posts ALTER COLUMN auto_comment_enabled SET DEFAULT true;
