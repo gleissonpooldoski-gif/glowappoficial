@@ -8,7 +8,7 @@ const BUCKET = "videos-processed";
 // Rate-limit guard: NUNCA consultar em intervalo menor que 10s.
 const INITIAL_POLL_DELAY_MS = 10000;      // Espera 10s após criar o container antes do primeiro GET.
 const POLL_INTERVAL_MS = 10000;            // 10s entre consultas subsequentes.
-const MAX_CONTAINER_STATUS_ATTEMPTS = 8;   // Máximo 8 consultas por container.
+const MAX_CONTAINER_STATUS_ATTEMPTS = 30;  // 30 × 10s = 300s (5min) para Reels longos.
 const PUBLISH_STABILIZATION_MS = 15000;    // Aguarda 15s após FINISHED antes do publish único.
 const MAX_PUBLICATION_CYCLES = 1;          // Sem retry automático em code=1: libera para nova tentativa manual.
 const CODE_4_COOLDOWN_MS = 5 * 60 * 1000;  // Cooldown de 5min após code=4.
