@@ -325,10 +325,11 @@ function PostCard({
 /* ---------- platform section (Agendados + Publicados) ---------- */
 
 function PlatformSection({
-  account, posts, statusFilter, ytByKey, ttByKey, selectedIds, onToggleSelect, onToggleAll,
+  account, meta, posts, statusFilter, ytByKey, ttByKey, selectedIds, onToggleSelect, onToggleAll,
   ...handlers
 }: {
   account: InstagramAccount;
+  meta: PlatformMeta;
   posts: InstagramPost[];
   statusFilter: StatusFilter;
   ytByKey: Map<string, { id: string; status: string; auto_comment_enabled: boolean }>;
@@ -344,7 +345,6 @@ function PlatformSection({
   onEditNetworks: (p: InstagramPost) => void;
   onToggleAutoComment: (ytId: string, enable: boolean) => void;
 }) {
-  const meta = PLATFORM_META[account];
   const own = posts.filter((p) => p.account === account);
 
   const scheduled = own
