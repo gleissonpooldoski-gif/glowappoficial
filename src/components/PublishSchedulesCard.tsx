@@ -53,7 +53,6 @@ function ScheduleEditor({
   defaultPerDay?: number;
 }) {
   const [times, setTimes] = useState<string[]>(defaultTimes);
-  const [perDay, setPerDay] = useState<number>(defaultPerDay);
   const [newTime, setNewTime] = useState("09:00");
   const [loading, setLoading] = useState(true);
   const [saving, setSaving] = useState(false);
@@ -83,7 +82,6 @@ function ScheduleEditor({
         const sched: PublishSchedule | null = await getSchedule(network, account, null);
         if (sched) {
           setTimes(sched.times.length ? sched.times : defaultTimes);
-          setPerDay(sched.posts_per_day || defaultPerDay);
           setSeqStartAt(sched.sequence_start_at);
           const { date, time } = toLocalInputValue(sched.sequence_start_at);
           setSeqDate(date);
@@ -139,7 +137,7 @@ function ScheduleEditor({
     setSaving(true);
     try {
       const sequence_start_at = buildSeqIso();
-      await upsertSchedule({ network, account, times, posts_per_day: perDay, sequence_start_at });
+      await upsertSchedule({ network, account, times, posts_per_day: uniqueCount, sequence_start_at });
       setSeqStartAt(sequence_start_at);
       await loadNextSlot();
       toast.success(`Configurações salvas: ${label}`);
@@ -153,7 +151,7 @@ function ScheduleEditor({
   const resetSequence = async () => {
     setSaving(true);
     try {
-      await upsertSchedule({ network, account, times, posts_per_day: perDay, sequence_start_at: null });
+      await upsertSchedule({ network, account, times, posts_per_day: uniqueCount, sequence_start_at: null });
       setSeqDate("");
       setSeqTime("");
       setSeqStartAt(null);
@@ -181,15 +179,9 @@ function ScheduleEditor({
           </div>
         </div>
         <div className="flex items-center gap-2">
-          <Label className="text-xs text-muted-foreground">Posts/dia</Label>
-          <Input
-            type="number"
-            min={1}
-            max={50}
-            value={perDay}
-            onChange={(e) => setPerDay(Number(e.target.value))}
-            className="h-8 w-20"
-          />
+          <Badge variant="outline" className="text-[11px]">
+            {uniqueCount} posts/dia
+          </Badge>
         </div>
       </div>
 
@@ -223,7 +215,7 @@ function ScheduleEditor({
         </Button>
         <div className="ml-auto flex items-center gap-2">
           <Badge variant="outline" className="text-[10px]">
-            {uniqueCount} horário(s)
+            {uniqueCount} horário(s) de publicação
           </Badge>
           <Button size="sm" onClick={save} disabled={saving} className="bg-gold-gradient text-black">
             {saving ? <Loader2 size={12} className="mr-1 animate-spin" /> : <Save size={12} className="mr-1" />}
