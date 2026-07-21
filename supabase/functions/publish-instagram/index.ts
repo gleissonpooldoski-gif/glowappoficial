@@ -233,7 +233,7 @@ Deno.serve(async (req) => {
     await appendLog(postId, { event: "error", message, details: details ?? null });
   };
 
-  const completePublication = async (postId: string, containerId: string, token: string, igId: string) => {
+  const completePublication = async (postId: string, containerId: string, token: string, igId: string, account: Account) => {
     try {
       const start = Date.now();
       let lastStatus: any = null;
@@ -285,7 +285,7 @@ Deno.serve(async (req) => {
     } catch (e: any) {
       const rawMessage = e?.message ?? "Erro desconhecido ao finalizar publicação.";
       const blocked = isApiBlockedError(e?.metaData, rawMessage);
-      const message = blocked ? FRIENDLY_BLOCKED_MESSAGE : userFacingMetaError(undefined, rawMessage, e?.metaData);
+      const message = blocked ? FRIENDLY_BLOCKED_MESSAGE : userFacingMetaError(account, rawMessage, e?.metaData);
       console.error("[publish-instagram/background]", rawMessage);
       await appendLog(postId, { event: "meta_api_error", blocked, raw_message: rawMessage, meta: e?.metaData ?? null });
       if (blocked) {
@@ -432,7 +432,7 @@ Deno.serve(async (req) => {
     await supabase.from("instagram_posts").update({ container_id: containerId }).eq("id", post.id);
     await appendLog(post.id, { event: "creation_id_saved", creation_id: containerId });
 
-    const background = completePublication(post.id, containerId, token, igId);
+    const background = completePublication(post.id, containerId, token, igId, account as Account);
     const edgeRuntime = (globalThis as any).EdgeRuntime;
     if (edgeRuntime?.waitUntil) edgeRuntime.waitUntil(background);
 
