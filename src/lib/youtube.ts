@@ -54,3 +54,30 @@ export async function disconnectYoutube(account: YoutubeAccount = "default") {
 export function refreshYoutubeToken(account: YoutubeAccount = "default") {
   return invoke("youtube-refresh-token", { account });
 }
+
+export type YoutubeUploadInput = {
+  account?: YoutubeAccount;
+  video_id?: string;
+  storage_bucket?: string;
+  storage_path?: string;
+  title: string;
+  description?: string;
+  tags?: string[];
+  category_id?: string;
+  privacy_status?: "private" | "unlisted" | "public";
+};
+
+export function uploadToYoutube(input: YoutubeUploadInput) {
+  return invoke<{ success: boolean; video_id: string; url: string | null }>("youtube-upload", input as any);
+}
+
+export async function listLibraryVideos(limit = 50) {
+  const { data, error } = await supabase
+    .from("videos")
+    .select("id, filename, original_path, thumbnail_url, duration_seconds, created_at")
+    .not("original_path", "is", null)
+    .order("created_at", { ascending: false })
+    .limit(limit);
+  if (error) throw error;
+  return data ?? [];
+}
