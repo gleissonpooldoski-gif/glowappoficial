@@ -71,6 +71,8 @@ export default function ProjectDetail() {
           </div>
         </header>
       )}
+      {project && <ProjectAffiliateCard projectId={project.id} projectName={project.name} />}
+
 
       <section className="space-y-3">
         <div className="flex items-center gap-2">
