@@ -157,16 +157,15 @@ export default function InstagramBatchScheduleDialog({ open, onOpenChange, video
   };
 
   const scheduleOne = async (
-    v: VideoMeta, slot: Date, caption: string, hashtags: string, nets: NetworkId[],
+    v: VideoMeta, slotFor: Partial<Record<NetworkId, Date>>, caption: string, hashtags: string, nets: NetworkId[],
   ): Promise<string[]> => {
     const errs: string[] = [];
-    const iso = slot.toISOString();
-    const ig_id: string | null = null;
     let igPostId: string | null = null;
     let ttPostId: string | null = null;
     let ytPostId: string | null = null;
 
-    if (nets.includes("instagram")) {
+    if (nets.includes("instagram") && slotFor.instagram) {
+      const iso = slotFor.instagram.toISOString();
       if (!igAccount) errs.push("Instagram: projeto ativo inválido");
       else {
         try {
@@ -175,14 +174,17 @@ export default function InstagramBatchScheduleDialog({ open, onOpenChange, video
             publishNow: false, scheduledAt: iso,
           });
           igPostId = res?.post?.id ?? null;
-        } catch (e: any) {
-          errs.push(`Instagram: ${friendlyError(e)}`);
-        }
+          await supabase.from("publish_schedules_multi" as any).insert({
+            video_id: v.id, networks: ["instagram"], scheduled_at: iso,
+            instagram_post_id: igPostId, youtube_post_id: null, tiktok_post_id: null,
+          });
+        } catch (e: any) { errs.push(`Instagram: ${friendlyError(e)}`); }
       }
     }
 
-    if (nets.includes("tiktok")) {
-      const ttAccount = igAccount; // mesmo mapeamento frame/resenha
+    if (nets.includes("tiktok") && slotFor.tiktok) {
+      const iso = slotFor.tiktok.toISOString();
+      const ttAccount = igAccount;
       if (!ttAccount) errs.push("TikTok: projeto ativo inválido");
       else {
         try {
@@ -193,11 +195,16 @@ export default function InstagramBatchScheduleDialog({ open, onOpenChange, video
           }).select("id").maybeSingle();
           if (error) throw error;
           ttPostId = (data as any)?.id ?? null;
+          await supabase.from("publish_schedules_multi" as any).insert({
+            video_id: v.id, networks: ["tiktok"], scheduled_at: iso,
+            instagram_post_id: null, youtube_post_id: null, tiktok_post_id: ttPostId,
+          });
         } catch (e: any) { errs.push(`TikTok: ${e?.message ?? "erro"}`); }
       }
     }
 
-    if (nets.includes("youtube")) {
+    if (nets.includes("youtube") && slotFor.youtube) {
+      const iso = slotFor.youtube.toISOString();
       try {
         const title = (v.filename ?? "Vídeo").replace(/\.[^.]+$/, "").slice(0, 100);
         const desc = [caption, hashtags].filter(Boolean).join("\n\n").slice(0, 5000);
@@ -210,33 +217,25 @@ export default function InstagramBatchScheduleDialog({ open, onOpenChange, video
         }).select("id").maybeSingle();
         if (error) throw error;
         ytPostId = (data as any)?.id ?? null;
+        await supabase.from("publish_schedules_multi" as any).insert({
+          video_id: v.id, networks: ["youtube"], scheduled_at: iso,
+          instagram_post_id: null, youtube_post_id: ytPostId, tiktok_post_id: null,
+        });
       } catch (e: any) { errs.push(`YouTube: ${e?.message ?? "erro"}`); }
     }
-
-    // Registro consolidado
-    try {
-      await supabase.from("publish_schedules_multi" as any).insert({
-        video_id: v.id,
-        networks: nets,
-        scheduled_at: iso,
-        instagram_post_id: igPostId,
-        youtube_post_id: ytPostId,
-        tiktok_post_id: ttPostId,
-      });
-    } catch { /* não bloqueia */ }
 
     return errs;
   };
 
   const run = async () => {
-    const nets = Array.from(selectedNets).filter((n) => NETWORKS.find((x) => x.id === n)?.available);
+    const nets = activeNets;
     if (nets.length === 0) { toast.error("Selecione ao menos uma rede social."); return; }
     if (nets.includes("instagram") && !igAccount) {
       toast.error("Selecione um projeto ativo (Frame/Resenha) para publicar no Instagram."); return;
     }
-    if (videos.length === 0 || slots.length === 0) return;
+    if (videos.length === 0) return;
     if (insufficient) {
-      toast.error(`Só há ${slots.length} slots livres para ${videos.length} vídeos.`);
+      toast.error(`Slots insuficientes em: ${insufficientNets.join(", ")}.`);
       return;
     }
     if (!confirm(`Agendar ${videos.length} vídeo(s) em ${nets.length} rede(s): ${nets.join(", ")}?`)) return;
@@ -244,9 +243,10 @@ export default function InstagramBatchScheduleDialog({ open, onOpenChange, video
     const allErrs: string[] = [];
     for (let i = 0; i < videos.length; i++) {
       const v = videos[i];
-      const slot = slots[i];
+      const slotFor: Partial<Record<NetworkId, Date>> = {};
+      for (const n of nets) slotFor[n] = slotsByNet[n]?.[i];
       const { caption, hashtags } = await genCaption(v);
-      const errs = await scheduleOne(v, slot, caption, hashtags, nets);
+      const errs = await scheduleOne(v, slotFor, caption, hashtags, nets);
       errs.forEach((e) => allErrs.push(`Vídeo ${i + 1} (${v.filename ?? v.id}): ${e}`));
       setDone(i + 1);
     }
@@ -263,7 +263,6 @@ export default function InstagramBatchScheduleDialog({ open, onOpenChange, video
   };
 
   const progress = videos.length ? Math.round((done / videos.length) * 100) : 0;
-  const preview = useMemo(() => slots.slice(0, 10), [slots]);
 
   return (
     <Dialog open={open} onOpenChange={(o) => !busy && onOpenChange(o)}>
