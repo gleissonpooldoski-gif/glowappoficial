@@ -51,7 +51,9 @@ Deno.serve(async (req) => {
       scope: SCOPES.join(" "),
       access_type: "offline",
       include_granted_scopes: "true",
-      prompt: "consent",
+      // select_account força o Google a mostrar o seletor de contas em vez de
+      // reutilizar a última sessão — essencial para conectar um segundo canal.
+      prompt: "select_account consent",
       state,
     });
     const authUrl = `${AUTH_ENDPOINT}?${params.toString()}`;
