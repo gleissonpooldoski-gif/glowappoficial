@@ -170,7 +170,7 @@ Deno.serve(async (req) => {
 
         // Se veio token, valida e faz upsert completo da CONTA INFORMADA apenas.
         // Falha de uma conta nunca altera as demais.
-        const token = (item.access_token ?? "").trim();
+        const token = sanitizeToken(item.access_token);
         const igId = (item.ig_business_id ?? "").trim();
 
         if (token || igId) {
@@ -213,7 +213,7 @@ Deno.serve(async (req) => {
 
     if (action === "create") {
       const display_name = String(body.display_name ?? "").trim();
-      const access_token = String(body.access_token ?? "").trim();
+      const access_token = sanitizeToken(body.access_token);
       const ig_business_id = String(body.ig_business_id ?? "").trim();
       const project_id = body.project_id ?? null;
       if (!display_name || !access_token || !ig_business_id) {
@@ -312,7 +312,7 @@ Deno.serve(async (req) => {
           { status: 400, headers: { ...corsHeaders, "Content-Type": "application/json" } });
       }
       const { data } = await supabase.from("instagram_credentials").select("*").eq("account", account).maybeSingle();
-      let token = data?.access_token ?? "";
+      let token = sanitizeToken(data?.access_token);
       let igId = data?.ig_business_id ?? "";
       if (!token || !igId) {
         if (account === "resenha") {
