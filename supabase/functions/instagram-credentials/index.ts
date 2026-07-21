@@ -129,7 +129,7 @@ async function validateAccount(token: string, igId: string): Promise<ValidationR
         message: `Conta encontrada, mas o tipo retornado é "${accountType}". É necessário ser Instagram Profissional (Business ou Creator) para publicar via API.`,
       };
     }
-    return { ok: true, status: "VALID", message: `Conta @${ig.data.username ?? "?"} validada (${accountType ?? "OK"}). Permissões OK: ${grantedPerms.filter((p) => REQUIRED_PERMS.includes(p)).join(", ")}.`, username: ig.data.username ?? null, account_type: accountType };
+    return { ok: true, status: "VALID", message: `Conta @${ig.data.username ?? "?"} validada (${accountType ?? "OK"})${grantedPerms.length ? `. Escopos: ${grantedPerms.join(", ")}` : ""}.`, username: ig.data.username ?? null, account_type: accountType };
   } catch (e: any) {
     return { ok: false, status: "UNKNOWN_ERROR", message: e?.message ?? "Falha ao consultar o Business ID." };
   }
