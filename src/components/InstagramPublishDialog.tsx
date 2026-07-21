@@ -173,31 +173,92 @@ export default function InstagramPublishDialog({
 
   const submit = async () => {
     if (!videoId) { toast.error("Vídeo inválido."); return; }
-    if (!account) {
-      toast.error("Selecione um projeto ativo (Frame ou Resenha) no menu superior.");
+    const wantIG = nets.has("instagram");
+    const wantYT = nets.has("youtube");
+    if (!wantIG && !wantYT) { toast.error("Selecione ao menos uma rede."); return; }
+    if (wantIG && !account) {
+      toast.error("Selecione um projeto ativo (Frame ou Resenha) para publicar no Instagram.");
       return;
     }
+    const netsLabel = [wantIG && "Instagram", wantYT && "YouTube"].filter(Boolean).join(" + ");
     const confirmMsg =
       mode === "schedule"
-        ? `Esta publicação será agendada no projeto ${platformLabel}. Confirmar?`
-        : `Esta publicação será enviada agora ao ${platformLabel}. Confirmar?`;
+        ? `Agendar em ${netsLabel}. Confirmar?`
+        : `Publicar agora em ${netsLabel}. Confirmar?`;
     if (!confirm(confirmMsg)) return;
     setBusy(true);
     try {
+      let iso: string | null = null;
       if (mode === "schedule") {
-        const iso = localDateTimeToIso(date, time);
+        iso = localDateTimeToIso(date, time);
         if (!iso || new Date(iso).getTime() < Date.now() + 60_000) {
           throw new Error("Selecione uma data/hora futura (mín. 1 minuto).");
         }
-        await publishInstagram({ account, videoId, caption, hashtags, publishNow: false, scheduledAt: iso });
-        toast.success("Publicação agendada!");
-      } else {
-        toast.message("Enviando para o Instagram… isso pode levar alguns minutos.");
-        await publishInstagram({ account, videoId, caption, hashtags, publishNow: true });
-        toast.success("Publicação iniciada. Acompanhe o status em Publicações.");
       }
-      onOpenChange(false);
-      onDone?.();
+      let igPostId: string | null = null;
+      let ytPostId: string | null = null;
+      const errs: string[] = [];
+
+      if (wantIG && account) {
+        try {
+          if (mode === "schedule") {
+            const res: any = await publishInstagram({ account, videoId, caption, hashtags, publishNow: false, scheduledAt: iso! });
+            igPostId = res?.post?.id ?? null;
+          } else {
+            toast.message("Enviando para o Instagram…");
+            const res: any = await publishInstagram({ account, videoId, caption, hashtags, publishNow: true });
+            igPostId = res?.post?.id ?? null;
+          }
+        } catch (e: any) { errs.push(`Instagram: ${friendlyError(e)}`); }
+      }
+
+      if (wantYT) {
+        try {
+          const title = (videoMeta?.filename ?? caption ?? "Vídeo").replace(/\.[^.]+$/, "").slice(0, 100) || "Vídeo";
+          const desc = [caption, hashtags].filter(Boolean).join("\n\n").slice(0, 5000);
+          const tags = hashtags.split(/\s+/).map((t) => t.replace(/^#/, "")).filter(Boolean).slice(0, 15);
+          if (mode === "schedule") {
+            const { data, error } = await supabase.from("youtube_posts" as any).insert({
+              video_id: videoId, account: "default",
+              title, description: desc, tags,
+              category_id: "22", privacy_status: "public",
+              status: "AGENDADO", scheduled_at: iso,
+            }).select("id").maybeSingle();
+            if (error) throw error;
+            ytPostId = (data as any)?.id ?? null;
+          } else {
+            toast.message("Enviando para o YouTube…");
+            await uploadToYoutube({
+              account: "default", video_id: videoId,
+              title, description: desc, tags,
+              category_id: "22", privacy_status: "public",
+            });
+          }
+        } catch (e: any) { errs.push(`YouTube: ${e?.message ?? "erro"}`); }
+      }
+
+      // Registro consolidado (para o calendário exibir os ícones)
+      if (mode === "schedule" && iso) {
+        try {
+          await supabase.from("publish_schedules_multi" as any).insert({
+            video_id: videoId,
+            networks: Array.from(nets),
+            scheduled_at: iso,
+            instagram_post_id: igPostId,
+            youtube_post_id: ytPostId,
+            tiktok_post_id: null,
+          });
+        } catch { /* não bloqueia */ }
+      }
+
+      if (errs.length === 0) {
+        toast.success(mode === "schedule" ? "Publicação agendada!" : "Publicação iniciada. Acompanhe em Publicações.");
+        onOpenChange(false);
+        onDone?.();
+      } else {
+        toast.warning(`Concluído com erros: ${errs.join(" | ")}`);
+        onDone?.();
+      }
     } catch (e: any) {
       toast.error(friendlyError(e));
     } finally {
