@@ -901,10 +901,17 @@ Deno.serve(async (req) => {
   } catch (e: any) {
     const rawMessage = e?.message ?? "Erro desconhecido.";
     const blocked = isApiBlockedError(e?.metaData, rawMessage);
-    const message = blocked ? FRIENDLY_BLOCKED_MESSAGE : userFacingMetaError(activeAccount ?? body?.account, rawMessage, e?.metaData);
+    const rateLimited = isAppRateLimitError(e?.metaData, rawMessage);
+    const message = rateLimited
+      ? "Limite de requisições da Meta atingido (code=4). Nova tentativa liberada em 5 minutos."
+      : (blocked ? FRIENDLY_BLOCKED_MESSAGE : userFacingMetaError(activeAccount ?? body?.account, rawMessage, e?.metaData));
     console.error("[publish-instagram]", rawMessage);
-    await failPost(activePostId ?? body?.postId ?? null, message, { raw: rawMessage, blocked, meta: e?.metaData ?? null });
-    return new Response(JSON.stringify({ error: message, blocked, status: "ERRO" }),
+    await failPost(activePostId ?? body?.postId ?? null, message, { raw: rawMessage, blocked, rate_limited: rateLimited, meta: e?.metaData ?? null });
+    // Libera o lock da conta se não conseguiu delegar ao background (cooldown fica mantido pelo setAccountCooldown).
+    if (activeIgId && activePostId && !rateLimited) {
+      try { await releaseAccountLock(activeIgId, activePostId); } catch (_) { /* noop */ }
+    }
+    return new Response(JSON.stringify({ error: message, blocked, rate_limited: rateLimited, status: "ERRO" }),
       { status: 200, headers: { ...corsHeaders, "Content-Type": "application/json" } });
   }
 });
