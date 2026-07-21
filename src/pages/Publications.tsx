@@ -24,6 +24,7 @@ import {
 } from "@/lib/instagram";
 import { supabase } from "@/integrations/supabase/client";
 import { toast } from "sonner";
+import MultiScheduleTimeline from "@/components/MultiScheduleTimeline";
 
 /* ---------- visual identity per platform ---------- */
 
@@ -457,6 +458,8 @@ export default function Publications() {
           Calendário independente por conta — cada plataforma organizada e visível de imediato.
         </p>
       </header>
+
+      <MultiScheduleTimeline />
 
       {/* Filters */}
       <Card className="glass border-border/50">
