@@ -298,14 +298,38 @@ Deno.serve(async (req) => {
       }
 
       const publishUrl = `${FB_BASE}/${igId}/media_publish`;
-      const publishRes = await metaPost(publishUrl, {
-        creation_id: containerId,
-        access_token: token,
-      }, token);
-
-      const publishId = publishRes.data?.id;
-      await appendLog(postId, { event: "media_publish_response", status: publishRes.status, response: publishRes.data });
-      if (!publishId) throw new Error(`Meta não retornou publish_id. Resposta: ${safeJson(publishRes.data)}`);
+      const MAX_PUBLISH_ATTEMPTS = 4;
+      let publishRes: any = null;
+      let publishId: string | undefined;
+      let lastPublishErr: any = null;
+      for (let attempt = 1; attempt <= MAX_PUBLISH_ATTEMPTS; attempt++) {
+        try {
+          await appendLog(postId, { event: "media_publish_attempt", attempt, creation_id: containerId });
+          publishRes = await metaPost(publishUrl, {
+            creation_id: containerId,
+            access_token: token,
+          }, token);
+          await appendLog(postId, { event: "media_publish_response", attempt, status: publishRes.status, response: publishRes.data });
+          publishId = publishRes.data?.id;
+          if (publishId) { lastPublishErr = null; break; }
+          throw new Error(`Meta não retornou publish_id. Resposta: ${safeJson(publishRes.data)}`);
+        } catch (err: any) {
+          lastPublishErr = err;
+          const transient = isTransientMetaError(err?.metaData, err?.message);
+          await appendLog(postId, {
+            event: "media_publish_error",
+            attempt,
+            transient,
+            raw_message: err?.message ?? null,
+            meta: err?.metaData ?? null,
+          });
+          if (!transient || attempt === MAX_PUBLISH_ATTEMPTS) throw err;
+          const backoffMs = 4000 * attempt;
+          await appendLog(postId, { event: "media_publish_retry_wait", attempt, backoff_ms: backoffMs });
+          await new Promise((r) => setTimeout(r, backoffMs));
+        }
+      }
+      if (!publishId) throw lastPublishErr ?? new Error("Falha ao publicar mídia no Instagram.");
 
       const nowIso = new Date().toISOString();
       await supabase.from("instagram_posts").update({
