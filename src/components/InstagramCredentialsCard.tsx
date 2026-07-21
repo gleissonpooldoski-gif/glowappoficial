@@ -171,14 +171,6 @@ export default function InstagramCredentialsCard() {
         if (ctx && typeof ctx.text === "function") {
           const raw = await ctx.text();
           const parsed = JSON.parse(raw);
-          if (parsed?.error) msg = parsed.error;
-        }
-      } catch { /* mantém msg */ }
-      try {
-        const ctx: any = (error as any).context;
-        if (ctx && typeof ctx.text === "function") {
-          const raw = await ctx.text();
-          const parsed = JSON.parse(raw);
           if (parsed?.result && parsed?.account) {
             setResults((prev) => ({ ...prev, [parsed.account]: parsed.result }));
           }
