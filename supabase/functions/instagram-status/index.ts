@@ -46,8 +46,8 @@ async function credentialsFor(supabase: any, account: string) {
     .maybeSingle();
   const env = envCredentialsFor(account);
   return {
-    token: data?.access_token || env.token,
-    igId: data?.ig_business_id || env.igId,
+    token: sanitizeToken(data?.access_token || env.token),
+    igId: (data?.ig_business_id || env.igId || "").toString().trim(),
   };
 }
 
