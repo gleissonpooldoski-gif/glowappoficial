@@ -206,12 +206,12 @@ export default function InstagramBatchScheduleDialog({ open, onOpenChange, video
     if (nets.includes("youtube") && slotFor.youtube) {
       const iso = slotFor.youtube.toISOString();
       try {
-        const title = (v.filename ?? "Vídeo").replace(/\.[^.]+$/, "").slice(0, 100);
-        const desc = [caption, hashtags].filter(Boolean).join("\n\n").slice(0, 5000);
-        const tags = hashtags.split(/\s+/).map((t) => t.replace(/^#/, "")).filter(Boolean).slice(0, 15);
+        // Título NUNCA usa nome do arquivo — sempre gerado a partir da legenda.
+        const { buildYoutubeMetaFromCaption } = await import("@/lib/youtube-meta");
+        const { title, description, tags } = await buildYoutubeMetaFromCaption(caption, hashtags);
         const { data, error } = await supabase.from("youtube_posts" as any).insert({
           video_id: v.id, account: "default",
-          title, description: desc, tags,
+          title, description, tags,
           category_id: "22", privacy_status: "public",
           status: "AGENDADO", scheduled_at: iso,
         }).select("id").maybeSingle();
