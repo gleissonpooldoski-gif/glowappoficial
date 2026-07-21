@@ -9,15 +9,12 @@ const BUCKET = "videos-processed";
 const MAX_POLL_MS = 5 * 60 * 1000;
 const POLL_INTERVAL_MS = 5000;
 
-// Sanitiza o Access Token: remove aspas, espaços, quebras de linha e caracteres invisíveis.
+// Sanitiza o Access Token: trim + remove aspas simples/duplas do início/fim,
+// mais limpeza de whitespace interno, BOM e caracteres de controle.
 function sanitizeToken(raw: string | undefined | null): string {
   if (!raw) return "";
-  let t = String(raw).trim();
-  // Remove aspas simples/duplas do início/fim
-  t = t.replace(/^['"]+|['"]+$/g, "");
-  // Remove qualquer whitespace/newline no meio
+  let t = String(raw).trim().replace(/^["']|["']$/g, "");
   t = t.replace(/[\s\r\n\t]+/g, "");
-  // Remove BOM e caracteres de controle
   t = t.replace(/[\u0000-\u001F\u007F\uFEFF]/g, "");
   return t.trim();
 }
@@ -229,6 +226,7 @@ Deno.serve(async (req) => {
       const publishUrl = `${baseForToken(token)}/${igId}/media_publish`;
       const publishRes = await metaPost(publishUrl, {
         creation_id: containerId,
+        access_token: token,
       }, token);
 
       const publishId = publishRes.data?.id;
@@ -375,13 +373,8 @@ Deno.serve(async (req) => {
     await appendLog(post.id, { event: "meta_token_resolved", account, token_source: tokenSource, token_length: token.length, token_head: tokenHead, token_tail: tokenTail, ig_id: igId });
     if (!token || !igId) throw new Error(`Credenciais Meta ausentes para a conta '${account}'.`);
 
-    const accountCheckUrl = `${baseForToken(token)}/${igId}?fields=id,username`;
-    const accountCheck = await metaGet(accountCheckUrl, token);
-    await appendLog(post.id, { event: "instagram_business_id_check", ig_id: igId, response: accountCheck.data });
-
-    // Não consultamos mais /me/permissions nem dados de Página do Facebook:
-    // o fluxo "Instagram API with Instagram Login" usa o IG User ID direto em graph.instagram.com.
-
+    // Sem pré-consultas legadas: o IG Business Account ID cadastrado é usado direto
+    // no endpoint de container. Removidas chamadas a account_type e à Página do Facebook.
     const fullCaption = buildCaption(caption, hashtags);
 
     const containerUrl = `${baseForToken(token)}/${igId}/media`;
@@ -389,9 +382,10 @@ Deno.serve(async (req) => {
       media_type: "REELS",
       video_url: signed.signedUrl,
       caption: fullCaption,
+      access_token: token,
     }, token);
     const containerId = containerRes.data?.id;
-    await appendLog(post.id, { event: "media_container_create_response", status: containerRes.status, response: containerRes.data });
+    await appendLog(post.id, { event: "media_container_create_response", status: containerRes.status, endpoint: containerUrl, response: containerRes.data });
     if (!containerId) throw new Error(`Meta não retornou creation_id. Resposta: ${safeJson(containerRes.data)}`);
 
 
