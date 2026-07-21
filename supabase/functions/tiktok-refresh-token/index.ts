@@ -8,8 +8,8 @@ const TOKEN_ENDPOINT = "https://open.tiktokapis.com/v2/oauth/token/";
 type Account = "resenha" | "frame";
 
 async function refreshOne(supabase: any, row: any) {
-  const clientKey = Deno.env.get("TIKTOK_CLIENT_KEY");
-  const clientSecret = Deno.env.get("TIKTOK_CLIENT_SECRET");
+  const clientKey = (Deno.env.get("TIKTOK_CLIENT_KEY") ?? "").trim();
+  const clientSecret = (Deno.env.get("TIKTOK_CLIENT_SECRET") ?? "").trim();
   if (!clientKey || !clientSecret) throw new Error("TIKTOK_CLIENT_KEY/SECRET não configurados.");
   if (!row?.refresh_token) throw new Error(`Conta ${row?.account}: sem refresh_token salvo — reconecte pelo painel.`);
 

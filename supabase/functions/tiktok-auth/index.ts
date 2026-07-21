@@ -38,8 +38,8 @@ Deno.serve(async (req) => {
         { status: 400, headers: { ...corsHeaders, "Content-Type": "application/json" } });
     }
 
-    const clientKey = Deno.env.get("TIKTOK_CLIENT_KEY");
-    const redirectUri = Deno.env.get("TIKTOK_REDIRECT_URI");
+    const clientKey = (Deno.env.get("TIKTOK_CLIENT_KEY") ?? "").trim();
+    const redirectUri = (Deno.env.get("TIKTOK_REDIRECT_URI") ?? "").trim();
     if (!clientKey || !redirectUri) {
       return new Response(JSON.stringify({ error: "TIKTOK_CLIENT_KEY ou TIKTOK_REDIRECT_URI não configurados." }),
         { status: 500, headers: { ...corsHeaders, "Content-Type": "application/json" } });

@@ -53,9 +53,9 @@ Deno.serve(async (req) => {
     // Descarta state após uso
     await supabase.from("tiktok_oauth_states").delete().eq("state", state);
 
-    const clientKey = Deno.env.get("TIKTOK_CLIENT_KEY");
-    const clientSecret = Deno.env.get("TIKTOK_CLIENT_SECRET");
-    const redirectUri = Deno.env.get("TIKTOK_REDIRECT_URI");
+    const clientKey = (Deno.env.get("TIKTOK_CLIENT_KEY") ?? "").trim();
+    const clientSecret = (Deno.env.get("TIKTOK_CLIENT_SECRET") ?? "").trim();
+    const redirectUri = (Deno.env.get("TIKTOK_REDIRECT_URI") ?? "").trim();
     if (!clientKey || !clientSecret || !redirectUri) {
       return htmlResponse("Configuração ausente", "TIKTOK_CLIENT_KEY, TIKTOK_CLIENT_SECRET ou TIKTOK_REDIRECT_URI não configuradas no backend.", false);
     }
