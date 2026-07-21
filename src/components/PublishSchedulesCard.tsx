@@ -151,7 +151,7 @@ function ScheduleEditor({
   const resetSequence = async () => {
     setSaving(true);
     try {
-      await upsertSchedule({ network, account, times, posts_per_day: perDay, sequence_start_at: null });
+      await upsertSchedule({ network, account, times, posts_per_day: uniqueCount, sequence_start_at: null });
       setSeqDate("");
       setSeqTime("");
       setSeqStartAt(null);
