@@ -262,9 +262,13 @@ export default function InstagramBatchScheduleDialog({ open, onOpenChange, video
       const v = videos[i];
       const slotFor: Partial<Record<NetworkId, Date>> = {};
       for (const n of nets) slotFor[n] = slotsByNet[n]?.[i];
-      const { caption, hashtags } = await genCaption(v);
-      const errs = await scheduleOne(v, slotFor, caption, hashtags, nets);
-      errs.forEach((e) => allErrs.push(`Vídeo ${i + 1} (${v.filename ?? v.id}): ${e}`));
+      try {
+        const { caption, hashtags } = await genCaption(v);
+        const errs = await scheduleOne(v, slotFor, caption, hashtags, nets);
+        errs.forEach((e) => allErrs.push(`Vídeo ${i + 1} (${v.filename ?? v.id}): ${e}`));
+      } catch (e: any) {
+        allErrs.push(`Vídeo ${i + 1} (${v.filename ?? v.id}): legenda não gerada — ${e?.message ?? "erro"}. Post não agendado.`);
+      }
       setDone(i + 1);
     }
     setErrors(allErrs);
