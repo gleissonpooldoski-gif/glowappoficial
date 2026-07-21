@@ -51,6 +51,51 @@ async function readMeta(res: Response) {
   return { status: res.status, data, text };
 }
 
+// Diagnóstico extra: descobre quais IG Business Accounts o token consegue acessar
+// via /me/accounts?fields=instagram_business_account. Usado somente quando a
+// validação principal falhar, para orientar o usuário sobre qual ID usar.
+async function discoverAccessibleIgAccounts(token: string): Promise<{
+  tokenOwner?: { id?: string; name?: string };
+  pages: Array<{ page_id: string; page_name: string; ig_business_account_id?: string; ig_username?: string }>;
+  error?: string;
+}> {
+  const out: { tokenOwner?: { id?: string; name?: string }; pages: any[]; error?: string } = { pages: [] };
+  try {
+    const meRes = await fetch(`${FB_BASE}/me?fields=id,name&access_token=${encodeURIComponent(token)}`);
+    const me = await readMeta(meRes);
+    if (me.data?.error) { out.error = me.data.error.message; return out; }
+    out.tokenOwner = { id: me.data?.id, name: me.data?.name };
+
+    const pagesRes = await fetch(`${FB_BASE}/me/accounts?fields=id,name,instagram_business_account{id,username}&limit=100&access_token=${encodeURIComponent(token)}`);
+    const pages = await readMeta(pagesRes);
+    if (pages.data?.error) { out.error = pages.data.error.message; return out; }
+    for (const p of pages.data?.data ?? []) {
+      out.pages.push({
+        page_id: p.id,
+        page_name: p.name,
+        ig_business_account_id: p.instagram_business_account?.id,
+        ig_username: p.instagram_business_account?.username,
+      });
+    }
+  } catch (e: any) {
+    out.error = e?.message ?? "Falha ao descobrir contas acessíveis.";
+  }
+  return out;
+}
+
+function formatDiscovery(d: Awaited<ReturnType<typeof discoverAccessibleIgAccounts>>): string {
+  const igs = d.pages.filter((p) => p.ig_business_account_id);
+  const owner = d.tokenOwner?.name ? ` (owner do token: ${d.tokenOwner.name}${d.tokenOwner.id ? ` #${d.tokenOwner.id}` : ""})` : "";
+  if (d.error && d.pages.length === 0) {
+    return `\n\nNão foi possível listar contas via /me/accounts${owner}: ${d.error}. Provavelmente este token não é de Usuário do Facebook com Páginas — se for um token do próprio IG (IGAA…), use um token de Página do Facebook vinculada, ou reconecte via Meta Business Login.`;
+  }
+  if (igs.length === 0) {
+    return `\n\nO token${owner} não tem nenhuma Página do Facebook com Instagram Business vinculado. Vincule o Instagram à Página no Meta Business Suite e gere um novo token.`;
+  }
+  const list = igs.map((p) => `  • ${p.ig_username ? "@" + p.ig_username : "(sem username)"} — IG ID: ${p.ig_business_account_id} (Página: ${p.page_name} #${p.page_id})`).join("\n");
+  return `\n\nEste token${owner} enxerga estes Instagram Business Accounts:\n${list}\n\nUse EXATAMENTE um dos IG IDs acima ao cadastrar a conta.`;
+}
+
 async function validateAccount(rawToken: string, rawIgId: string): Promise<ValidationResult> {
   const token = sanitizeToken(rawToken);
   const igId = String(rawIgId ?? "").trim();
@@ -61,41 +106,46 @@ async function validateAccount(rawToken: string, rawIgId: string): Promise<Valid
     return { ok: false, status: "TOKEN_INVALID", message: "Token inválido ou formato incorreto. Verifique se não há espaços, quebras de linha ou caracteres especiais." };
   }
 
-  const grantedPerms: string[] = [];
-  const permissionWarning = "";
-
   try {
     const url = `${FB_BASE}/${encodeURIComponent(igId)}?fields=id,username,name,profile_picture_url&access_token=${encodeURIComponent(token)}`;
     console.log(`[instagram-credentials] validate GET ${FB_BASE}/${igId}?fields=... ig_id=${igId} token_len=${token.length}`);
     const igRes = await fetch(url);
     const ig = await readMeta(igRes);
     if (ig.data?.error) {
-
       const code = ig.data.error.code;
+      const subcode = ig.data.error.error_subcode;
       const meta = ig.data.error.message ?? "";
       if (isApiBlocked(ig.data.error)) return { ok: false, status: "API_BLOCKED", message: `${BLOCKED_MSG} (${meta})` };
-      if (code === 190) return { ok: false, status: "TOKEN_EXPIRED", message: meta || "Token expirado." };
+      if (code === 190) {
+        return { ok: false, status: "TOKEN_EXPIRED", message: `${meta || "Token expirado."}\n\nGere um novo Access Token no Meta Business Suite / Facebook Developer e recadastre APENAS esta conta.` };
+      }
 
-      const hint = `\n\nConfirme que o ID informado (${igId}) é o instagram_business_account_id exato (ex.: 17841…) e que o Access Token foi emitido para essa mesma conta.`;
+      // Diagnóstico avançado: descobre o que este token realmente enxerga.
+      const discovery = await discoverAccessibleIgAccounts(token);
+      const discoveryText = formatDiscovery(discovery);
+      const owns = discovery.pages.some((p) => p.ig_business_account_id === igId);
+      const ownsHint = owns
+        ? `\n\nObs.: o ID ${igId} APARECE na lista deste token — se ainda assim falhou, pode faltar a permissão instagram_content_publish neste token específico.`
+        : `\n\nO ID cadastrado (${igId}) NÃO aparece na lista acima — ou o ID está errado, ou o token pertence a outro usuário/Página. Cada conta Instagram precisa do SEU próprio token gerado pelo dono da respectiva Página do Facebook.`;
 
+      const base = `${meta || "Falha ao ler o Instagram User ID."} (code=${code}${subcode ? `, subcode=${subcode}` : ""})`;
       if (code === 100 || code === 803) {
         return {
           ok: false,
           status: "IG_ID_INVALID",
-          message: `${meta}\n\nDiagnóstico: o ID ${igId} não existe OU este token não tem acesso a ele.${hint}`,
+          message: `${base}\n\nDiagnóstico: o objeto ${igId} não existe OU este token não tem permissão para acessá-lo.${discoveryText}${ownsHint}`,
         };
       }
-      return { ok: false, status: "IG_ID_INVALID", message: `${meta || "Falha ao ler o Instagram User ID."}${hint}` };
+      return { ok: false, status: "IG_ID_INVALID", message: `${base}${discoveryText}${ownsHint}` };
     }
 
     if (!ig.data?.id) return { ok: false, status: "IG_ID_INVALID", message: "Instagram Business ID não retornou dados." };
     return {
       ok: true,
       status: "VALID",
-      message: `Conta @${ig.data.username ?? "?"} validada${grantedPerms.length ? `. Escopos: ${grantedPerms.join(", ")}` : ""}${permissionWarning}.`,
+      message: `Conta @${ig.data.username ?? "?"} validada (IG ID ${ig.data.id}).`,
       username: ig.data.username ?? null,
     };
-
   } catch (e: any) {
     return { ok: false, status: "UNKNOWN_ERROR", message: e?.message ?? "Falha ao consultar o Business ID." };
   }
