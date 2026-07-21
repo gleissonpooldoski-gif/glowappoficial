@@ -14,6 +14,8 @@ import NotFound from "./pages/NotFound";
 import Editor from "./pages/Editor";
 import MyEdits from "./pages/MyEdits";
 import Publications from "./pages/Publications";
+import Privacy from "./pages/Privacy";
+import Terms from "./pages/Terms";
 
 import { ProjectProvider } from "@/context/ProjectContext";
 import { RenderQueueProvider } from "@/context/RenderQueueContext";
@@ -45,6 +47,8 @@ const App = () => (
                 <Route path="/processing" element={<Navigate to="/finished" replace />} />
               </Route>
               <Route path="*" element={<NotFound />} />
+              <Route path="/privacy" element={<Privacy />} />
+              <Route path="/terms" element={<Terms />} />
             </Routes>
             <RenderQueueIndicator />
           </RenderQueueProvider>
