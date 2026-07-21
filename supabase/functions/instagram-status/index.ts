@@ -246,9 +246,10 @@ Deno.serve(async (req) => {
       }
 
       const publishRes = await metaPost(
-        `${FB_BASE}/${igId}/media_publish`,
-        { creation_id: post.container_id, access_token: token },
+        `${FB_BASE}/${safeIgIdForStatus}/media_publish`,
+        { creation_id: assertGraphId(post.container_id, "creation_id"), access_token: token },
       );
+
       const publishId = publishRes.data?.id;
       await appendLog(post.id, { event: "manual_media_publish_response", status: publishRes.status, response: publishRes.data });
       if (!publishId) throw new Error(`Meta não retornou publish_id. Resposta: ${safeJson(publishRes.data)}`);
