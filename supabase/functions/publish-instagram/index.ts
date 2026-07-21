@@ -343,7 +343,7 @@ Deno.serve(async (req) => {
     await appendLog(postId, { event: "error", message, details: details ?? null });
   };
 
-  const completePublication = async (postId: string, initialContainerId: string, token: string, igId: string, account: Account, videoUrl: string, fullCaption: string) => {
+  const completePublication = async (postId: string, initialContainerId: string, token: string, igId: string, account: Account, videoUrl: string, fullCaption: string, tokenSource: string) => {
     try {
       let containerId = initialContainerId;
       const publishUrl = `${FB_BASE}/${igId}/media_publish`;
@@ -389,7 +389,7 @@ Deno.serve(async (req) => {
 
       const createReplacementContainer = async (cycle: number) => {
         const createdAt = new Date().toISOString();
-        await appendLog(postId, { event: "media_container_recreate_attempt", cycle, endpoint: containerUrl, ig_id: igId, created_at: createdAt });
+        await appendLog(postId, { event: "media_container_recreate_attempt", cycle, endpoint: containerUrl, ig_id: igId, instagram_business_id: igId, token_source: tokenSource, created_at: createdAt });
         const containerRes = await metaPost(containerUrl, {
           media_type: "REELS",
           video_url: videoUrl,
@@ -414,7 +414,7 @@ Deno.serve(async (req) => {
       let lastPublishErr: any = null;
       for (let cycle = 1; cycle <= MAX_PUBLICATION_CYCLES; cycle++) {
         if (!(await ensureNotAlreadyPublished())) return;
-        await appendLog(postId, { event: "publication_cycle_started", cycle, max_cycles: MAX_PUBLICATION_CYCLES, creation_id: containerId });
+        await appendLog(postId, { event: "publication_cycle_started", cycle, max_cycles: MAX_PUBLICATION_CYCLES, creation_id: containerId, instagram_business_id: igId, token_source: tokenSource });
 
         const finished = await waitForContainerFinished(cycle, containerId);
         await appendLog(postId, { event: "publish_stabilization_wait", cycle, creation_id: containerId, finished_at: finished.finishedAt, wait_ms: PUBLISH_STABILIZATION_MS });
@@ -426,7 +426,7 @@ Deno.serve(async (req) => {
         const preCheckUrl = `${FB_BASE}/${containerId}?fields=id,status_code&access_token=${encodeURIComponent(token)}`;
         const preCheck = await metaGet(preCheckUrl, token);
         const preStatus = preCheck.data?.status_code ?? "UNKNOWN";
-        await appendLog(postId, { event: "publish_precheck_status", cycle, creation_id: containerId, status_code: preStatus });
+        await appendLog(postId, { event: "publish_precheck_status", cycle, creation_id: containerId, instagram_business_id: igId, status_code: preStatus });
         if (preStatus !== "FINISHED") {
           const err: any = new Error(`Container não está FINISHED antes do publish (status=${preStatus}). Publicação abortada neste ciclo.`);
           err.metaData = { error: { message: `status_code=${preStatus}`, type: "ContainerNotFinished", code: preStatus }, container_status: preCheck.data };
@@ -449,6 +449,8 @@ Deno.serve(async (req) => {
             attempt: 1,
             endpoint: publishUrl,
             ig_user_id: igId,
+            instagram_business_id: igId,
+            token_source: tokenSource,
             creation_id: containerId,
             container_status: preStatus,
             caption_length: captionLength,
@@ -456,11 +458,12 @@ Deno.serve(async (req) => {
             publish_requested_at: publishRequestedAt,
             payload: publishPayload,
           });
-          // media_publish: enviar SOMENTE creation_id no body; access_token vai na query string. Uma única tentativa por ciclo.
+          // media_publish: endpoint limpo + body SOMENTE com creation_id. Token segue no header Authorization usando o mesmo token do /media.
           const publishRes = await metaPost(
-            `${publishUrl}?access_token=${encodeURIComponent(token)}`,
+            publishUrl,
             { creation_id: containerId },
             token,
+            { authHeaderToken: token },
           );
           const publishResponseAt = new Date().toISOString();
           await appendLog(postId, { event: "media_publish_response", cycle, attempt: 1, status: publishRes.status, publish_requested_at: publishRequestedAt, publish_response_at: publishResponseAt, response: publishRes.data });
@@ -479,6 +482,7 @@ Deno.serve(async (req) => {
           return;
         } catch (err: any) {
           lastPublishErr = err;
+          err.stage = "media_publish";
           // Consulta best-effort ao status atual do container para diagnóstico.
           let postErrorStatus: string | null = null;
           try {
@@ -492,6 +496,8 @@ Deno.serve(async (req) => {
             attempt: 1,
             endpoint: publishUrl,
             ig_user_id: igId,
+            instagram_business_id: igId,
+            token_source: tokenSource,
             creation_id: containerId,
             container_status_before: preStatus,
             container_status_after_error: postErrorStatus,
@@ -499,10 +505,16 @@ Deno.serve(async (req) => {
             hashtag_count: hashtagCount,
             publish_requested_at: publishRequestedAt,
             failed_at: new Date().toISOString(),
+            attempt_status: "FALHOU",
             next_action: cycle < MAX_PUBLICATION_CYCLES ? "create_new_container" : "fail_post",
             raw_message: err?.message ?? null,
             meta_error: metaErrorDetails(err?.metaData, err?.message),
+            meta_response: err?.metaData ?? null,
           });
+
+          await supabase.from("instagram_posts").update({
+            error_message: `Falha no publish do Reel após container finalizado. creation_id=${containerId}; instagram_business_id=${igId}; erro=${err?.message ?? "desconhecido"}`,
+          }).eq("id", postId);
 
           if (cycle === MAX_PUBLICATION_CYCLES) throw err;
           if (!(await ensureNotAlreadyPublished("new_container_skipped_already_published"))) return;
@@ -513,10 +525,11 @@ Deno.serve(async (req) => {
     } catch (e: any) {
       const rawMessage = e?.message ?? "Erro desconhecido ao finalizar publicação.";
       const blocked = isApiBlockedError(e?.metaData, rawMessage);
-      const message = blocked ? FRIENDLY_BLOCKED_MESSAGE : userFacingMetaError(account, rawMessage, e?.metaData);
+      const publishCodeOne = e?.stage === "media_publish" && isCodeOneMetaError(e?.metaData, rawMessage);
+      const message = publishCodeOne ? "Falha no publish do Reel após container finalizado." : (blocked ? FRIENDLY_BLOCKED_MESSAGE : userFacingMetaError(account, rawMessage, e?.metaData));
       console.error("[publish-instagram/background]", rawMessage);
       await appendLog(postId, { event: "meta_api_error", blocked, raw_message: rawMessage, meta: e?.metaData ?? null });
-      await failPost(postId, message, { raw: rawMessage, meta: e?.metaData ?? null });
+      await failPost(postId, message, { raw: rawMessage, meta: e?.metaData ?? null, stage: e?.stage ?? null });
     }
   };
 
@@ -699,7 +712,7 @@ Deno.serve(async (req) => {
       container_response: containerRes?.data ?? null,
     });
 
-    const background = completePublication(post.id, containerId, token, igId, account as Account, signed.signedUrl, fullCaption);
+    const background = completePublication(post.id, containerId, token, igId, account as Account, signed.signedUrl, fullCaption, tokenSource);
     const edgeRuntime = (globalThis as any).EdgeRuntime;
     if (edgeRuntime?.waitUntil) edgeRuntime.waitUntil(background);
 
