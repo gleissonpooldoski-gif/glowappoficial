@@ -132,18 +132,25 @@ Deno.serve(async (req) => {
     // URL do vídeo (PULL_FROM_URL)
     const videoUrl = await resolveVideoUrl(supabase, videoId);
 
-    // Chamada de publicação
-    const payload = {
-      post_info: {
-        title: cap,
-        privacy_level: privacy_level ?? "SELF_ONLY", // apps não auditados só publicam privado
-        disable_duet: false, disable_comment: false, disable_stitch: false,
-        video_cover_timestamp_ms: 1000,
-      },
-      source_info: { source: "PULL_FROM_URL", video_url: videoUrl },
-    };
+    // Envio como DRAFT (Inbox). O endpoint de inbox aceita apenas source_info.
+    // Quando `video.publish` for aprovado, defina ENABLE_DIRECT_PUBLISH=true para
+    // habilitar publicação direta com post_info/privacy_level.
+    const endpoint = ENABLE_DIRECT_PUBLISH ? PUBLISH_INIT_ENDPOINT : INBOX_INIT_ENDPOINT;
+    const payload: Record<string, unknown> = ENABLE_DIRECT_PUBLISH
+      ? {
+          post_info: {
+            title: cap,
+            privacy_level: privacy_level ?? "SELF_ONLY",
+            disable_duet: false, disable_comment: false, disable_stitch: false,
+            video_cover_timestamp_ms: 1000,
+          },
+          source_info: { source: "PULL_FROM_URL", video_url: videoUrl },
+        }
+      : {
+          source_info: { source: "PULL_FROM_URL", video_url: videoUrl },
+        };
 
-    const res = await fetch(PUBLISH_INIT_ENDPOINT, {
+    const res = await fetch(endpoint, {
       method: "POST",
       headers: {
         Authorization: `Bearer ${fresh.access_token}`,
