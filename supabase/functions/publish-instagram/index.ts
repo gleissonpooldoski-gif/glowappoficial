@@ -219,6 +219,7 @@ Deno.serve(async (req) => {
 
   let body: any = {};
   let activePostId: string | null = null;
+  let activeAccount: string | null = null;
 
   const appendLog = async (postId: string, entry: any) => {
     try {
@@ -333,6 +334,7 @@ Deno.serve(async (req) => {
       post = data;
       activePostId = data.id;
       account = account ?? data.account;
+      activeAccount = account ?? null;
       videoId = videoId ?? data.video_id;
       caption = data.caption ?? caption;
       hashtags = data.hashtags ?? hashtags;
@@ -342,6 +344,7 @@ Deno.serve(async (req) => {
       return new Response(JSON.stringify({ error: "Conta inválida." }),
         { status: 400, headers: { ...corsHeaders, "Content-Type": "application/json" } });
     }
+    activeAccount = account;
     if (!videoId) {
       return new Response(JSON.stringify({ error: "videoId é obrigatório." }),
         { status: 400, headers: { ...corsHeaders, "Content-Type": "application/json" } });
@@ -458,12 +461,12 @@ Deno.serve(async (req) => {
     const blocked = isApiBlockedError(e?.metaData, rawMessage);
     const message = blocked ? FRIENDLY_BLOCKED_MESSAGE : userFacingMetaError(body?.account, rawMessage, e?.metaData);
     console.error("[publish-instagram]", rawMessage);
-    if (blocked && body?.account && typeof body.account === "string") {
-      await markCredentialsBlocked(supabase, body.account as Account, rawMessage);
-    } else if (body?.account && typeof body.account === "string" && isTokenExpiredError(e?.metaData, rawMessage)) {
-      await markCredentialsValidationError(supabase, body.account as Account, "TOKEN_EXPIRED", message);
-    } else if (body?.account && typeof body.account === "string" && isInstagramIdInvalidError(e?.metaData, rawMessage)) {
-      await markCredentialsValidationError(supabase, body.account as Account, "IG_ID_INVALID", message);
+    if (blocked && activeAccount) {
+      await markCredentialsBlocked(supabase, activeAccount as Account, rawMessage);
+    } else if (activeAccount && isTokenExpiredError(e?.metaData, rawMessage)) {
+      await markCredentialsValidationError(supabase, activeAccount as Account, "TOKEN_EXPIRED", message);
+    } else if (activeAccount && isInstagramIdInvalidError(e?.metaData, rawMessage)) {
+      await markCredentialsValidationError(supabase, activeAccount as Account, "IG_ID_INVALID", message);
     }
     await failPost(activePostId ?? body?.postId ?? null, message, { raw: rawMessage, blocked, meta: e?.metaData ?? null });
     return new Response(JSON.stringify({ error: message, blocked, status: "ERRO" }),
