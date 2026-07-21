@@ -11,6 +11,7 @@ import { toast } from "sonner";
 import { format } from "date-fns";
 import { ptBR } from "date-fns/locale";
 import { supabase } from "@/integrations/supabase/client";
+import YoutubeChannelPicker from "./YoutubeChannelPicker";
 import type { InstagramPost } from "@/lib/instagram";
 
 type Props = {
@@ -20,27 +21,26 @@ type Props = {
   onSaved?: () => void;
 };
 
-type LinkedYT = { id: string; status: string; scheduled_at: string | null } | null;
+type LinkedYT = { id: string; status: string; account: string | null; scheduled_at: string | null };
 
-/** Encontra YouTube post vinculado (mesmo video_id e horário agendado). */
-async function findLinkedYoutube(post: InstagramPost): Promise<LinkedYT> {
-  if (!post.video_id || !post.scheduled_at) return null;
-  const iso = post.scheduled_at;
+/** Encontra YouTube posts vinculados (mesmo video_id e horário agendado). */
+async function findLinkedYoutube(post: InstagramPost): Promise<LinkedYT[]> {
+  if (!post.video_id || !post.scheduled_at) return [];
   const { data } = await supabase
     .from("youtube_posts" as any)
-    .select("id, status, scheduled_at")
+    .select("id, status, account, scheduled_at")
     .eq("video_id", post.video_id)
-    .eq("scheduled_at", iso)
-    .maybeSingle();
-  return (data as any) ?? null;
+    .eq("scheduled_at", post.scheduled_at);
+  return ((data ?? []) as any[]) as LinkedYT[];
 }
 
 export default function EditPostNetworksDialog({ post, open, onOpenChange, onSaved }: Props) {
   const [loading, setLoading] = useState(false);
   const [busy, setBusy] = useState(false);
-  const [linkedYT, setLinkedYT] = useState<LinkedYT>(null);
+  const [linkedYT, setLinkedYT] = useState<LinkedYT[]>([]);
   const [wantIG, setWantIG] = useState(true);
   const [wantYT, setWantYT] = useState(false);
+  const [ytChannels, setYtChannels] = useState<string[]>([]);
   const [hasVideoFile, setHasVideoFile] = useState<boolean>(false);
 
   useEffect(() => {
@@ -58,7 +58,8 @@ export default function EditPostNetworksDialog({ post, open, onOpenChange, onSav
         if (cancelled) return;
         setLinkedYT(yt);
         setWantIG(true);
-        setWantYT(!!yt);
+        setWantYT(yt.length > 0);
+        setYtChannels(yt.map((l) => l.account).filter((a): a is string => !!a));
         setHasVideoFile(Boolean((videoRow as any)?.data?.original_path || (videoRow as any)?.data?.processed_path));
       } finally {
         if (!cancelled) setLoading(false);
@@ -81,38 +82,46 @@ export default function EditPostNetworksDialog({ post, open, onOpenChange, onSav
       toast.error("Post sem horário agendado.");
       return;
     }
+    if (wantYT && ytChannels.length === 0) {
+      toast.error("Selecione ao menos um canal do YouTube.");
+      return;
+    }
     setBusy(true);
     try {
       const actions: string[] = [];
+      const linkedByAcc = new Map(linkedYT.map((l) => [l.account ?? "default", l]));
+      const selectedSet = new Set(wantYT ? ytChannels : []);
 
-      // 1) YouTube: adicionar
-      if (wantYT && !linkedYT) {
-        // Título sempre da legenda (nunca do nome do arquivo).
+      // 1) YouTube: adicionar canais recém-selecionados.
+      if (wantYT) {
         const { buildYoutubeMetaFromCaption } = await import("@/lib/youtube-meta");
-        const { title, description, tags } = await buildYoutubeMetaFromCaption(
-          post.caption ?? "", post.hashtags ?? "",
-        );
-
-        const { error } = await supabase.from("youtube_posts" as any).insert({
-          video_id: post.video_id,
-          account: "default",
-          title,
-          description,
-          tags,
-          category_id: "22",
-          privacy_status: "public",
-          status: "AGENDADO",
-          scheduled_at: post.scheduled_at,
-        });
-        if (error) throw error;
-        actions.push("YouTube adicionado");
+        const meta = await buildYoutubeMetaFromCaption(post.caption ?? "", post.hashtags ?? "");
+        for (const acc of ytChannels) {
+          if (linkedByAcc.has(acc)) continue;
+          const { error } = await supabase.from("youtube_posts" as any).insert({
+            video_id: post.video_id,
+            account: acc,
+            title: meta.title,
+            description: meta.description,
+            tags: meta.tags,
+            category_id: "22",
+            privacy_status: "public",
+            status: "AGENDADO",
+            scheduled_at: post.scheduled_at,
+          });
+          if (error) throw error;
+          actions.push(`YouTube (${acc.slice(0, 8)}…) adicionado`);
+        }
       }
 
-      // 2) YouTube: remover
-      if (!wantYT && linkedYT) {
-        const { error } = await supabase.from("youtube_posts" as any).delete().eq("id", linkedYT.id);
-        if (error) throw error;
-        actions.push("YouTube removido");
+      // 2) YouTube: remover canais desmarcados.
+      for (const l of linkedYT) {
+        const acc = l.account ?? "default";
+        if (!selectedSet.has(acc)) {
+          const { error } = await supabase.from("youtube_posts" as any).delete().eq("id", l.id);
+          if (error) throw error;
+          actions.push(`YouTube (${acc.slice(0, 8)}…) removido`);
+        }
       }
 
       // 3) Instagram: remover (o post IG atual é excluído)
