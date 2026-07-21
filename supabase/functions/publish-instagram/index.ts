@@ -5,10 +5,14 @@ import { corsHeaders } from "npm:@supabase/supabase-js@2/cors";
 const GRAPH_VERSION = "v18.0";
 const FB_BASE = `https://graph.facebook.com/${GRAPH_VERSION}`;
 const BUCKET = "videos-processed";
-const POLL_INTERVAL_MS = 5000;
-const MAX_CONTAINER_STATUS_ATTEMPTS = 12;
-const PUBLISH_STABILIZATION_MS = 8000;
+// Rate-limit guard: NUNCA consultar em intervalo menor que 10s.
+const INITIAL_POLL_DELAY_MS = 10000;      // Espera 10s após criar o container antes do primeiro GET.
+const POLL_INTERVAL_MS = 10000;            // 10s entre consultas subsequentes.
+const MAX_CONTAINER_STATUS_ATTEMPTS = 8;   // Máximo 8 consultas por container.
+const PUBLISH_STABILIZATION_MS = 15000;    // Aguarda 15s após FINISHED antes do publish único.
 const MAX_PUBLICATION_CYCLES = 3;
+const CODE_4_COOLDOWN_MS = 5 * 60 * 1000;  // Cooldown de 5min após code=4.
+const ACCOUNT_LOCK_STALE_MS = 15 * 60 * 1000; // Considera lock preso após 15min.
 
 // Sanitiza o Access Token: trim + remove aspas, whitespace interno, BOM,
 // caracteres de controle e QUALQUER caractere fora do intervalo ASCII imprimível
@@ -130,6 +134,16 @@ function isCodeOneMetaError(data: any, message?: string): boolean {
 function isReduceDataError(data: any, message?: string): boolean {
   const msg = `${data?.error?.message ?? ""} ${message ?? ""}`.toLowerCase();
   return msg.includes("please reduce") || msg.includes("reduce the amount of data");
+}
+
+function isAppRateLimitError(data: any, message?: string): boolean {
+  const err = data?.error;
+  const msg = `${err?.message ?? ""} ${message ?? ""}`.toLowerCase();
+  const code = Number(err?.code);
+  if (code === 4 || code === 17 || code === 32 || code === 613) return true;
+  if (msg.includes("application request limit reached")) return true;
+  if (msg.includes("rate limit") || msg.includes("too many requests")) return true;
+  return false;
 }
 
 function isMetaServiceError(data: any, message?: string): boolean {
@@ -318,6 +332,93 @@ Deno.serve(async (req) => {
   let body: any = {};
   let activePostId: string | null = null;
   let activeAccount: string | null = null;
+  let activeIgId: string | null = null;
+  let activeCreationId: string | null = null;
+
+  // ============ Rate-limit guard helpers ============
+  const acquireAccountLock = async (igId: string, postId: string) => {
+    // Verifica cooldown
+    const { data: existing } = await supabase
+      .from("instagram_account_locks")
+      .select("*")
+      .eq("ig_business_id", igId)
+      .maybeSingle();
+    const now = Date.now();
+    if (existing?.cooldown_until && new Date(existing.cooldown_until).getTime() > now) {
+      const secs = Math.ceil((new Date(existing.cooldown_until).getTime() - now) / 1000);
+      return { ok: false, reason: "cooldown", cooldown_until: existing.cooldown_until, wait_seconds: secs };
+    }
+    if (existing?.post_id && existing.post_id !== postId) {
+      const lockedAgeMs = now - new Date(existing.locked_at).getTime();
+      if (lockedAgeMs < ACCOUNT_LOCK_STALE_MS) {
+        return { ok: false, reason: "busy", busy_post_id: existing.post_id, locked_at: existing.locked_at };
+      }
+    }
+    await supabase.from("instagram_account_locks").upsert({
+      ig_business_id: igId,
+      post_id: postId,
+      locked_at: new Date().toISOString(),
+      cooldown_until: null,
+      last_error_code: null,
+    }, { onConflict: "ig_business_id" });
+    return { ok: true };
+  };
+
+  const releaseAccountLock = async (igId: string, postId: string) => {
+    await supabase.from("instagram_account_locks").delete().eq("ig_business_id", igId).eq("post_id", postId);
+  };
+
+  const setAccountCooldown = async (igId: string, postId: string, ms: number, code: number) => {
+    const until = new Date(Date.now() + ms).toISOString();
+    await supabase.from("instagram_account_locks").upsert({
+      ig_business_id: igId,
+      post_id: postId,
+      locked_at: new Date().toISOString(),
+      cooldown_until: until,
+      last_error_code: code,
+    }, { onConflict: "ig_business_id" });
+    return until;
+  };
+
+  const acquireContainerLock = async (creationId: string, postId: string, igId: string) => {
+    const { data: existing } = await supabase
+      .from("instagram_publish_locks")
+      .select("*")
+      .eq("creation_id", creationId)
+      .maybeSingle();
+    if (existing) {
+      const ageMs = Date.now() - new Date(existing.polling_started_at).getTime();
+      if (existing.status === "processing" && ageMs < 5 * 60 * 1000 && existing.post_id !== postId) {
+        return { ok: false, reason: "already_polling", request_count: existing.request_count };
+      }
+    }
+    await supabase.from("instagram_publish_locks").upsert({
+      creation_id: creationId,
+      post_id: postId,
+      ig_business_id: igId,
+      status: "processing",
+      polling_started_at: new Date().toISOString(),
+      request_count: 0,
+      last_request_at: null,
+    }, { onConflict: "creation_id" });
+    return { ok: true };
+  };
+
+  const incrementContainerRequest = async (creationId: string) => {
+    const { data } = await supabase.from("instagram_publish_locks").select("request_count").eq("creation_id", creationId).maybeSingle();
+    const next = (data?.request_count ?? 0) + 1;
+    await supabase.from("instagram_publish_locks").update({
+      request_count: next,
+      last_request_at: new Date().toISOString(),
+    }).eq("creation_id", creationId);
+    return next;
+  };
+
+  const finalizeContainerLock = async (creationId: string, status: "done" | "timeout" | "error") => {
+    await supabase.from("instagram_publish_locks").update({ status }).eq("creation_id", creationId);
+  };
+  // ==================================================
+
 
   const appendLog = async (postId: string, entry: any) => {
     try {
@@ -358,33 +459,91 @@ Deno.serve(async (req) => {
         return true;
       };
 
+      // Polling controlado: aguarda INITIAL_POLL_DELAY_MS, depois consulta a cada POLL_INTERVAL_MS.
+      // Máximo MAX_CONTAINER_STATUS_ATTEMPTS consultas. Nenhuma consulta extra em outro ponto.
       const waitForContainerFinished = async (cycle: number, currentContainerId: string) => {
+        // Lock por creation_id: só um polling ativo.
+        const lock = await acquireContainerLock(currentContainerId, postId, igId);
+        if (!lock.ok) {
+          await appendLog(postId, { event: "polling_skipped_lock_held", cycle, creation_id: currentContainerId, reason: lock.reason });
+          throw new Error(`Polling já ativo para creation_id=${currentContainerId}.`);
+        }
+
+        // 1ª consulta: aguardar 10s após criar o container.
+        await appendLog(postId, { event: "polling_initial_wait", cycle, creation_id: currentContainerId, wait_ms: INITIAL_POLL_DELAY_MS });
+        await new Promise((resolve) => setTimeout(resolve, INITIAL_POLL_DELAY_MS));
+
         const startedAt = Date.now();
         let lastStatus: any = null;
         for (let attempt = 1; attempt <= MAX_CONTAINER_STATUS_ATTEMPTS; attempt++) {
+          const requestTs = new Date().toISOString();
+          const requestCount = await incrementContainerRequest(currentContainerId);
           const statusUrl = `${FB_BASE}/${currentContainerId}?fields=id,status_code&access_token=${encodeURIComponent(token)}`;
-          const statusRes = await metaGet(statusUrl, token);
+          let statusRes: any;
+          try {
+            statusRes = await metaGet(statusUrl, token);
+          } catch (getErr: any) {
+            if (isAppRateLimitError(getErr?.metaData, getErr?.message)) {
+              const until = await setAccountCooldown(igId, postId, CODE_4_COOLDOWN_MS, 4);
+              await appendLog(postId, {
+                event: "rate_limit_code_4",
+                stage: "container_status",
+                cycle,
+                creation_id: currentContainerId,
+                attempt,
+                request_count: requestCount,
+                request_ts: requestTs,
+                cooldown_until: until,
+                meta_error: metaErrorDetails(getErr?.metaData, getErr?.message),
+              });
+              await finalizeContainerLock(currentContainerId, "error");
+              const err: any = new Error("Application request limit reached (code=4). Cooldown de 5 minutos aplicado a esta conta.");
+              err.metaData = getErr?.metaData;
+              throw err;
+            }
+            throw getErr;
+          }
           lastStatus = statusRes.data;
-
           const statusCode = statusRes.data?.status_code ?? "UNKNOWN";
-          await appendLog(postId, { event: "container_status_response", cycle, creation_id: currentContainerId, attempt, max_attempts: MAX_CONTAINER_STATUS_ATTEMPTS, elapsed_ms: Date.now() - startedAt, status_code: statusCode, status: statusRes.data?.status ?? null, response: statusRes.data });
+          await appendLog(postId, {
+            event: "container_status_response",
+            cycle,
+            creation_id: currentContainerId,
+            attempt,
+            max_attempts: MAX_CONTAINER_STATUS_ATTEMPTS,
+            request_count: requestCount,
+            request_ts: requestTs,
+            elapsed_ms: Date.now() - startedAt,
+            status_code: statusCode,
+          });
 
           if (statusCode === "FINISHED") {
             const finishedAt = new Date().toISOString();
-            await appendLog(postId, { event: "container_finished", cycle, creation_id: currentContainerId, finished_at: finishedAt, response: lastStatus });
+            await appendLog(postId, { event: "container_finished", cycle, creation_id: currentContainerId, finished_at: finishedAt, total_requests: requestCount });
             return { response: lastStatus, finishedAt };
           }
           if (statusCode === "ERROR" || statusCode === "EXPIRED") {
-            const reason = statusRes.data?.status ?? statusRes.data?.error?.message ?? safeJson(statusRes.data);
+            await finalizeContainerLock(currentContainerId, "error");
+            const reason = statusRes.data?.status ?? safeJson(statusRes.data);
             const err: any = new Error(`Container não processado (${statusCode}). Motivo Meta: ${reason}`);
-            err.metaData = { error: { message: reason, type: "ContainerStatus", code: statusCode, fbtrace_id: statusRes.data?.fbtrace_id ?? null }, container_status: statusRes.data };
+            err.metaData = { error: { message: reason, type: "ContainerStatus", code: statusCode } };
             throw err;
           }
           if (attempt === MAX_CONTAINER_STATUS_ATTEMPTS) break;
           await new Promise((resolve) => setTimeout(resolve, POLL_INTERVAL_MS));
         }
 
-        throw new Error(`Timeout de 60 segundos aguardando FINISHED. Último status Meta: ${safeJson(lastStatus)}`);
+        // Timeout — salva e aguarda.
+        await finalizeContainerLock(currentContainerId, "timeout");
+        await appendLog(postId, {
+          event: "container_polling_timeout",
+          cycle,
+          creation_id: currentContainerId,
+          total_attempts: MAX_CONTAINER_STATUS_ATTEMPTS,
+          total_wait_ms: Date.now() - startedAt,
+          last_status: lastStatus?.status_code ?? null,
+        });
+        throw new Error(`Timeout aguardando FINISHED após ${MAX_CONTAINER_STATUS_ATTEMPTS} consultas (${(INITIAL_POLL_DELAY_MS + POLL_INTERVAL_MS * (MAX_CONTAINER_STATUS_ATTEMPTS - 1)) / 1000}s).`);
       };
 
       const createReplacementContainer = async (cycle: number) => {
@@ -399,14 +558,13 @@ Deno.serve(async (req) => {
         const nextContainerId = containerRes.data?.id;
         await appendLog(postId, { event: "media_container_recreate_response", cycle, status: containerRes.status, endpoint: containerUrl, response: containerRes.data });
         if (!nextContainerId) throw new Error(`Meta não retornou novo creation_id. Resposta: ${safeJson(containerRes.data)}`);
+        activeCreationId = nextContainerId;
         await supabase.from("instagram_posts").update({ container_id: nextContainerId }).eq("id", postId);
         await appendLog(postId, {
           event: "creation_id_saved",
           cycle,
           creation_id: nextContainerId,
           created_at: createdAt,
-          video_url_sent: videoUrl,
-          container_response: containerRes.data ?? null,
         });
         return nextContainerId;
       };
@@ -414,51 +572,36 @@ Deno.serve(async (req) => {
       let lastPublishErr: any = null;
       for (let cycle = 1; cycle <= MAX_PUBLICATION_CYCLES; cycle++) {
         if (!(await ensureNotAlreadyPublished())) return;
+        activeCreationId = containerId;
         await appendLog(postId, { event: "publication_cycle_started", cycle, max_cycles: MAX_PUBLICATION_CYCLES, creation_id: containerId, instagram_business_id: igId, token_source: tokenSource });
 
         const finished = await waitForContainerFinished(cycle, containerId);
+
+        // Após FINISHED: espera 15s e publica UMA única vez. Sem pre-check GET adicional.
         await appendLog(postId, { event: "publish_stabilization_wait", cycle, creation_id: containerId, finished_at: finished.finishedAt, wait_ms: PUBLISH_STABILIZATION_MS });
         await new Promise((resolve) => setTimeout(resolve, PUBLISH_STABILIZATION_MS));
 
-        if (!(await ensureNotAlreadyPublished())) return;
-
-        // Revalidação obrigatória: status_code precisa estar FINISHED antes de publicar.
-        const preCheckUrl = `${FB_BASE}/${containerId}?fields=id,status_code&access_token=${encodeURIComponent(token)}`;
-        const preCheck = await metaGet(preCheckUrl, token);
-        const preStatus = preCheck.data?.status_code ?? "UNKNOWN";
-        await appendLog(postId, { event: "publish_precheck_status", cycle, creation_id: containerId, instagram_business_id: igId, status_code: preStatus });
-        if (preStatus !== "FINISHED") {
-          const err: any = new Error(`Container não está FINISHED antes do publish (status=${preStatus}). Publicação abortada neste ciclo.`);
-          err.metaData = { error: { message: `status_code=${preStatus}`, type: "ContainerNotFinished", code: preStatus }, container_status: preCheck.data };
-          lastPublishErr = err;
-          await appendLog(postId, { event: "media_publish_skipped_not_finished", cycle, creation_id: containerId, status_code: preStatus });
-          if (cycle === MAX_PUBLICATION_CYCLES) throw err;
-          if (!(await ensureNotAlreadyPublished("new_container_skipped_already_published"))) return;
-          containerId = await createReplacementContainer(cycle + 1);
-          continue;
+        if (!(await ensureNotAlreadyPublished())) {
+          await finalizeContainerLock(containerId, "done");
+          return;
         }
 
         const captionLength = fullCaption?.length ?? 0;
         const hashtagCount = (fullCaption?.match(/#\w+/g) ?? []).length;
-        const publishPayload = { creation_id: containerId };
         const publishRequestedAt = new Date().toISOString();
         try {
           await appendLog(postId, {
             event: "media_publish_attempt",
             cycle,
-            attempt: 1,
             endpoint: publishUrl,
             ig_user_id: igId,
             instagram_business_id: igId,
             token_source: tokenSource,
             creation_id: containerId,
-            container_status: preStatus,
             caption_length: captionLength,
             hashtag_count: hashtagCount,
             publish_requested_at: publishRequestedAt,
-            payload: publishPayload,
           });
-          // media_publish: endpoint limpo + body SOMENTE com creation_id. Token segue no header Authorization usando o mesmo token do /media.
           const publishRes = await metaPost(
             publishUrl,
             { creation_id: containerId },
@@ -466,7 +609,7 @@ Deno.serve(async (req) => {
             { authHeaderToken: token },
           );
           const publishResponseAt = new Date().toISOString();
-          await appendLog(postId, { event: "media_publish_response", cycle, attempt: 1, status: publishRes.status, publish_requested_at: publishRequestedAt, publish_response_at: publishResponseAt, response: publishRes.data });
+          await appendLog(postId, { event: "media_publish_response", cycle, status: publishRes.status, publish_requested_at: publishRequestedAt, publish_response_at: publishResponseAt, response: publishRes.data });
           const publishId = publishRes.data?.id;
           if (!publishId) throw new Error(`Meta não retornou publish_id. Resposta: ${safeJson(publishRes.data)}`);
 
@@ -477,45 +620,52 @@ Deno.serve(async (req) => {
             published_at: nowIso,
             error_message: null,
           }).eq("id", postId);
-          await appendLog(postId, { event: "publish_id_saved", publish_id: publishId });
           await appendLog(postId, { event: "published", publish_id: publishId, published_at: nowIso });
+          await finalizeContainerLock(containerId, "done");
           return;
         } catch (err: any) {
           lastPublishErr = err;
           err.stage = "media_publish";
-          // Consulta best-effort ao status atual do container para diagnóstico.
-          let postErrorStatus: string | null = null;
-          try {
-            const s = await metaGet(`${FB_BASE}/${containerId}?fields=id,status_code&access_token=${encodeURIComponent(token)}`, token);
-            postErrorStatus = s.data?.status_code ?? null;
-          } catch (_) { /* ignore */ }
+
+          // Detecção de code=4: aplica cooldown de 5 min e ABORTA (não retenta imediatamente).
+          if (isAppRateLimitError(err?.metaData, err?.message)) {
+            const until = await setAccountCooldown(igId, postId, CODE_4_COOLDOWN_MS, 4);
+            await appendLog(postId, {
+              event: "rate_limit_code_4",
+              stage: "media_publish",
+              cycle,
+              creation_id: containerId,
+              instagram_business_id: igId,
+              cooldown_until: until,
+              publish_requested_at: publishRequestedAt,
+              meta_error: metaErrorDetails(err?.metaData, err?.message),
+            });
+            await finalizeContainerLock(containerId, "error");
+            throw err;
+          }
 
           await appendLog(postId, {
             event: "media_publish_error",
             cycle,
-            attempt: 1,
             endpoint: publishUrl,
             ig_user_id: igId,
             instagram_business_id: igId,
             token_source: tokenSource,
             creation_id: containerId,
-            container_status_before: preStatus,
-            container_status_after_error: postErrorStatus,
             caption_length: captionLength,
             hashtag_count: hashtagCount,
             publish_requested_at: publishRequestedAt,
             failed_at: new Date().toISOString(),
-            attempt_status: "FALHOU",
             next_action: cycle < MAX_PUBLICATION_CYCLES ? "create_new_container" : "fail_post",
             raw_message: err?.message ?? null,
             meta_error: metaErrorDetails(err?.metaData, err?.message),
-            meta_response: err?.metaData ?? null,
           });
 
           await supabase.from("instagram_posts").update({
-            error_message: `Falha no publish do Reel após container finalizado. creation_id=${containerId}; instagram_business_id=${igId}; erro=${err?.message ?? "desconhecido"}`,
+            error_message: `Falha no publish do Reel após container finalizado. creation_id=${containerId}; erro=${err?.message ?? "desconhecido"}`,
           }).eq("id", postId);
 
+          await finalizeContainerLock(containerId, "error");
           if (cycle === MAX_PUBLICATION_CYCLES) throw err;
           if (!(await ensureNotAlreadyPublished("new_container_skipped_already_published"))) return;
           containerId = await createReplacementContainer(cycle + 1);
@@ -525,13 +675,20 @@ Deno.serve(async (req) => {
     } catch (e: any) {
       const rawMessage = e?.message ?? "Erro desconhecido ao finalizar publicação.";
       const blocked = isApiBlockedError(e?.metaData, rawMessage);
+      const rateLimited = isAppRateLimitError(e?.metaData, rawMessage);
       const publishCodeOne = e?.stage === "media_publish" && isCodeOneMetaError(e?.metaData, rawMessage);
-      const message = publishCodeOne ? "Falha no publish do Reel após container finalizado." : (blocked ? FRIENDLY_BLOCKED_MESSAGE : userFacingMetaError(account, rawMessage, e?.metaData));
+      const message = rateLimited
+        ? "Limite de requisições da Meta atingido (code=4). Aguardando 5 minutos antes de tentar novamente."
+        : publishCodeOne ? "Falha no publish do Reel após container finalizado." : (blocked ? FRIENDLY_BLOCKED_MESSAGE : userFacingMetaError(account, rawMessage, e?.metaData));
       console.error("[publish-instagram/background]", rawMessage);
-      await appendLog(postId, { event: "meta_api_error", blocked, raw_message: rawMessage, meta: e?.metaData ?? null });
+      await appendLog(postId, { event: "meta_api_error", blocked, rate_limited: rateLimited, raw_message: rawMessage, meta: e?.metaData ?? null });
       await failPost(postId, message, { raw: rawMessage, meta: e?.metaData ?? null, stage: e?.stage ?? null });
+    } finally {
+      // Sempre libera o account lock (mantém cooldown se houver).
+      try { await releaseAccountLock(igId, postId); } catch (_) { /* noop */ }
     }
   };
+
 
   try {
     body = await req.json().catch(() => ({}));
@@ -655,6 +812,20 @@ Deno.serve(async (req) => {
     await appendLog(post.id, { event: "meta_token_resolved", account, token_source: tokenSource, token_length: token.length, token_head: tokenHead, token_tail: tokenTail, ig_id: igId });
     if (!token || !igId) throw new Error(`Credenciais Meta ausentes para a conta '${account}'.`);
     assertValidToken(token, account);
+    activeIgId = igId;
+
+    // Fila por conta Instagram: uma publicação por vez + respeita cooldown de code=4.
+    const lockRes = await acquireAccountLock(igId, post.id);
+    if (!lockRes.ok) {
+      const msg = lockRes.reason === "cooldown"
+        ? `Conta ${accountLabel(account)} em cooldown pós-rate-limit da Meta. Nova tentativa liberada em ${lockRes.wait_seconds}s.`
+        : `Já existe uma publicação em andamento para ${accountLabel(account)}. Aguarde a atual finalizar.`;
+      await appendLog(post.id, { event: "account_lock_denied", ig_business_id: igId, reason: lockRes.reason, details: lockRes });
+      await supabase.from("instagram_posts").update({ status: "AGENDADO", error_message: msg }).eq("id", post.id);
+      return new Response(JSON.stringify({ success: false, queued: true, reason: lockRes.reason, message: msg, wait_seconds: lockRes.wait_seconds ?? null }),
+        { status: 200, headers: { ...corsHeaders, "Content-Type": "application/json" } });
+    }
+    await appendLog(post.id, { event: "account_lock_acquired", ig_business_id: igId });
 
     // Sem pré-consultas legadas: o IG Business Account ID cadastrado é usado direto
     // no endpoint de container. Removidas chamadas a account_type e à Página do Facebook.
@@ -685,6 +856,18 @@ Deno.serve(async (req) => {
         throw new Error(`Meta não retornou creation_id. Resposta: ${safeJson(containerRes.data)}`);
       } catch (err: any) {
         lastContainerErr = err;
+        // code=4 na criação: cooldown 5min e aborta.
+        if (isAppRateLimitError(err?.metaData, err?.message)) {
+          const until = await setAccountCooldown(igId, post.id, CODE_4_COOLDOWN_MS, 4);
+          await appendLog(post.id, {
+            event: "rate_limit_code_4",
+            stage: "container_create",
+            attempt,
+            cooldown_until: until,
+            meta_error: metaErrorDetails(err?.metaData, err?.message),
+          });
+          throw err;
+        }
         const retryable = isCodeOneMetaError(err?.metaData, err?.message);
         await appendLog(post.id, {
           event: "media_container_create_error",
@@ -701,15 +884,12 @@ Deno.serve(async (req) => {
     }
     if (!containerId) throw lastContainerErr ?? new Error("Falha ao criar container de mídia no Instagram.");
 
-
-
+    activeCreationId = containerId;
     await supabase.from("instagram_posts").update({ container_id: containerId }).eq("id", post.id);
     await appendLog(post.id, {
       event: "creation_id_saved",
       creation_id: containerId,
       created_at: containerRes?.created_at ?? new Date().toISOString(),
-      video_url_sent: signed.signedUrl,
-      container_response: containerRes?.data ?? null,
     });
 
     const background = completePublication(post.id, containerId, token, igId, account as Account, signed.signedUrl, fullCaption, tokenSource);
@@ -721,10 +901,17 @@ Deno.serve(async (req) => {
   } catch (e: any) {
     const rawMessage = e?.message ?? "Erro desconhecido.";
     const blocked = isApiBlockedError(e?.metaData, rawMessage);
-    const message = blocked ? FRIENDLY_BLOCKED_MESSAGE : userFacingMetaError(activeAccount ?? body?.account, rawMessage, e?.metaData);
+    const rateLimited = isAppRateLimitError(e?.metaData, rawMessage);
+    const message = rateLimited
+      ? "Limite de requisições da Meta atingido (code=4). Nova tentativa liberada em 5 minutos."
+      : (blocked ? FRIENDLY_BLOCKED_MESSAGE : userFacingMetaError(activeAccount ?? body?.account, rawMessage, e?.metaData));
     console.error("[publish-instagram]", rawMessage);
-    await failPost(activePostId ?? body?.postId ?? null, message, { raw: rawMessage, blocked, meta: e?.metaData ?? null });
-    return new Response(JSON.stringify({ error: message, blocked, status: "ERRO" }),
+    await failPost(activePostId ?? body?.postId ?? null, message, { raw: rawMessage, blocked, rate_limited: rateLimited, meta: e?.metaData ?? null });
+    // Libera o lock da conta se não conseguiu delegar ao background (cooldown fica mantido pelo setAccountCooldown).
+    if (activeIgId && activePostId && !rateLimited) {
+      try { await releaseAccountLock(activeIgId, activePostId); } catch (_) { /* noop */ }
+    }
+    return new Response(JSON.stringify({ error: message, blocked, rate_limited: rateLimited, status: "ERRO" }),
       { status: 200, headers: { ...corsHeaders, "Content-Type": "application/json" } });
   }
 });

@@ -182,6 +182,33 @@ export type Database = {
           },
         ]
       }
+      instagram_account_locks: {
+        Row: {
+          cooldown_until: string | null
+          creation_id: string | null
+          ig_business_id: string
+          last_error_code: number | null
+          locked_at: string
+          post_id: string | null
+        }
+        Insert: {
+          cooldown_until?: string | null
+          creation_id?: string | null
+          ig_business_id: string
+          last_error_code?: number | null
+          locked_at?: string
+          post_id?: string | null
+        }
+        Update: {
+          cooldown_until?: string | null
+          creation_id?: string | null
+          ig_business_id?: string
+          last_error_code?: number | null
+          locked_at?: string
+          post_id?: string | null
+        }
+        Relationships: []
+      }
       instagram_credentials: {
         Row: {
           access_token: string
@@ -299,6 +326,39 @@ export type Database = {
             referencedColumns: ["id"]
           },
         ]
+      }
+      instagram_publish_locks: {
+        Row: {
+          created_at: string
+          creation_id: string
+          ig_business_id: string | null
+          last_request_at: string | null
+          polling_started_at: string
+          post_id: string | null
+          request_count: number
+          status: string
+        }
+        Insert: {
+          created_at?: string
+          creation_id: string
+          ig_business_id?: string | null
+          last_request_at?: string | null
+          polling_started_at?: string
+          post_id?: string | null
+          request_count?: number
+          status?: string
+        }
+        Update: {
+          created_at?: string
+          creation_id?: string
+          ig_business_id?: string | null
+          last_request_at?: string | null
+          polling_started_at?: string
+          post_id?: string | null
+          request_count?: number
+          status?: string
+        }
+        Relationships: []
       }
       processing_queue: {
         Row: {
