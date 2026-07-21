@@ -3,7 +3,23 @@ import { createClient } from "https://esm.sh/@supabase/supabase-js@2.45.4";
 import { corsHeaders } from "npm:@supabase/supabase-js@2/cors";
 
 const GRAPH_VERSION = "v25.0";
-const IG_BASE = `https://graph.instagram.com/${GRAPH_VERSION}`;
+const FB_BASE = `https://graph.facebook.com/${GRAPH_VERSION}`;
+const IG_LOGIN_BASE = `https://graph.instagram.com/${GRAPH_VERSION}`;
+
+function sanitizeToken(raw: string | undefined | null): string {
+  if (!raw) return "";
+  let t = String(raw).trim();
+  t = t.replace(/^['"]+|['"]+$/g, "");
+  t = t.replace(/[\s\r\n\t]+/g, "");
+  t = t.replace(/[\u0000-\u001F\u007F\uFEFF]/g, "");
+  return t.trim();
+}
+
+function baseForToken(token: string): string {
+  const t = sanitizeToken(token);
+  if (t.startsWith("IGAA") || t.startsWith("IGQ")) return IG_LOGIN_BASE;
+  return FB_BASE;
+}
 
 
 function envCredentialsFor(account: string) {
