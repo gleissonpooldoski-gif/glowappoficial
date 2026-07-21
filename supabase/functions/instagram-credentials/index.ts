@@ -3,6 +3,9 @@ import { createClient } from "https://esm.sh/@supabase/supabase-js@2.45.4";
 import { corsHeaders } from "npm:@supabase/supabase-js@2/cors";
 
 const GRAPH_VERSION = "v25.0";
+// Instagram API with Instagram Login: usa graph.instagram.com com o IG User ID direto.
+const IG_BASE = `https://graph.instagram.com/${GRAPH_VERSION}`;
+
 type ConnectionStatus = "CONNECTED" | "PENDING" | "ERROR";
 
 type ValidationResult = {
