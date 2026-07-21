@@ -167,11 +167,16 @@ function EditScheduledDialog({
 /* ---------- post card ---------- */
 
 function PostCard({
-  post, kind, linkedYT, onEdit, onCancel, onDelete, onRetry, onLogs, onEditNetworks,
+  post, kind, linkedYT, linkedTT, selectable, selected, onToggleSelect,
+  onEdit, onCancel, onDelete, onRetry, onLogs, onEditNetworks,
 }: {
   post: InstagramPost;
   kind: "scheduled" | "published";
   linkedYT?: { status: string } | null;
+  linkedTT?: { status: string } | null;
+  selectable?: boolean;
+  selected?: boolean;
+  onToggleSelect?: (p: InstagramPost) => void;
   onEdit: (p: InstagramPost) => void;
   onCancel: (p: InstagramPost) => void;
   onDelete: (p: InstagramPost) => void;
@@ -189,7 +194,7 @@ function PostCard({
   const permalink = (post as any).permalink as string | undefined;
 
   return (
-    <Card className={`glass border ${meta.ring} overflow-hidden`}>
+    <Card className={`glass border ${meta.ring} overflow-hidden ${selected ? "ring-2 ring-gold/60" : ""}`}>
       <div className="relative aspect-video bg-black/60">
         {post.thumbnail_url ? (
           <img src={post.thumbnail_url} alt="" className="h-full w-full object-cover opacity-90" />
@@ -198,7 +203,12 @@ function PostCard({
             <Instagram size={28} className={meta.icon} />
           </div>
         )}
-        <Badge variant="outline" className={`absolute left-2 top-2 text-[10px] font-semibold ${meta.badge}`}>
+        {selectable && (
+          <div className="absolute left-2 top-2 z-10 flex h-6 w-6 items-center justify-center rounded-md bg-background/80 backdrop-blur">
+            <Checkbox checked={!!selected} onCheckedChange={() => onToggleSelect?.(post)} />
+          </div>
+        )}
+        <Badge variant="outline" className={`absolute ${selectable ? "left-11" : "left-2"} top-2 text-[10px] font-semibold ${meta.badge}`}>
           {meta.label.toUpperCase()}
         </Badge>
         <Badge variant="outline" className={`absolute right-2 top-2 text-[10px] ${statusStyles[post.status]}`}>
@@ -214,6 +224,11 @@ function PostCard({
           {linkedYT && (
             <Badge variant="outline" className="text-[10px] gap-1 border-red-400/40 text-red-300 bg-red-500/10">
               <Youtube size={10} /> YouTube: {linkedYT.status.toLowerCase()}
+            </Badge>
+          )}
+          {linkedTT && (
+            <Badge variant="outline" className="text-[10px] gap-1 border-fuchsia-400/40 text-fuchsia-300 bg-fuchsia-500/10">
+              <Music2 size={10} /> TikTok: {linkedTT.status.toLowerCase()}
             </Badge>
           )}
         </div>
