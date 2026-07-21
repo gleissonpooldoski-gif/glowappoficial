@@ -38,6 +38,22 @@ function assertValidToken(token: string | null | undefined, account?: string | n
   }
 }
 
+// Garante que um valor usado como ID de recurso Graph API (ig_business_id,
+// creation_id) NÃO seja uma URL nem contenha caracteres de path/query. Evita
+// o bug GraphMethodException code=100 / subcode=33 ("Object with ID '[https:'
+// does not exist") causado quando uma URL de vídeo vaza no lugar do ID.
+function assertGraphId(value: unknown, field: string): string {
+  const raw = value == null ? "" : String(value).trim();
+  if (!raw) throw new Error(`[publish-instagram] ${field} vazio ao montar URL Graph API.`);
+  if (/^https?:\/\//i.test(raw) || raw.includes("/") || raw.includes("?") || raw.includes(" ")) {
+    console.error(`[publish-instagram] invalid_graph_id field=${field} value_preview=${raw.slice(0, 60)}`);
+    throw new Error(`[publish-instagram] ${field} inválido: recebeu URL/caminho em vez do ID numérico da Meta.`);
+  }
+  return raw;
+}
+
+
+
 
 type Account = string;
 
