@@ -2,9 +2,8 @@
 import { createClient } from "https://esm.sh/@supabase/supabase-js@2.45.4";
 import { corsHeaders } from "npm:@supabase/supabase-js@2/cors";
 
-const GRAPH_VERSION = "v25.0";
+const GRAPH_VERSION = "v18.0";
 const FB_BASE = `https://graph.facebook.com/${GRAPH_VERSION}`;
-const IG_LOGIN_BASE = `https://graph.instagram.com/${GRAPH_VERSION}`;
 const BUCKET = "videos-processed";
 const MAX_POLL_MS = 5 * 60 * 1000;
 const POLL_INTERVAL_MS = 5000;
@@ -17,13 +16,6 @@ function sanitizeToken(raw: string | undefined | null): string {
   t = t.replace(/[\s\r\n\t]+/g, "");
   t = t.replace(/[\u0000-\u001F\u007F\uFEFF]/g, "");
   return t.trim();
-}
-
-// EAA... => token do Facebook Graph. IGAA/IGQ... => Instagram API with Instagram Login.
-function baseForToken(token: string): string {
-  const t = sanitizeToken(token);
-  if (t.startsWith("IGAA") || t.startsWith("IGQ")) return IG_LOGIN_BASE;
-  return FB_BASE;
 }
 
 
@@ -83,6 +75,54 @@ function metaErrorMessage(data: any, fallback: string) {
     .join(" | ");
 }
 
+function accountLabel(account?: string | null) {
+  const key = String(account ?? "").toLowerCase().replace(/[^a-z0-9]/g, "");
+  if (["oframefinal", "frame", "framefinal"].includes(key)) return "O FRAME FINAL";
+  if (["sessaodaresenha", "resenha", "sessaodaresenhaoficial"].includes(key)) return "SESSÃO DA RESENHA";
+  if (["segredodapromocao", "segredo", "segredodapromocaooficial"].includes(key)) return "SEGREDO DA PROMOÇÃO";
+  return account ?? "conta selecionada";
+}
+
+function isSessionDaResenha(account?: string | null) {
+  const key = String(account ?? "").toLowerCase().replace(/[^a-z0-9]/g, "");
+  return ["sessaodaresenha", "resenha", "sessaodaresenhaoficial"].includes(key);
+}
+
+function isSegredoDaPromocao(account?: string | null) {
+  const key = String(account ?? "").toLowerCase().replace(/[^a-z0-9]/g, "");
+  return ["segredodapromocao", "segredo", "segredodapromocaooficial"].includes(key);
+}
+
+function isTokenExpiredError(data: any, message?: string): boolean {
+  const err = data?.error;
+  const msg = `${err?.message ?? ""} ${message ?? ""}`.toLowerCase();
+  return Number(err?.code) === 190 || msg.includes("error validating access token") || msg.includes("token") && msg.includes("expired");
+}
+
+function isInstagramIdInvalidError(data: any, message?: string): boolean {
+  const err = data?.error;
+  const msg = `${err?.message ?? ""} ${message ?? ""}`.toLowerCase();
+  const code = Number(err?.code);
+  return code === 100 || code === 803 || msg.includes("ig_id_invalid") || msg.includes("unsupported post request") || msg.includes("object with id") || msg.includes("does not exist");
+}
+
+function userFacingMetaError(account: string | null | undefined, rawMessage: string, metaData?: any): string {
+  const label = accountLabel(account);
+  if (isSessionDaResenha(account) && isTokenExpiredError(metaData, rawMessage)) {
+    return `Token Meta expirado para ${label}. Recadastre o Access Token dessa conta em Configurações e tente publicar novamente.`;
+  }
+  if (isSegredoDaPromocao(account) && isInstagramIdInvalidError(metaData, rawMessage)) {
+    return `IG_ID_INVALID para ${label}. Verifique se o instagram_business_account_id salvo no banco bate exatamente com o ID da conta de negócios da Meta vinculada a este token.`;
+  }
+  if (isTokenExpiredError(metaData, rawMessage)) {
+    return `Token Meta expirado para ${label}. Recadastre o Access Token em Configurações e tente novamente.`;
+  }
+  if (isInstagramIdInvalidError(metaData, rawMessage)) {
+    return `Instagram Business Account ID inválido para ${label}. Confirme que o ID cadastrado é o instagram_business_account_id exato da conta selecionada.`;
+  }
+  return rawMessage;
+}
+
 const FRIENDLY_BLOCKED_MESSAGE =
   "Acesso bloqueado pela Meta. Verifique as permissões do seu aplicativo no painel do Facebook Developer ou reconecte a conta do Instagram.";
 
@@ -101,6 +141,17 @@ async function markCredentialsBlocked(supabase: any, account: Account, message: 
     await supabase.from("instagram_credentials").update({
       last_validated_at: new Date().toISOString(),
       last_validation_status: "API_BLOCKED",
+      last_validation_detail: message,
+      connection_status: "ERROR",
+    }).eq("account", account);
+  } catch (_) { /* noop */ }
+}
+
+async function markCredentialsValidationError(supabase: any, account: Account, status: "TOKEN_EXPIRED" | "IG_ID_INVALID", message: string) {
+  try {
+    await supabase.from("instagram_credentials").update({
+      last_validated_at: new Date().toISOString(),
+      last_validation_status: status,
       last_validation_detail: message,
       connection_status: "ERROR",
     }).eq("account", account);
@@ -168,6 +219,7 @@ Deno.serve(async (req) => {
 
   let body: any = {};
   let activePostId: string | null = null;
+  let activeAccount: string | null = null;
 
   const appendLog = async (postId: string, entry: any) => {
     try {
@@ -193,12 +245,12 @@ Deno.serve(async (req) => {
     await appendLog(postId, { event: "error", message, details: details ?? null });
   };
 
-  const completePublication = async (postId: string, containerId: string, token: string, igId: string) => {
+  const completePublication = async (postId: string, containerId: string, token: string, igId: string, account: Account) => {
     try {
       const start = Date.now();
       let lastStatus: any = null;
       while (Date.now() - start < MAX_POLL_MS) {
-        const statusUrl = `${baseForToken(token)}/${containerId}?fields=status_code,status`;
+        const statusUrl = `${FB_BASE}/${containerId}?fields=status_code,status&access_token=${encodeURIComponent(token)}`;
         const statusRes = await metaGet(statusUrl, token);
         lastStatus = statusRes.data;
 
@@ -223,7 +275,7 @@ Deno.serve(async (req) => {
         return;
       }
 
-      const publishUrl = `${baseForToken(token)}/${igId}/media_publish`;
+      const publishUrl = `${FB_BASE}/${igId}/media_publish`;
       const publishRes = await metaPost(publishUrl, {
         creation_id: containerId,
         access_token: token,
@@ -245,7 +297,7 @@ Deno.serve(async (req) => {
     } catch (e: any) {
       const rawMessage = e?.message ?? "Erro desconhecido ao finalizar publicação.";
       const blocked = isApiBlockedError(e?.metaData, rawMessage);
-      const message = blocked ? FRIENDLY_BLOCKED_MESSAGE : rawMessage;
+      const message = blocked ? FRIENDLY_BLOCKED_MESSAGE : userFacingMetaError(account, rawMessage, e?.metaData);
       console.error("[publish-instagram/background]", rawMessage);
       await appendLog(postId, { event: "meta_api_error", blocked, raw_message: rawMessage, meta: e?.metaData ?? null });
       if (blocked) {
@@ -253,6 +305,10 @@ Deno.serve(async (req) => {
           const { data: cur } = await supabase.from("instagram_posts").select("account").eq("id", postId).maybeSingle();
           if (cur?.account) await markCredentialsBlocked(supabase, cur.account, rawMessage);
         } catch (_) { /* noop */ }
+      } else if (isTokenExpiredError(e?.metaData, rawMessage)) {
+        await markCredentialsValidationError(supabase, account, "TOKEN_EXPIRED", message);
+      } else if (isInstagramIdInvalidError(e?.metaData, rawMessage)) {
+        await markCredentialsValidationError(supabase, account, "IG_ID_INVALID", message);
       }
       await failPost(postId, message, { raw: rawMessage, meta: e?.metaData ?? null });
     }
@@ -278,6 +334,7 @@ Deno.serve(async (req) => {
       post = data;
       activePostId = data.id;
       account = account ?? data.account;
+      activeAccount = account ?? null;
       videoId = videoId ?? data.video_id;
       caption = data.caption ?? caption;
       hashtags = data.hashtags ?? hashtags;
@@ -287,6 +344,7 @@ Deno.serve(async (req) => {
       return new Response(JSON.stringify({ error: "Conta inválida." }),
         { status: 400, headers: { ...corsHeaders, "Content-Type": "application/json" } });
     }
+    activeAccount = account;
     if (!videoId) {
       return new Response(JSON.stringify({ error: "videoId é obrigatório." }),
         { status: 400, headers: { ...corsHeaders, "Content-Type": "application/json" } });
@@ -377,7 +435,7 @@ Deno.serve(async (req) => {
     // no endpoint de container. Removidas chamadas a account_type e à Página do Facebook.
     const fullCaption = buildCaption(caption, hashtags);
 
-    const containerUrl = `${baseForToken(token)}/${igId}/media`;
+    const containerUrl = `${FB_BASE}/${igId}/media`;
     const containerRes = await metaPost(containerUrl, {
       media_type: "REELS",
       video_url: signed.signedUrl,
@@ -392,7 +450,7 @@ Deno.serve(async (req) => {
     await supabase.from("instagram_posts").update({ container_id: containerId }).eq("id", post.id);
     await appendLog(post.id, { event: "creation_id_saved", creation_id: containerId });
 
-    const background = completePublication(post.id, containerId, token, igId);
+    const background = completePublication(post.id, containerId, token, igId, account as Account);
     const edgeRuntime = (globalThis as any).EdgeRuntime;
     if (edgeRuntime?.waitUntil) edgeRuntime.waitUntil(background);
 
@@ -401,10 +459,14 @@ Deno.serve(async (req) => {
   } catch (e: any) {
     const rawMessage = e?.message ?? "Erro desconhecido.";
     const blocked = isApiBlockedError(e?.metaData, rawMessage);
-    const message = blocked ? FRIENDLY_BLOCKED_MESSAGE : rawMessage;
+    const message = blocked ? FRIENDLY_BLOCKED_MESSAGE : userFacingMetaError(activeAccount ?? body?.account, rawMessage, e?.metaData);
     console.error("[publish-instagram]", rawMessage);
-    if (blocked && body?.account && typeof body.account === "string") {
-      await markCredentialsBlocked(supabase, body.account as Account, rawMessage);
+    if (blocked && activeAccount) {
+      await markCredentialsBlocked(supabase, activeAccount as Account, rawMessage);
+    } else if (activeAccount && isTokenExpiredError(e?.metaData, rawMessage)) {
+      await markCredentialsValidationError(supabase, activeAccount as Account, "TOKEN_EXPIRED", message);
+    } else if (activeAccount && isInstagramIdInvalidError(e?.metaData, rawMessage)) {
+      await markCredentialsValidationError(supabase, activeAccount as Account, "IG_ID_INVALID", message);
     }
     await failPost(activePostId ?? body?.postId ?? null, message, { raw: rawMessage, blocked, meta: e?.metaData ?? null });
     return new Response(JSON.stringify({ error: message, blocked, status: "ERRO" }),
