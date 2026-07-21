@@ -1,7 +1,10 @@
 // Centraliza toda comunicação com a Instagram Graph API via Edge Functions.
+import { useEffect, useState } from "react";
 import { supabase } from "@/integrations/supabase/client";
 
-export type InstagramAccount = "resenha" | "frame";
+// Slug da conta no Instagram (ex.: "frame", "resenha", "segredo_da_promocao").
+// Aceita qualquer string cadastrada em `instagram_credentials.account`.
+export type InstagramAccount = string;
 
 export const ACCOUNTS: { value: InstagramAccount; label: string }[] = [
   { value: "resenha", label: "Sessão da Resenha" },
@@ -9,8 +12,8 @@ export const ACCOUNTS: { value: InstagramAccount; label: string }[] = [
 ];
 
 /**
- * Deriva a plataforma de publicação a partir do projeto ativo.
- * O nome/categoria do projeto define automaticamente a conta (frame/resenha).
+ * Fallback síncrono legado — deriva a conta a partir do nome/categoria do projeto.
+ * Mantido apenas para compatibilidade; prefira `useIgAccountForProject`.
  */
 export function platformFromProject(
   p?: { name?: string | null; category?: string | null } | null,
@@ -21,10 +24,51 @@ export function platformFromProject(
   return null;
 }
 
-export const PLATFORM_LABEL: Record<InstagramAccount, string> = {
+export const PLATFORM_LABEL: Record<string, string> = {
   frame: "FRAME",
   resenha: "RESENHA",
 };
+
+export function platformLabelFor(account: string | null | undefined, displayName?: string | null) {
+  if (!account) return "—";
+  return displayName || PLATFORM_LABEL[account] || account.toUpperCase();
+}
+
+/**
+ * Resolve a conta Instagram vinculada a um projeto consultando `instagram_credentials.project_id`.
+ * Retorna { account, displayName, loading }.
+ */
+export function useIgAccountForProject(projectId: string | null | undefined) {
+  const [account, setAccount] = useState<string | null>(null);
+  const [displayName, setDisplayName] = useState<string | null>(null);
+  const [loading, setLoading] = useState<boolean>(!!projectId);
+
+  useEffect(() => {
+    let cancelled = false;
+    if (!projectId) {
+      setAccount(null); setDisplayName(null); setLoading(false);
+      return;
+    }
+    setLoading(true);
+    (async () => {
+      const { data } = await supabase
+        .from("instagram_credentials" as any)
+        .select("account, display_name, connection_status")
+        .eq("project_id", projectId)
+        .order("updated_at", { ascending: false })
+        .limit(1)
+        .maybeSingle();
+      if (cancelled) return;
+      const row = data as any;
+      setAccount(row?.account ?? null);
+      setDisplayName(row?.display_name ?? null);
+      setLoading(false);
+    })();
+    return () => { cancelled = true; };
+  }, [projectId]);
+
+  return { account, displayName, loading };
+}
 
 export type InstagramPost = {
   id: string;

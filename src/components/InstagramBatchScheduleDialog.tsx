@@ -9,7 +9,7 @@ import { Progress } from "@/components/ui/progress";
 import { Checkbox } from "@/components/ui/checkbox";
 import { toast } from "sonner";
 import { supabase } from "@/integrations/supabase/client";
-import { InstagramAccount, publishInstagram, friendlyError, platformFromProject, PLATFORM_LABEL } from "@/lib/instagram";
+import { InstagramAccount, publishInstagram, friendlyError, useIgAccountForProject, platformLabelFor } from "@/lib/instagram";
 import { findNextSlots, ScheduleNetwork, scheduleAccountFor } from "@/lib/schedules";
 import { useActiveProject } from "@/context/ProjectContext";
 import { extractVideoFrames } from "@/lib/videoFrames";
@@ -44,8 +44,8 @@ function fmt(d: Date) {
 
 export default function InstagramBatchScheduleDialog({ open, onOpenChange, videos, onDone }: Props) {
   const { activeProject } = useActiveProject();
-  const igAccount: InstagramAccount | null = platformFromProject(activeProject);
-  const platformLabel = igAccount ? PLATFORM_LABEL[igAccount] : "—";
+  const { account: igAccount, displayName: igDisplayName, loading: igLoading } = useIgAccountForProject(activeProject?.id ?? null);
+  const platformLabel = platformLabelFor(igAccount, igDisplayName);
 
   const [selectedNets, setSelectedNets] = useState<Set<NetworkId>>(new Set(["instagram"]));
   const [ytChannels, setYtChannels] = useState<string[]>([]);
@@ -245,7 +245,7 @@ export default function InstagramBatchScheduleDialog({ open, onOpenChange, video
     const nets = activeNets;
     if (nets.length === 0) { toast.error("Selecione ao menos uma rede social."); return; }
     if (nets.includes("instagram") && !igAccount) {
-      toast.error("Selecione um projeto ativo (Frame/Resenha) para publicar no Instagram."); return;
+      toast.error(igLoading ? "Carregando conta do projeto…" : "Este projeto não tem uma conta do Instagram vinculada. Cadastre em Configurações → Instagram."); return;
     }
     if (nets.includes("youtube") && ytChannels.length === 0) {
       toast.error("Selecione ao menos um canal do YouTube."); return;

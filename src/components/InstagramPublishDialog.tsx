@@ -9,7 +9,7 @@ import { Badge } from "@/components/ui/badge";
 import { Checkbox } from "@/components/ui/checkbox";
 import { toast } from "sonner";
 import { supabase } from "@/integrations/supabase/client";
-import { InstagramAccount, publishInstagram, friendlyError, platformFromProject, PLATFORM_LABEL } from "@/lib/instagram";
+import { InstagramAccount, publishInstagram, friendlyError, useIgAccountForProject, platformLabelFor } from "@/lib/instagram";
 import { uploadToYoutube } from "@/lib/youtube";
 import YoutubeChannelPicker from "./YoutubeChannelPicker";
 import { findNextSlot, ScheduleNetwork, scheduleAccountFor } from "@/lib/schedules";
@@ -56,13 +56,15 @@ export default function InstagramPublishDialog({
   open, onOpenChange, mode, videoId, defaultCaption = "", defaultHashtags = "", videoMeta, onDone,
 }: Props) {
   const { activeProject } = useActiveProject();
-  const account: InstagramAccount | null = platformFromProject(activeProject);
-  const platformLabel = account ? PLATFORM_LABEL[account] : "—";
+  const { account, displayName, loading: accLoading } = useIgAccountForProject(activeProject?.id ?? null);
+  const platformLabel = platformLabelFor(account, displayName);
   const platformClass =
     account === "frame"
       ? "bg-blue-500/15 text-blue-300 border-blue-400/40"
       : account === "resenha"
       ? "bg-purple-500/15 text-purple-300 border-purple-400/40"
+      : account
+      ? "bg-gold/10 text-gold border-gold/40"
       : "bg-muted text-muted-foreground border-border";
   const [caption, setCaption] = useState(defaultCaption);
   const [hashtags, setHashtags] = useState(defaultHashtags);
@@ -220,7 +222,7 @@ export default function InstagramPublishDialog({
     const wantYT = nets.has("youtube");
     if (!wantIG && !wantYT) { toast.error("Selecione ao menos uma rede."); return; }
     if (wantIG && !account) {
-      toast.error("Selecione um projeto ativo (Frame ou Resenha) para publicar no Instagram.");
+      toast.error("Este projeto não tem uma conta do Instagram vinculada. Cadastre em Configurações → Instagram.");
       return;
     }
     if (wantYT && hasVideoFile === false) {
@@ -436,9 +438,9 @@ export default function InstagramPublishDialog({
                 <span className="text-[11px] text-muted-foreground">Selecione ao menos uma rede acima.</span>
               )}
             </div>
-            {nets.has("instagram") && !account && (
+            {nets.has("instagram") && !account && !accLoading && (
               <p className="text-[11px] text-destructive">
-                Selecione um projeto ativo (Frame ou Resenha) no menu superior para publicar no Instagram.
+                Este projeto ainda não tem uma conta do Instagram vinculada. Vá em Configurações → Instagram para conectar.
               </p>
             )}
           </div>

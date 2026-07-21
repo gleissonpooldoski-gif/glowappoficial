@@ -7,7 +7,7 @@ import { Textarea } from "@/components/ui/textarea";
 import { Badge } from "@/components/ui/badge";
 import { Progress } from "@/components/ui/progress";
 import { toast } from "sonner";
-import { publishInstagram, friendlyError, platformFromProject, PLATFORM_LABEL, InstagramAccount } from "@/lib/instagram";
+import { publishInstagram, friendlyError, useIgAccountForProject, platformLabelFor } from "@/lib/instagram";
 import { useActiveProject } from "@/context/ProjectContext";
 
 type Props = {
@@ -19,13 +19,15 @@ type Props = {
 
 export default function InstagramBatchDialog({ open, onOpenChange, videoIds, onDone }: Props) {
   const { activeProject } = useActiveProject();
-  const account: InstagramAccount | null = platformFromProject(activeProject);
-  const platformLabel = account ? PLATFORM_LABEL[account] : "—";
+  const { account, displayName, loading: accLoading } = useIgAccountForProject(activeProject?.id ?? null);
+  const platformLabel = platformLabelFor(account, displayName);
   const platformClass =
     account === "frame"
       ? "bg-blue-500/15 text-blue-300 border-blue-400/40"
       : account === "resenha"
       ? "bg-purple-500/15 text-purple-300 border-purple-400/40"
+      : account
+      ? "bg-gold/10 text-gold border-gold/40"
       : "bg-muted text-muted-foreground border-border";
 
   const [caption, setCaption] = useState("");
@@ -35,9 +37,10 @@ export default function InstagramBatchDialog({ open, onOpenChange, videoIds, onD
   const [errors, setErrors] = useState<string[]>([]);
 
   const run = async () => {
-    if (!account) { toast.error("Selecione um projeto ativo (Frame ou Resenha)."); return; }
+    if (accLoading) { toast.info("Carregando conta do projeto…"); return; }
+    if (!account) { toast.error("Este projeto não tem uma conta do Instagram vinculada. Cadastre-a em Configurações."); return; }
     if (videoIds.length === 0) return;
-    if (!confirm(`Estas ${videoIds.length} publicações serão enviadas agora ao projeto ${platformLabel}. Confirmar?`)) return;
+    if (!confirm(`Estas ${videoIds.length} publicações serão enviadas agora para ${platformLabel}. Confirmar?`)) return;
     setBusy(true); setDone(0); setErrors([]);
     for (let i = 0; i < videoIds.length; i++) {
       const id = videoIds[i];
@@ -79,9 +82,9 @@ export default function InstagramBatchDialog({ open, onOpenChange, videoIds, onD
                 {activeProject ? `Projeto ativo: ${activeProject.name}` : "Nenhum projeto ativo selecionado"}
               </span>
             </div>
-            {!account && (
+            {!account && !accLoading && (
               <p className="text-[11px] text-destructive">
-                Selecione um projeto ativo (Frame ou Resenha) no menu superior para publicar.
+                Este projeto ainda não tem uma conta do Instagram vinculada. Cadastre em Configurações → Instagram.
               </p>
             )}
           </div>
