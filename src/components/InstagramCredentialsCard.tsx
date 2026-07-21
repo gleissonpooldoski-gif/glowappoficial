@@ -141,6 +141,10 @@ export default function InstagramCredentialsCard() {
       toast.error("Preencha nome, Business ID e Access Token.");
       return;
     }
+    if (!/^\d{6,20}$/.test(newForm.ig_business_id.trim())) {
+      toast.error("Instagram Business ID deve conter apenas dígitos (ex.: 17841400000000000). Não use @username, URL ou ID de Página do Facebook.");
+      return;
+    }
     setCreating(true);
     const { data, error } = await supabase.functions.invoke("instagram-credentials", {
       body: {
@@ -152,9 +156,21 @@ export default function InstagramCredentialsCard() {
       },
     });
     setCreating(false);
-    if (error) return toast.error(error.message);
-    if (data?.error) return toast.error(data.error);
-    toast.success("Nova conta Instagram criada.");
+    if (error) {
+      // Extrai a mensagem real da Meta do corpo da resposta (FunctionsHttpError esconde por padrão)
+      let msg = error.message ?? "Falha ao validar a conta.";
+      try {
+        const ctx: any = (error as any).context;
+        if (ctx && typeof ctx.text === "function") {
+          const raw = await ctx.text();
+          const parsed = JSON.parse(raw);
+          if (parsed?.error) msg = parsed.error;
+        }
+      } catch { /* mantém msg */ }
+      return toast.error(msg, { duration: 10000 });
+    }
+    if (data?.error) return toast.error(data.error, { duration: 10000 });
+    toast.success(`Conta criada: ${data?.result?.message ?? "OK"}`);
     setCreateOpen(false);
     setNewForm({ display_name: "", project_id: "", ig_business_id: "", access_token: "", showToken: false });
     loadAll();
