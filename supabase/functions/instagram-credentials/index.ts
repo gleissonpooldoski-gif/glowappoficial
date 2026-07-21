@@ -3,8 +3,25 @@ import { createClient } from "https://esm.sh/@supabase/supabase-js@2.45.4";
 import { corsHeaders } from "npm:@supabase/supabase-js@2/cors";
 
 const GRAPH_VERSION = "v25.0";
-// Instagram API with Instagram Login: usa graph.instagram.com com o IG User ID direto.
-const IG_BASE = `https://graph.instagram.com/${GRAPH_VERSION}`;
+const FB_BASE = `https://graph.facebook.com/${GRAPH_VERSION}`;
+const IG_LOGIN_BASE = `https://graph.instagram.com/${GRAPH_VERSION}`;
+
+// Sanitiza o Access Token: remove aspas, espaços, quebras de linha e caracteres invisíveis.
+function sanitizeToken(raw: string | undefined | null): string {
+  if (!raw) return "";
+  let t = String(raw).trim();
+  t = t.replace(/^['"]+|['"]+$/g, "");
+  t = t.replace(/[\s\r\n\t]+/g, "");
+  t = t.replace(/[\u0000-\u001F\u007F\uFEFF]/g, "");
+  return t.trim();
+}
+
+// EAA... => Facebook Graph. IGAA/IGQ... => Instagram API with Instagram Login.
+function baseForToken(token: string): string {
+  const t = sanitizeToken(token);
+  if (t.startsWith("IGAA") || t.startsWith("IGQ")) return IG_LOGIN_BASE;
+  return FB_BASE;
+}
 
 type ConnectionStatus = "CONNECTED" | "PENDING" | "ERROR";
 
@@ -38,19 +55,23 @@ async function readMeta(res: Response) {
   return { status: res.status, data, text };
 }
 
-async function validateAccount(token: string, igId: string): Promise<ValidationResult> {
+async function validateAccount(rawToken: string, rawIgId: string): Promise<ValidationResult> {
+  const token = sanitizeToken(rawToken);
+  const igId = String(rawIgId ?? "").trim();
   if (!token || !igId) {
     return { ok: false, status: "EMPTY", message: "Access Token ou Instagram Business ID vazio." };
   }
 
-  // Fluxo "Instagram API with Instagram Login": não consultamos debug_token nem /me/permissions
-  // (endpoints do Facebook Graph). A validação é feita direto contra graph.instagram.com/{ig_user_id}.
+  // Roteamento por tipo de token: EAA → Facebook Graph, IGAA/IGQ → Instagram API with Instagram Login.
+  const base = baseForToken(token);
   const grantedPerms: string[] = [];
   const permissionWarning = "";
 
-  // Business account — busca o IG informado usando apenas campos válidos da IG Graph API.
   try {
-    const igRes = await fetch(`${IG_BASE}/${encodeURIComponent(igId)}?fields=id,username,name,profile_picture_url&access_token=${encodeURIComponent(token)}`);
+    const igRes = await fetch(
+      `${base}/${encodeURIComponent(igId)}?fields=id,username,name,profile_picture_url&access_token=${encodeURIComponent(token)}`,
+      { headers: { Authorization: `Bearer ${token}` } },
+    );
     const ig = await readMeta(igRes);
     if (ig.data?.error) {
 
@@ -149,7 +170,7 @@ Deno.serve(async (req) => {
 
         // Se veio token, valida e faz upsert completo da CONTA INFORMADA apenas.
         // Falha de uma conta nunca altera as demais.
-        const token = (item.access_token ?? "").trim();
+        const token = sanitizeToken(item.access_token);
         const igId = (item.ig_business_id ?? "").trim();
 
         if (token || igId) {
@@ -192,7 +213,7 @@ Deno.serve(async (req) => {
 
     if (action === "create") {
       const display_name = String(body.display_name ?? "").trim();
-      const access_token = String(body.access_token ?? "").trim();
+      const access_token = sanitizeToken(body.access_token);
       const ig_business_id = String(body.ig_business_id ?? "").trim();
       const project_id = body.project_id ?? null;
       if (!display_name || !access_token || !ig_business_id) {
@@ -291,7 +312,7 @@ Deno.serve(async (req) => {
           { status: 400, headers: { ...corsHeaders, "Content-Type": "application/json" } });
       }
       const { data } = await supabase.from("instagram_credentials").select("*").eq("account", account).maybeSingle();
-      let token = data?.access_token ?? "";
+      let token = sanitizeToken(data?.access_token);
       let igId = data?.ig_business_id ?? "";
       if (!token || !igId) {
         if (account === "resenha") {

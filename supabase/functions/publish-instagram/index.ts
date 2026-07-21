@@ -3,11 +3,31 @@ import { createClient } from "https://esm.sh/@supabase/supabase-js@2.45.4";
 import { corsHeaders } from "npm:@supabase/supabase-js@2/cors";
 
 const GRAPH_VERSION = "v25.0";
-// Instagram API with Instagram Login: usa graph.instagram.com com o IG User ID direto.
-const IG_BASE = `https://graph.instagram.com/${GRAPH_VERSION}`;
+const FB_BASE = `https://graph.facebook.com/${GRAPH_VERSION}`;
+const IG_LOGIN_BASE = `https://graph.instagram.com/${GRAPH_VERSION}`;
 const BUCKET = "videos-processed";
 const MAX_POLL_MS = 5 * 60 * 1000;
 const POLL_INTERVAL_MS = 5000;
+
+// Sanitiza o Access Token: remove aspas, espaços, quebras de linha e caracteres invisíveis.
+function sanitizeToken(raw: string | undefined | null): string {
+  if (!raw) return "";
+  let t = String(raw).trim();
+  // Remove aspas simples/duplas do início/fim
+  t = t.replace(/^['"]+|['"]+$/g, "");
+  // Remove qualquer whitespace/newline no meio
+  t = t.replace(/[\s\r\n\t]+/g, "");
+  // Remove BOM e caracteres de controle
+  t = t.replace(/[\u0000-\u001F\u007F\uFEFF]/g, "");
+  return t.trim();
+}
+
+// EAA... => token do Facebook Graph. IGAA/IGQ... => Instagram API with Instagram Login.
+function baseForToken(token: string): string {
+  const t = sanitizeToken(token);
+  if (t.startsWith("IGAA") || t.startsWith("IGQ")) return IG_LOGIN_BASE;
+  return FB_BASE;
+}
 
 
 type Account = string;
@@ -36,8 +56,8 @@ async function tokensFor(supabase: any, account: Account) {
     .maybeSingle();
   const env = envTokensFor(account);
   return {
-    token: data?.access_token || env.token,
-    igId: data?.ig_business_id || env.igId,
+    token: sanitizeToken(data?.access_token || env.token),
+    igId: (data?.ig_business_id || env.igId || "").toString().trim(),
   };
 }
 
@@ -176,7 +196,7 @@ Deno.serve(async (req) => {
       const start = Date.now();
       let lastStatus: any = null;
       while (Date.now() - start < MAX_POLL_MS) {
-        const statusUrl = `${IG_BASE}/${containerId}?fields=status_code,status`;
+        const statusUrl = `${baseForToken(token)}/${containerId}?fields=status_code,status`;
         const statusRes = await metaGet(statusUrl, token);
         lastStatus = statusRes.data;
 
@@ -201,7 +221,7 @@ Deno.serve(async (req) => {
         return;
       }
 
-      const publishUrl = `${IG_BASE}/${igId}/media_publish`;
+      const publishUrl = `${baseForToken(token)}/${igId}/media_publish`;
       const publishRes = await metaPost(publishUrl, {
         creation_id: containerId,
       }, token);
@@ -349,7 +369,7 @@ Deno.serve(async (req) => {
     const { token, igId } = await tokensFor(supabase, account as Account);
     if (!token || !igId) throw new Error(`Credenciais Meta ausentes para a conta '${account}'.`);
 
-    const accountCheckUrl = `${IG_BASE}/${igId}?fields=id,username`;
+    const accountCheckUrl = `${baseForToken(token)}/${igId}?fields=id,username`;
     const accountCheck = await metaGet(accountCheckUrl, token);
     await appendLog(post.id, { event: "instagram_business_id_check", ig_id: igId, response: accountCheck.data });
 
@@ -358,7 +378,7 @@ Deno.serve(async (req) => {
 
     const fullCaption = buildCaption(caption, hashtags);
 
-    const containerUrl = `${IG_BASE}/${igId}/media`;
+    const containerUrl = `${baseForToken(token)}/${igId}/media`;
     const containerRes = await metaPost(containerUrl, {
       media_type: "REELS",
       video_url: signed.signedUrl,
