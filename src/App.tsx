@@ -16,6 +16,7 @@ import MyEdits from "./pages/MyEdits";
 import Publications from "./pages/Publications";
 import Privacy from "./pages/Privacy";
 import Terms from "./pages/Terms";
+import CommentsConfig from "./pages/CommentsConfig";
 
 import { ProjectProvider } from "@/context/ProjectContext";
 import { RenderQueueProvider } from "@/context/RenderQueueContext";
