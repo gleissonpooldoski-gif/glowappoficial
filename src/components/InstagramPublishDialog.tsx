@@ -74,10 +74,13 @@ export default function InstagramPublishDialog({
   const [scheduleMode, setScheduleMode] = useState<"auto" | "manual">("auto");
   const [slotBusy, setSlotBusy] = useState(false);
   const [autoSlot, setAutoSlot] = useState<Date | null>(null);
-
-  // Auto-gera legenda/hashtags ao abrir se não vieram prontos
-  useEffect(() => {
-    if (!open || !videoId) return;
+  const [nets, setNets] = useState<Set<NetId>>(new Set(["instagram"]));
+  const toggleNet = (n: NetId) => setNets((prev) => {
+    const s = new Set(prev);
+    if (s.has(n)) s.delete(n); else s.add(n);
+    if (s.size === 0) s.add(n); // sempre pelo menos 1
+    return s;
+  });
     setCaption(defaultCaption);
     setHashtags(defaultHashtags);
     if (!defaultCaption && !defaultHashtags && videoMeta) {
