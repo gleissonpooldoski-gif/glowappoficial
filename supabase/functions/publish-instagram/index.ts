@@ -372,13 +372,8 @@ Deno.serve(async (req) => {
     await appendLog(post.id, { event: "meta_token_resolved", account, token_source: tokenSource, token_length: token.length, token_head: tokenHead, token_tail: tokenTail, ig_id: igId });
     if (!token || !igId) throw new Error(`Credenciais Meta ausentes para a conta '${account}'.`);
 
-    const accountCheckUrl = `${baseForToken(token)}/${igId}?fields=id,username`;
-    const accountCheck = await metaGet(accountCheckUrl, token);
-    await appendLog(post.id, { event: "instagram_business_id_check", ig_id: igId, response: accountCheck.data });
-
-    // Não consultamos mais /me/permissions nem dados de Página do Facebook:
-    // o fluxo "Instagram API with Instagram Login" usa o IG User ID direto em graph.instagram.com.
-
+    // Sem pré-consultas legadas: o IG Business Account ID cadastrado é usado direto
+    // no endpoint de container. Removidas chamadas a account_type e à Página do Facebook.
     const fullCaption = buildCaption(caption, hashtags);
 
     const containerUrl = `${baseForToken(token)}/${igId}/media`;
@@ -386,9 +381,10 @@ Deno.serve(async (req) => {
       media_type: "REELS",
       video_url: signed.signedUrl,
       caption: fullCaption,
+      access_token: token,
     }, token);
     const containerId = containerRes.data?.id;
-    await appendLog(post.id, { event: "media_container_create_response", status: containerRes.status, response: containerRes.data });
+    await appendLog(post.id, { event: "media_container_create_response", status: containerRes.status, endpoint: containerUrl, response: containerRes.data });
     if (!containerId) throw new Error(`Meta não retornou creation_id. Resposta: ${safeJson(containerRes.data)}`);
 
 
