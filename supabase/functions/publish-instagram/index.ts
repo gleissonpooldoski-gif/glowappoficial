@@ -178,13 +178,12 @@ async function readMetaResponse(res: Response) {
 }
 
 async function metaPost(url: string, body: Record<string, string>, token?: string) {
+  if (token !== undefined) assertValidToken(token);
   const form = new URLSearchParams(body);
+  console.log(`[publish-instagram] meta_request POST ${url.split("?")[0]} body_keys=${Object.keys(body).join(",")}`);
   const res = await fetch(url, {
     method: "POST",
-    headers: {
-      "Content-Type": "application/x-www-form-urlencoded",
-      ...(token ? { Authorization: `Bearer ${token}` } : {}),
-    },
+    headers: { "Content-Type": "application/x-www-form-urlencoded" },
     body: form.toString(),
   });
   const payload = await readMetaResponse(res);
@@ -197,9 +196,9 @@ async function metaPost(url: string, body: Record<string, string>, token?: strin
 }
 
 async function metaGet(url: string, token?: string) {
-  const res = await fetch(url, {
-    headers: token ? { Authorization: `Bearer ${token}` } : undefined,
-  });
+  if (token !== undefined) assertValidToken(token);
+  console.log(`[publish-instagram] meta_request GET ${url.split("?")[0]}`);
+  const res = await fetch(url);
   const payload = await readMetaResponse(res);
   if (!res.ok || payload.data?.error) {
     const err: any = new Error(metaErrorMessage(payload.data, `HTTP ${res.status}: ${payload.text.slice(0, 500)}`));
