@@ -56,10 +56,10 @@ export default function YoutubeCredentialsCard() {
 
   const disconnect = async (c: YoutubeCredential) => {
     const name = c.channel_title ?? c.label ?? c.account;
-    if (!confirm(`Desconectar o canal “${name}”?`)) return;
+    if (!confirm(`Tem certeza que deseja desconectar este canal do YouTube?\n\n"${name}" — os outros canais permanecerão conectados.`)) return;
     setBusy(c.account);
-    try { await disconnectYoutube(c.account); toast.success("Canal desconectado."); await load(); }
-    catch (e: any) { toast.error(e?.message); }
+    try { await disconnectYoutube(c.account); toast.success("Canal desconectado com sucesso."); await load(); }
+    catch (e: any) { toast.error(e?.message ?? "Falha ao desconectar canal."); }
     finally { setBusy(null); }
   };
 
