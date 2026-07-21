@@ -564,17 +564,17 @@ Deno.serve(async (req) => {
         throw new Error(`Meta não retornou creation_id. Resposta: ${safeJson(containerRes.data)}`);
       } catch (err: any) {
         lastContainerErr = err;
-        const transient = isTransientMetaError(err?.metaData, err?.message);
+        const retryable = isCodeOneMetaError(err?.metaData, err?.message);
         await appendLog(post.id, {
           event: "media_container_create_error",
           attempt,
-          transient,
+          retryable_code_1: retryable,
           raw_message: err?.message ?? null,
-          meta: err?.metaData ?? null,
+          meta_error: metaErrorDetails(err?.metaData, err?.message),
         });
-        if (!transient || attempt === MAX_CONTAINER_ATTEMPTS) throw err;
-        const backoffMs = 4000 * attempt;
-        await appendLog(post.id, { event: "media_container_retry_wait", attempt, backoff_ms: backoffMs });
+        if (!retryable || attempt === MAX_CONTAINER_ATTEMPTS) throw err;
+        const backoffMs = 5000 * attempt;
+        await appendLog(post.id, { event: "media_container_retry_wait", attempt, reason: "meta_code_1", backoff_ms: backoffMs });
         await new Promise((r) => setTimeout(r, backoffMs));
       }
     }
@@ -583,7 +583,13 @@ Deno.serve(async (req) => {
 
 
     await supabase.from("instagram_posts").update({ container_id: containerId }).eq("id", post.id);
-    await appendLog(post.id, { event: "creation_id_saved", creation_id: containerId });
+    await appendLog(post.id, {
+      event: "creation_id_saved",
+      creation_id: containerId,
+      created_at: new Date().toISOString(),
+      video_url_sent: signed.signedUrl,
+      container_response: containerRes?.data ?? null,
+    });
 
     const background = completePublication(post.id, containerId, token, igId, account as Account);
     const edgeRuntime = (globalThis as any).EdgeRuntime;
