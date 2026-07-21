@@ -51,17 +51,12 @@ export function useIgAccountForProject(projectId: string | null | undefined) {
     }
     setLoading(true);
     (async () => {
-      const { data } = await supabase
-        .from("instagram_credentials" as any)
-        .select("account, display_name, connection_status")
-        .eq("project_id", projectId)
-        .order("updated_at", { ascending: false })
-        .limit(1)
-        .maybeSingle();
+      const { data } = await supabase.functions.invoke("instagram-credentials", { body: { action: "get" } });
       if (cancelled) return;
-      const row = data as any;
-      setAccount(row?.account ?? null);
-      setDisplayName(row?.display_name ?? null);
+      const creds = (data?.credentials ?? {}) as Record<string, { account: string; display_name: string | null; project_id: string | null }>;
+      const match = Object.values(creds).find((c) => c.project_id === projectId);
+      setAccount(match?.account ?? null);
+      setDisplayName(match?.display_name ?? null);
       setLoading(false);
     })();
     return () => { cancelled = true; };
