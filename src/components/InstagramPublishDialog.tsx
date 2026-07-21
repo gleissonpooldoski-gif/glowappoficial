@@ -438,9 +438,9 @@ export default function InstagramPublishDialog({
                 <span className="text-[11px] text-muted-foreground">Selecione ao menos uma rede acima.</span>
               )}
             </div>
-            {nets.has("instagram") && !account && (
+            {nets.has("instagram") && !account && !accLoading && (
               <p className="text-[11px] text-destructive">
-                Selecione um projeto ativo (Frame ou Resenha) no menu superior para publicar no Instagram.
+                Este projeto ainda não tem uma conta do Instagram vinculada. Vá em Configurações → Instagram para conectar.
               </p>
             )}
           </div>
