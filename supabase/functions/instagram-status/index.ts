@@ -3,6 +3,8 @@ import { createClient } from "https://esm.sh/@supabase/supabase-js@2.45.4";
 import { corsHeaders } from "npm:@supabase/supabase-js@2/cors";
 
 const GRAPH_VERSION = "v25.0";
+const IG_BASE = `https://graph.instagram.com/${GRAPH_VERSION}`;
+
 
 function envCredentialsFor(account: string) {
   if (account === "resenha") {
