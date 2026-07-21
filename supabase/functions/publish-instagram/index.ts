@@ -441,6 +441,10 @@ Deno.serve(async (req) => {
     const { token, igId, tokenSource, tokenHead, tokenTail } = await tokensFor(supabase, account as Account);
     await appendLog(post.id, { event: "meta_token_resolved", account, token_source: tokenSource, token_length: token.length, token_head: tokenHead, token_tail: tokenTail, ig_id: igId });
     if (!token || !igId) throw new Error(`Credenciais Meta ausentes para a conta '${account}'.`);
+    try { assertValidToken(token, account); } catch (e: any) {
+      await markCredentialsValidationError(supabase, account as Account, "TOKEN_EXPIRED", e.message);
+      throw e;
+    }
 
     // Sem pré-consultas legadas: o IG Business Account ID cadastrado é usado direto
     // no endpoint de container. Removidas chamadas a account_type e à Página do Facebook.
