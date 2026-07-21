@@ -242,6 +242,9 @@ export default function InstagramBatchScheduleDialog({ open, onOpenChange, video
     if (nets.includes("instagram") && !igAccount) {
       toast.error("Selecione um projeto ativo (Frame/Resenha) para publicar no Instagram."); return;
     }
+    if (nets.includes("youtube") && ytChannels.length === 0) {
+      toast.error("Selecione ao menos um canal do YouTube."); return;
+    }
     if (videos.length === 0) return;
     if (insufficient) {
       toast.error(`Slots insuficientes em: ${insufficientNets.join(", ")}.`);
@@ -320,6 +323,12 @@ export default function InstagramBatchScheduleDialog({ open, onOpenChange, video
                 <Lock size={10} />
                 <span className="text-muted-foreground">Instagram usa o projeto ativo:</span>
                 <Badge variant="outline" className="text-[10px]">{platformLabel}</Badge>
+              </div>
+            )}
+            {selectedNets.has("youtube") && (
+              <div className="rounded-md border border-border/60 bg-background/40 px-2.5 py-2 space-y-1.5">
+                <Label className="text-[11px] text-muted-foreground">Canais do YouTube</Label>
+                <YoutubeChannelPicker value={ytChannels} onChange={setYtChannels} disabled={busy} compact />
               </div>
             )}
           </div>
