@@ -70,17 +70,20 @@ Deno.serve(async (req) => {
         }).eq("id", row.id);
 
         // Dispara comentário monetizado (não bloqueante — falha não afeta o upload).
-        try {
-          const commentUrl = `${Deno.env.get("SUPABASE_URL")}/functions/v1/youtube-post-comment`;
-          await fetch(commentUrl, {
-            method: "POST",
-            headers: {
-              "Content-Type": "application/json",
-              Authorization: `Bearer ${Deno.env.get("SUPABASE_SERVICE_ROLE_KEY")}`,
-            },
-            body: JSON.stringify({ youtube_post_id: row.id }),
-          });
-        } catch (ce) { console.warn("[youtube-scheduler] comentário falhou:", (ce as any)?.message); }
+        // Só executa se o post foi opt-in (auto_comment_enabled=true).
+        if (row.auto_comment_enabled) {
+          try {
+            const commentUrl = `${Deno.env.get("SUPABASE_URL")}/functions/v1/youtube-post-comment`;
+            await fetch(commentUrl, {
+              method: "POST",
+              headers: {
+                "Content-Type": "application/json",
+                Authorization: `Bearer ${Deno.env.get("SUPABASE_SERVICE_ROLE_KEY")}`,
+              },
+              body: JSON.stringify({ youtube_post_id: row.id }),
+            });
+          } catch (ce) { console.warn("[youtube-scheduler] comentário falhou:", (ce as any)?.message); }
+        }
 
         results.push({ id: row.id, ok: true });
       } catch (e: any) {
