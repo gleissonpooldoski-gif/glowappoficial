@@ -346,6 +346,7 @@ function PlatformSection({
   onToggleAutoComment: (ytId: string, enable: boolean) => void;
 }) {
   const own = posts.filter((p) => p.account === account);
+  const displayLabel = labelForAccount(account);
 
   const scheduled = own
     .filter((p) => p.status === "AGENDADO" || p.status === "PUBLICANDO")
