@@ -83,13 +83,21 @@ Deno.serve(async (req) => {
     if (body.video_id) {
       const { data: video, error: vErr } = await supabase
         .from("videos")
-        .select("original_path, mime_type")
+        .select("original_path, processed_path, mime_type")
         .eq("id", body.video_id)
         .maybeSingle();
       if (vErr) throw vErr;
-      if (!video?.original_path) throw new Error("Vídeo não encontrado ou sem arquivo.");
-      bucket = bucket ?? "videos";
-      path = video.original_path;
+      if (!video) throw new Error("Vídeo não encontrado.");
+      // Prefere o arquivo processado (renderizado); usa o original como fallback.
+      if (video.processed_path) {
+        bucket = bucket ?? "videos-processed";
+        path = video.processed_path;
+      } else if (video.original_path) {
+        bucket = bucket ?? "videos";
+        path = video.original_path;
+      } else {
+        throw new Error("Este item não possui arquivo de vídeo. Renderize/finalize o vídeo antes de publicar no YouTube.");
+      }
       mime = video.mime_type || mime;
     }
     if (!bucket || !path) throw new Error("Arquivo do vídeo não informado.");
