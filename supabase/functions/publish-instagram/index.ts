@@ -3,9 +3,12 @@ import { createClient } from "https://esm.sh/@supabase/supabase-js@2.45.4";
 import { corsHeaders } from "npm:@supabase/supabase-js@2/cors";
 
 const GRAPH_VERSION = "v25.0";
+// Instagram API with Instagram Login: usa graph.instagram.com com o IG User ID direto.
+const IG_BASE = `https://graph.instagram.com/${GRAPH_VERSION}`;
 const BUCKET = "videos-processed";
 const MAX_POLL_MS = 5 * 60 * 1000;
 const POLL_INTERVAL_MS = 5000;
+
 
 type Account = string;
 
