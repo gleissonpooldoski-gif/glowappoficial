@@ -113,10 +113,18 @@ function ScheduleEditor({
 
   const editAt = (idx: number, value: string) => {
     if (!/^\d{1,2}:\d{2}$/.test(value)) return;
+    const [h, m] = value.split(":").map(Number);
+    const normalized = `${String(h).padStart(2, "0")}:${String(m).padStart(2, "0")}`;
+    if (times.some((t, i) => i !== idx && t === normalized)) {
+      toast.error("Horário já existe");
+      return;
+    }
     const next = [...times];
-    next[idx] = value;
+    next[idx] = normalized;
     setTimes(next);
   };
+
+  const uniqueCount = new Set(times).size;
 
   const buildSeqIso = (): string | null => {
     if (!seqDate || !seqTime) return null;
@@ -215,7 +223,7 @@ function ScheduleEditor({
         </Button>
         <div className="ml-auto flex items-center gap-2">
           <Badge variant="outline" className="text-[10px]">
-            {times.length} horário(s)
+            {uniqueCount} horário(s)
           </Badge>
           <Button size="sm" onClick={save} disabled={saving} className="bg-gold-gradient text-black">
             {saving ? <Loader2 size={12} className="mr-1 animate-spin" /> : <Save size={12} className="mr-1" />}
