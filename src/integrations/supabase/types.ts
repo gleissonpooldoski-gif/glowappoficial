@@ -982,6 +982,7 @@ export type Database = {
       youtube_posts: {
         Row: {
           account: string
+          auto_comment_enabled: boolean
           category_id: string | null
           comment_error: string | null
           comment_id: string | null
@@ -1006,6 +1007,7 @@ export type Database = {
         }
         Insert: {
           account?: string
+          auto_comment_enabled?: boolean
           category_id?: string | null
           comment_error?: string | null
           comment_id?: string | null
@@ -1030,6 +1032,7 @@ export type Database = {
         }
         Update: {
           account?: string
+          auto_comment_enabled?: boolean
           category_id?: string | null
           comment_error?: string | null
           comment_id?: string | null
