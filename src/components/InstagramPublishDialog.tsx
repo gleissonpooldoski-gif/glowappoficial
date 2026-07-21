@@ -229,6 +229,10 @@ export default function InstagramPublishDialog({
       toast.error("Para publicar no YouTube, adicione um vídeo ao post.");
       return;
     }
+    if (!caption.trim()) {
+      toast.error("Legenda vazia. Gere a legenda automaticamente ou escreva manualmente antes de publicar.");
+      return;
+    }
     const netsLabel = [wantIG && "Instagram", wantYT && "YouTube"].filter(Boolean).join(" + ");
     const confirmMsg =
       mode === "schedule"
