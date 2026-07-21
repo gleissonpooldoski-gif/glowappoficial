@@ -1,12 +1,16 @@
-// Publica um vídeo no TikTok usando a Content Posting API (modo PULL_FROM_URL).
+// Envia um vídeo como DRAFT para a caixa de entrada do TikTok (Content Posting API - Inbox).
+// Usa apenas o escopo `video.upload`. A publicação final é feita manualmente pelo criador no app TikTok.
+// A publicação automática (`video.publish`) está preparada mas desativada até aprovação do escopo.
 // Body: { videoId, account, caption, scheduledAt?, privacy_level? }
-// - Se scheduledAt for futuro, cria registro em tiktok_posts com status AGENDADO;
-//   o scheduler (a implementar via pg_cron) reinvoca sem scheduledAt para publicar.
-// - Sem scheduledAt (ou passado), chama /post/publish/video/init/ imediatamente.
 import { createClient } from "https://esm.sh/@supabase/supabase-js@2.45.4";
 import { corsHeaders } from "npm:@supabase/supabase-js@2/cors";
 
+// Endpoint de INBOX (draft) — requer somente `video.upload`.
+const INBOX_INIT_ENDPOINT = "https://open.tiktokapis.com/v2/post/publish/inbox/video/init/";
+// Endpoint de publicação direta — requer `video.publish` (mantido para futuro).
 const PUBLISH_INIT_ENDPOINT = "https://open.tiktokapis.com/v2/post/publish/video/init/";
+// Flag para religar publicação direta assim que o escopo for aprovado.
+const ENABLE_DIRECT_PUBLISH = false;
 const TOKEN_ENDPOINT = "https://open.tiktokapis.com/v2/oauth/token/";
 type Account = "resenha" | "frame";
 
