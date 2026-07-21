@@ -61,13 +61,19 @@ function ScheduleEditor({
   const [seqTime, setSeqTime] = useState("");
   const [seqStartAt, setSeqStartAt] = useState<string | null>(null);
   const [nextSlot, setNextSlot] = useState<Date | null>(null);
+  const [preview, setPreview] = useState<Date[]>([]);
 
   const loadNextSlot = async () => {
     try {
-      const n = await findNextSlot(network, account);
+      const [n, arr] = await Promise.all([
+        findNextSlot(network, account),
+        findNextSlots(network, account, 6),
+      ]);
       setNextSlot(n);
+      setPreview(arr);
     } catch {
       setNextSlot(null);
+      setPreview([]);
     }
   };
 
