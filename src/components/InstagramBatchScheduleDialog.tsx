@@ -44,8 +44,8 @@ function fmt(d: Date) {
 
 export default function InstagramBatchScheduleDialog({ open, onOpenChange, videos, onDone }: Props) {
   const { activeProject } = useActiveProject();
-  const igAccount: InstagramAccount | null = platformFromProject(activeProject);
-  const platformLabel = igAccount ? PLATFORM_LABEL[igAccount] : "—";
+  const { account: igAccount, displayName: igDisplayName, loading: igLoading } = useIgAccountForProject(activeProject?.id ?? null);
+  const platformLabel = platformLabelFor(igAccount, igDisplayName);
 
   const [selectedNets, setSelectedNets] = useState<Set<NetworkId>>(new Set(["instagram"]));
   const [ytChannels, setYtChannels] = useState<string[]>([]);
