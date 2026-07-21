@@ -312,7 +312,8 @@ Deno.serve(async (req) => {
 
         if (statusCode === "FINISHED") break;
         if (statusCode === "ERROR" || statusCode === "EXPIRED") {
-          throw new Error(`Container não finalizou: ${statusCode}. Motivo Meta: ${statusRes.data?.status ?? safeJson(statusRes.data)}`);
+          const reason = statusRes.data?.status ?? statusRes.data?.error?.message ?? safeJson(statusRes.data);
+          throw new Error(`Container não finalizou (${statusCode}). Motivo Meta: ${reason}`);
         }
         await new Promise((resolve) => setTimeout(resolve, POLL_INTERVAL_MS));
       }
@@ -321,6 +322,12 @@ Deno.serve(async (req) => {
         throw new Error(`Timeout de 5 minutos aguardando FINISHED. Último status Meta: ${safeJson(lastStatus)}`);
       }
       await appendLog(postId, { event: "container_finished", creation_id: containerId, response: lastStatus });
+
+      // Estabilização: aguarda o backend da Meta ficar pronto após FINISHED.
+      // Sem essa pausa, media_publish costuma retornar OAuthException code=1.
+      const STABILIZATION_MS = 8000;
+      await appendLog(postId, { event: "publish_stabilization_wait", wait_ms: STABILIZATION_MS });
+      await new Promise((r) => setTimeout(r, STABILIZATION_MS));
 
       const { data: current } = await supabase.from("instagram_posts").select("status, publish_id").eq("id", postId).maybeSingle();
       if (current?.status === "PUBLICADO" || current?.publish_id) {
