@@ -56,8 +56,8 @@ async function tokensFor(supabase: any, account: Account) {
     .maybeSingle();
   const env = envTokensFor(account);
   return {
-    token: data?.access_token || env.token,
-    igId: data?.ig_business_id || env.igId,
+    token: sanitizeToken(data?.access_token || env.token),
+    igId: (data?.ig_business_id || env.igId || "").toString().trim(),
   };
 }
 
