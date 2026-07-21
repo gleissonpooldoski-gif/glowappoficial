@@ -448,9 +448,11 @@ export default function Publications() {
   const [ttByKey, setTtByKey] = useState<Map<string, { status: string }>>(new Map());
   const [selectedIds, setSelectedIds] = useState<Set<string>>(new Set());
   const [bulkOpen, setBulkOpen] = useState(false);
+  const [migrateOpen, setMigrateOpen] = useState(false);
   const [selectedPost, setSelectedPost] = useState<InstagramPost | null>(null);
   const [editing, setEditing] = useState<InstagramPost | null>(null);
   const [editingNetworks, setEditingNetworks] = useState<InstagramPost | null>(null);
+
 
   const [statusFilter, setStatusFilter] = useState<StatusFilter>("all");
   const [periodFilter, setPeriodFilter] = useState<PeriodFilter>("all");
