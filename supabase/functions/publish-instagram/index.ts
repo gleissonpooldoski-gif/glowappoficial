@@ -495,9 +495,11 @@ Deno.serve(async (req) => {
 
   const completePublication = async (postId: string, initialContainerId: string, token: string, igId: string, account: Account, videoUrl: string, fullCaption: string, tokenSource: string) => {
     try {
-      let containerId = initialContainerId;
-      const publishUrl = `${FB_BASE}/${igId}/media_publish`;
-      const containerUrl = `${FB_BASE}/${igId}/media`;
+      let containerId = assertGraphId(initialContainerId, "creation_id");
+      const safeIgId = assertGraphId(igId, "ig_business_id");
+      const publishUrl = `${FB_BASE}/${safeIgId}/media_publish`;
+      const containerUrl = `${FB_BASE}/${safeIgId}/media`;
+
 
       const ensureNotAlreadyPublished = async (event = "publish_skipped_already_published") => {
         const { data: current } = await supabase.from("instagram_posts").select("status, publish_id").eq("id", postId).maybeSingle();
