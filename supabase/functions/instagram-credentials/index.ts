@@ -3,6 +3,9 @@ import { createClient } from "https://esm.sh/@supabase/supabase-js@2.45.4";
 import { corsHeaders } from "npm:@supabase/supabase-js@2/cors";
 
 const GRAPH_VERSION = "v25.0";
+// Instagram API with Instagram Login: usa graph.instagram.com com o IG User ID direto.
+const IG_BASE = `https://graph.instagram.com/${GRAPH_VERSION}`;
+
 type ConnectionStatus = "CONNECTED" | "PENDING" | "ERROR";
 
 type ValidationResult = {
@@ -40,82 +43,34 @@ async function validateAccount(token: string, igId: string): Promise<ValidationR
     return { ok: false, status: "EMPTY", message: "Access Token ou Instagram Business ID vazio." };
   }
 
-  // 1) Debug do token
-  try {
-    const debugRes = await fetch(`https://graph.facebook.com/${GRAPH_VERSION}/debug_token?input_token=${encodeURIComponent(token)}&access_token=${encodeURIComponent(token)}`);
-    const debug = await readMeta(debugRes);
-    const info = debug.data?.data;
-    if (info?.is_valid === false) {
-      const expired = info?.expires_at && Number(info.expires_at) > 0 && Number(info.expires_at) * 1000 < Date.now();
-      return { ok: false, status: expired ? "TOKEN_EXPIRED" : "TOKEN_INVALID", message: info?.error?.message ?? "Token inválido." };
-    }
-  } catch (_) { /* segue validação */ }
+  // Fluxo "Instagram API with Instagram Login": não consultamos debug_token nem /me/permissions
+  // (endpoints do Facebook Graph). A validação é feita direto contra graph.instagram.com/{ig_user_id}.
+  const grantedPerms: string[] = [];
+  const permissionWarning = "";
 
-  // 2) Permissões — diagnóstico não-bloqueante para tokens de Página/System User.
-  // A Meta oferece fluxos diferentes e nem todo token responde /me/permissions:
-  //   • Facebook Login: instagram_basic + instagram_content_publish
-  //   • Instagram Login: instagram_business_basic + instagram_business_content_publish
-  //   • Página/System User: pode falhar em /me/permissions, mas publicar se o IG ID for acessível.
-  // pages_show_list / pages_read_engagement NÃO são obrigatórias aqui.
-  const ACCEPTED_SCOPES = ["instagram_content_publish", "instagram_basic"];
-  let grantedPerms: string[] = [];
-  let permissionWarning = "";
+  // Business account — busca o IG informado usando apenas campos válidos da IG Graph API.
   try {
-    const permRes = await fetch(`https://graph.facebook.com/${GRAPH_VERSION}/me/permissions?access_token=${encodeURIComponent(token)}`);
-    const perm = await readMeta(permRes);
-    if (perm.data?.error) {
-      const code = perm.data.error.code;
-      if (code === 190) return { ok: false, status: "TOKEN_EXPIRED", message: perm.data.error.message ?? "Token expirado." };
-      // /me/permissions falha em tokens de Página/System User — inclusive com avisos de API bloqueada.
-      // Não bloqueia a conta: seguimos e confiamos no teste direto do IG ID + publish real.
-      if (isApiBlocked(perm.data.error)) permissionWarning = ` /me/permissions retornou aviso da Meta, mas o teste direto do IG ID foi usado como fonte de verdade: ${perm.data.error.message ?? "sem detalhe"}.`;
-    } else {
-      const list = Array.isArray(perm.data?.data) ? perm.data.data : [];
-      grantedPerms = list.filter((p: any) => p?.status === "granted").map((p: any) => p.permission);
-      const hasAcceptedInstagramScope = grantedPerms.some((p) => ACCEPTED_SCOPES.includes(p) || p.startsWith("instagram_business_"));
-      if (grantedPerms.length > 0 && !hasAcceptedInstagramScope) {
-        permissionWarning = ` /me/permissions não listou escopos Instagram reconhecidos; validação seguirá pelo acesso direto ao IG ID. Escopos: ${grantedPerms.join(", ") || "nenhum"}.`;
-      }
-    }
-  } catch (_) { /* segue para teste do Business ID */ }
-
-  // 3) Business account — busca o IG informado usando apenas campos válidos da Graph API.
-  // NÃO usar `account_type` aqui: não é um campo válido no nó instagram_business_account e derruba com erro #100.
-  try {
-    const igRes = await fetch(`https://graph.facebook.com/${GRAPH_VERSION}/${encodeURIComponent(igId)}?fields=id,username,name,profile_picture_url&access_token=${encodeURIComponent(token)}`);
+    const igRes = await fetch(`${IG_BASE}/${encodeURIComponent(igId)}?fields=id,username,name,profile_picture_url&access_token=${encodeURIComponent(token)}`);
     const ig = await readMeta(igRes);
     if (ig.data?.error) {
+
       const code = ig.data.error.code;
       const meta = ig.data.error.message ?? "";
       if (isApiBlocked(ig.data.error)) return { ok: false, status: "API_BLOCKED", message: `${BLOCKED_MSG} (${meta})` };
       if (code === 190) return { ok: false, status: "TOKEN_EXPIRED", message: meta || "Token expirado." };
 
-      // Se falhou, lista as contas IG que ESTE token realmente pode acessar (via /me/accounts)
-      let accessibleHint = "";
-      try {
-        const pagesRes = await fetch(`https://graph.facebook.com/${GRAPH_VERSION}/me/accounts?fields=name,instagram_business_account{id,username}&limit=50&access_token=${encodeURIComponent(token)}`);
-        const pages = await readMeta(pagesRes);
-        const linked: string[] = [];
-        for (const p of pages.data?.data ?? []) {
-          const iba = p?.instagram_business_account;
-          if (iba?.id) linked.push(`• Página "${p.name}" → IG ${iba.id}${iba.username ? ` (@${iba.username})` : ""}`);
-        }
-        if (linked.length > 0) {
-          accessibleHint = `\n\nContas Instagram que este token PODE acessar:\n${linked.join("\n")}\n\nUse um dos IDs acima em vez de ${igId}.`;
-        } else {
-          accessibleHint = `\n\nEste token não retornou contas Instagram vinculadas em /me/accounts. Isso pode ser normal para Token de Página/System User; confirme se o Instagram Business Account ID informado pertence ao token usado.`;
-        }
-      } catch { /* ignora */ }
+      const hint = `\n\nConfirme que o ID informado (${igId}) é o Instagram User ID (ex.: 17841…) e que o Access Token foi emitido para essa mesma conta no fluxo "Instagram API with Instagram Login".`;
 
       if (code === 100 || code === 803) {
         return {
           ok: false,
           status: "IG_ID_INVALID",
-          message: `${meta}\n\nDiagnóstico: o ID ${igId} não existe OU este token não tem acesso a ele. Confirme que é o Instagram Business/Professional Account ID (não Page ID, User ID ou Business Manager ID) e que o token pertence a um admin da Página vinculada.${accessibleHint}`,
+          message: `${meta}\n\nDiagnóstico: o ID ${igId} não existe OU este token não tem acesso a ele.${hint}`,
         };
       }
-      return { ok: false, status: "IG_ID_INVALID", message: `${meta || "Falha ao ler o Business ID."}${accessibleHint}` };
+      return { ok: false, status: "IG_ID_INVALID", message: `${meta || "Falha ao ler o Instagram User ID."}${hint}` };
     }
+
     if (!ig.data?.id) return { ok: false, status: "IG_ID_INVALID", message: "Instagram Business ID não retornou dados." };
     return {
       ok: true,
