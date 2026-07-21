@@ -453,6 +453,7 @@ function PlatformSection({
 /* ---------- page ---------- */
 
 export default function Publications() {
+  const { activeProject, projects } = useActiveProject();
   const [posts, setPosts] = useState<InstagramPost[] | null>(null);
   const [ytByKey, setYtByKey] = useState<Map<string, { id: string; status: string; auto_comment_enabled: boolean }>>(new Map());
   const [ttByKey, setTtByKey] = useState<Map<string, { status: string }>>(new Map());
@@ -462,6 +463,7 @@ export default function Publications() {
   const [selectedPost, setSelectedPost] = useState<InstagramPost | null>(null);
   const [editing, setEditing] = useState<InstagramPost | null>(null);
   const [editingNetworks, setEditingNetworks] = useState<InstagramPost | null>(null);
+  const [igAccounts, setIgAccounts] = useState<Array<{ account: string; display_name: string | null; project_id: string | null }>>([]);
 
 
   const [statusFilter, setStatusFilter] = useState<StatusFilter>("all");
