@@ -5,13 +5,19 @@ import { corsHeaders } from "npm:@supabase/supabase-js@2/cors";
 const GRAPH_VERSION = "v18.0";
 const FB_BASE = `https://graph.facebook.com/${GRAPH_VERSION}`;
 
-// Sanitiza o Access Token: remove aspas, espaços, quebras de linha e caracteres invisíveis.
+// Sanitiza o Access Token: remove aspas, espaços, quebras de linha, controle
+// e QUALQUER caractere fora do ASCII imprimível (necessário para header válido).
 function sanitizeToken(raw: string | undefined | null): string {
-  if (!raw) return "";
+  if (raw === undefined || raw === null) return "";
   let t = String(raw).trim().replace(/^["']|["']$/g, "");
   t = t.replace(/[\s\r\n\t]+/g, "");
   t = t.replace(/[\u0000-\u001F\u007F\uFEFF]/g, "");
+  t = t.replace(/[^\x21-\x7E]/g, "");
   return t.trim();
+}
+
+function isValidTokenFormat(token: string): boolean {
+  return !!token && /^[\x21-\x7E]+$/.test(token);
 }
 
 type ConnectionStatus = "CONNECTED" | "PENDING" | "ERROR";
