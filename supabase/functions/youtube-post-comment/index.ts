@@ -40,6 +40,19 @@ async function ensureAccessToken(supabase: any, account: string) {
   return j.access_token;
 }
 
+// Remove qualquer URL/link/menção que a IA possa inserir — comentários devem apontar SOMENTE para a BIO.
+function stripLinks(text: string): string {
+  return text
+    .replace(/https?:\/\/\S+/gi, "")
+    .replace(/www\.\S+/gi, "")
+    .replace(/\b[\w-]+\.(com|br|net|org|io|site|link|xyz|app|co|me)(\/\S*)?/gi, "")
+    .replace(/\[link\]/gi, "")
+    .replace(/@\S+/g, "")
+    .replace(/[ \t]{2,}/g, " ")
+    .replace(/\n{3,}/g, "\n\n")
+    .trim();
+}
+
 async function adaptWithAI(base: string, ctx: { title?: string; description?: string; product: string }) {
   const key = Deno.env.get("LOVABLE_API_KEY");
   if (!key) return base;
@@ -51,12 +64,13 @@ async function adaptWithAI(base: string, ctx: { title?: string; description?: st
         model: "google/gemini-2.5-flash",
         messages: [
           { role: "system", content:
-            `Você adapta comentários monetizados de YouTube. Regras absolutas:\n` +
-            `- Mantenha o produto "${ctx.product}" exatamente como escrito.\n` +
-            `- Preserve o placeholder [link] intacto (em linha própria).\n` +
-            `- Mantenha o tom, a estrutura e o(s) emoji(s) do modelo.\n` +
+            `Você adapta comentários curtos de CTA para YouTube. Regras absolutas:\n` +
+            `- Contexto do produto: "${ctx.product}" (mas NÃO cite o nome no comentário — o CTA aponta para a BIO).\n` +
+            `- PROIBIDO incluir links, URLs, domínios, "http", "www", códigos de afiliado, @menções ou hashtags.\n` +
+            `- Sempre direcionar o público para a BIO do canal (use "na BIO 👆" ou equivalente natural).\n` +
+            `- Mantenha o tom, a estrutura, os emojis e o número de linhas do modelo.\n` +
             `- Ajuste levemente a primeira frase para conversar com o tema do vídeo.\n` +
-            `- Máximo 320 caracteres. Sem hashtags. Sem @menções. Sem links extras.\n` +
+            `- Máximo 280 caracteres.\n` +
             `- Retorne APENAS o texto final do comentário.` },
           { role: "user", content:
             `Título do vídeo: ${ctx.title ?? "(sem título)"}\n` +
@@ -68,8 +82,8 @@ async function adaptWithAI(base: string, ctx: { title?: string; description?: st
     });
     if (!res.ok) return base;
     const j: any = await res.json();
-    const out = String(j?.choices?.[0]?.message?.content ?? "").trim();
-    if (!out.includes("[link]")) return base;
+    const out = stripLinks(String(j?.choices?.[0]?.message?.content ?? "").trim());
+    if (!out || out.length < 12) return base;
     return out;
   } catch { return base; }
 }
@@ -110,7 +124,8 @@ Deno.serve(async (req) => {
 
     const tpl = templates[0];
     const adapted = await adaptWithAI(tpl.template, { title: post.title, description: post.description, product: cfg.product_name });
-    const finalText = adapted.replaceAll("[link]", cfg.affiliate_link);
+    // Garantia final: nenhum link/URL vai para o YouTube — o CTA aponta para a BIO.
+    const finalText = stripLinks(adapted) || stripLinks(tpl.template);
 
     const accessToken = await ensureAccessToken(supabase, post.account);
     const payload = {
