@@ -89,11 +89,14 @@ async function readMetaResponse(res: Response) {
   return { data, text };
 }
 
-async function metaPost(url: string, body: Record<string, string>) {
+async function metaPost(url: string, body: Record<string, string>, token?: string) {
   const form = new URLSearchParams(body);
   const res = await fetch(url, {
     method: "POST",
-    headers: { "Content-Type": "application/x-www-form-urlencoded" },
+    headers: {
+      "Content-Type": "application/x-www-form-urlencoded",
+      ...(token ? { Authorization: `Bearer ${token}` } : {}),
+    },
     body: form.toString(),
   });
   const payload = await readMetaResponse(res);
@@ -105,8 +108,10 @@ async function metaPost(url: string, body: Record<string, string>) {
   return { status: res.status, data: payload.data };
 }
 
-async function metaGet(url: string) {
-  const res = await fetch(url);
+async function metaGet(url: string, token?: string) {
+  const res = await fetch(url, {
+    headers: token ? { Authorization: `Bearer ${token}` } : undefined,
+  });
   const payload = await readMetaResponse(res);
   if (!res.ok || payload.data?.error) {
     const err: any = new Error(metaErrorMessage(payload.data, `HTTP ${res.status}: ${payload.text.slice(0, 500)}`));
@@ -168,8 +173,8 @@ Deno.serve(async (req) => {
       const start = Date.now();
       let lastStatus: any = null;
       while (Date.now() - start < MAX_POLL_MS) {
-        const statusUrl = `https://graph.facebook.com/${GRAPH_VERSION}/${containerId}?fields=status_code,status&access_token=${encodeURIComponent(token)}`;
-        const statusRes = await metaGet(statusUrl);
+        const statusUrl = `https://graph.facebook.com/${GRAPH_VERSION}/${containerId}?fields=status_code,status`;
+        const statusRes = await metaGet(statusUrl, token);
         lastStatus = statusRes.data;
         const statusCode = statusRes.data?.status_code ?? "UNKNOWN";
         await appendLog(postId, { event: "container_status_response", elapsed_ms: Date.now() - start, status_code: statusCode, response: statusRes.data });
@@ -195,8 +200,7 @@ Deno.serve(async (req) => {
       const publishUrl = `https://graph.facebook.com/${GRAPH_VERSION}/${igId}/media_publish`;
       const publishRes = await metaPost(publishUrl, {
         creation_id: containerId,
-        access_token: token,
-      });
+      }, token);
       const publishId = publishRes.data?.id;
       await appendLog(postId, { event: "media_publish_response", status: publishRes.status, response: publishRes.data });
       if (!publishId) throw new Error(`Meta não retornou publish_id. Resposta: ${safeJson(publishRes.data)}`);
@@ -340,17 +344,35 @@ Deno.serve(async (req) => {
     const { token, igId } = await tokensFor(supabase, account as Account);
     if (!token || !igId) throw new Error(`Credenciais Meta ausentes para a conta '${account}'.`);
 
-    const accountCheckUrl = `https://graph.facebook.com/${GRAPH_VERSION}/${igId}?fields=id,username&access_token=${encodeURIComponent(token)}`;
-    const accountCheck = await metaGet(accountCheckUrl);
+    const accountCheckUrl = `https://graph.facebook.com/${GRAPH_VERSION}/${igId}?fields=id,username`;
+    const accountCheck = await metaGet(accountCheckUrl, token);
     await appendLog(post.id, { event: "instagram_business_id_check", ig_id: igId, response: accountCheck.data });
 
-    const permissionsUrl = `https://graph.facebook.com/${GRAPH_VERSION}/me/permissions?access_token=${encodeURIComponent(token)}`;
-    const permissionsCheck = await metaGet(permissionsUrl);
-    const permissions = Array.isArray(permissionsCheck.data?.data) ? permissionsCheck.data.data : [];
-    const contentPublishPermission = permissions.find((p: any) => p?.permission === "instagram_content_publish");
-    await appendLog(post.id, { event: "access_token_permissions_check", has_instagram_content_publish: contentPublishPermission?.status === "granted", response: permissionsCheck.data });
-    if (contentPublishPermission?.status !== "granted") {
-      throw new Error("Access Token sem permissão instagram_content_publish concedida.");
+    try {
+      const permissionsUrl = `https://graph.facebook.com/${GRAPH_VERSION}/me/permissions`;
+      const permissionsCheck = await metaGet(permissionsUrl, token);
+      const permissions = Array.isArray(permissionsCheck.data?.data) ? permissionsCheck.data.data : [];
+      const granted = permissions.filter((p: any) => p?.status === "granted").map((p: any) => p.permission);
+      const hasInstagramPublishCapability = granted.includes("instagram_content_publish")
+        || granted.includes("instagram_basic")
+        || granted.some((p: string) => p.startsWith("instagram_business_"));
+      await appendLog(post.id, {
+        event: "access_token_permissions_check",
+        non_blocking: true,
+        has_instagram_publish_capability: hasInstagramPublishCapability,
+        granted,
+        response: permissionsCheck.data,
+      });
+      if (granted.length > 0 && !hasInstagramPublishCapability) {
+        throw new Error(`Access Token sem escopos Instagram reconhecidos. Escopos concedidos: ${granted.join(", ") || "nenhum"}.`);
+      }
+    } catch (permissionError: any) {
+      await appendLog(post.id, {
+        event: "access_token_permissions_check_skipped",
+        reason: "Token de Página/System User pode não expor /me/permissions; IG ID já foi validado diretamente.",
+        message: permissionError?.message ?? null,
+        meta: permissionError?.metaData ?? null,
+      });
     }
 
     const fullCaption = buildCaption(caption, hashtags);
@@ -360,8 +382,7 @@ Deno.serve(async (req) => {
       media_type: "REELS",
       video_url: signed.signedUrl,
       caption: fullCaption,
-      access_token: token,
-    });
+    }, token);
     const containerId = containerRes.data?.id;
     await appendLog(post.id, { event: "media_container_create_response", status: containerRes.status, response: containerRes.data });
     if (!containerId) throw new Error(`Meta não retornou creation_id. Resposta: ${safeJson(containerRes.data)}`);

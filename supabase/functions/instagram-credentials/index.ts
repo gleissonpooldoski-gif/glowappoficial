@@ -51,13 +51,13 @@ async function validateAccount(token: string, igId: string): Promise<ValidationR
     }
   } catch (_) { /* segue validação */ }
 
-  // 2) Permissões — checa apenas as ESSENCIAIS para publicar.
-  // A Meta oferece dois fluxos de login com escopos diferentes:
-  //   • Facebook Login for Business: instagram_basic + instagram_content_publish (+ pages_*)
-  //   • Instagram API with Instagram Login: instagram_business_basic + instagram_business_content_publish
-  // Aceitamos qualquer um. pages_show_list / pages_read_engagement NÃO bloqueiam mais.
-  const PUBLISH_SCOPES = ["instagram_content_publish", "instagram_business_content_publish"];
-  const BASIC_SCOPES = ["instagram_basic", "instagram_business_basic"];
+  // 2) Permissões — diagnóstico não-bloqueante para tokens de Página/System User.
+  // A Meta oferece fluxos diferentes e nem todo token responde /me/permissions:
+  //   • Facebook Login: instagram_basic + instagram_content_publish
+  //   • Instagram Login: instagram_business_basic + instagram_business_content_publish
+  //   • Página/System User: pode falhar em /me/permissions, mas publicar se o IG ID for acessível.
+  // pages_show_list / pages_read_engagement NÃO são obrigatórias aqui.
+  const ACCEPTED_SCOPES = ["instagram_content_publish", "instagram_basic"];
   let grantedPerms: string[] = [];
   try {
     const permRes = await fetch(`https://graph.facebook.com/${GRAPH_VERSION}/me/permissions?access_token=${encodeURIComponent(token)}`);
@@ -70,15 +70,12 @@ async function validateAccount(token: string, igId: string): Promise<ValidationR
     } else {
       const list = Array.isArray(perm.data?.data) ? perm.data.data : [];
       grantedPerms = list.filter((p: any) => p?.status === "granted").map((p: any) => p.permission);
-      const hasPublish = PUBLISH_SCOPES.some((p) => grantedPerms.includes(p));
-      const hasBasic = BASIC_SCOPES.some((p) => grantedPerms.includes(p));
-      if (grantedPerms.length > 0 && (!hasPublish || !hasBasic)) {
-        const need = [!hasBasic && `um de [${BASIC_SCOPES.join(", ")}]`, !hasPublish && `um de [${PUBLISH_SCOPES.join(", ")}]`]
-          .filter(Boolean).join(" + ");
+      const hasAcceptedInstagramScope = grantedPerms.some((p) => ACCEPTED_SCOPES.includes(p) || p.startsWith("instagram_business_"));
+      if (grantedPerms.length > 0 && !hasAcceptedInstagramScope) {
         return {
           ok: false,
           status: "PERMISSION_MISSING",
-          message: `Permissões essenciais ausentes (${need}). Escopos concedidos: ${grantedPerms.join(", ") || "nenhum"}.`,
+          message: `Token sem escopos Instagram reconhecidos. Aceitos: instagram_content_publish, instagram_basic ou instagram_business_*. Escopos concedidos: ${grantedPerms.join(", ") || "nenhum"}.`,
         };
       }
     }
