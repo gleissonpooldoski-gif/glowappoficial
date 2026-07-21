@@ -430,7 +430,7 @@ function PlatformSection({
               </label>
             )}
           </div>
-          {grid(scheduled, "scheduled", `Nenhum conteúdo agendado no ${meta.label}.`)}
+          {grid(scheduled, "scheduled", `Nenhum conteúdo agendado em ${displayLabel}.`)}
         </div>
       )}
 
