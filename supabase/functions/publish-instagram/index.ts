@@ -8,14 +8,26 @@ const BUCKET = "videos-processed";
 const MAX_POLL_MS = 5 * 60 * 1000;
 const POLL_INTERVAL_MS = 5000;
 
-// Sanitiza o Access Token: trim + remove aspas simples/duplas do início/fim,
-// mais limpeza de whitespace interno, BOM e caracteres de controle.
+// Sanitiza o Access Token: trim + remove aspas, whitespace interno, BOM,
+// caracteres de controle e QUALQUER caractere fora do intervalo ASCII imprimível
+// (garante ByteString válido para uso em headers HTTP).
 function sanitizeToken(raw: string | undefined | null): string {
-  if (!raw) return "";
+  if (raw === undefined || raw === null) return "";
   let t = String(raw).trim().replace(/^["']|["']$/g, "");
   t = t.replace(/[\s\r\n\t]+/g, "");
   t = t.replace(/[\u0000-\u001F\u007F\uFEFF]/g, "");
+  t = t.replace(/[^\x21-\x7E]/g, "");
   return t.trim();
+}
+
+// Lança erro amigável se o token não for utilizável como ByteString.
+function assertValidToken(token: string | null | undefined, account?: string | null) {
+  if (token === null || token === undefined || token === "") {
+    throw new Error(`Token inválido ou formato incorreto${account ? ` para '${account}'` : ""}.`);
+  }
+  if (!/^[\x21-\x7E]+$/.test(String(token))) {
+    throw new Error(`Token inválido ou formato incorreto${account ? ` para '${account}'` : ""}. O token contém caracteres não suportados.`);
+  }
 }
 
 
