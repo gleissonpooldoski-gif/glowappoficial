@@ -4,8 +4,8 @@ import { supabase } from "@/integrations/supabase/client";
 export type TiktokAccount = "resenha" | "frame";
 
 export const TIKTOK_ACCOUNTS: { value: TiktokAccount; label: string }[] = [
-  { value: "resenha", label: "SESSÃO DA RESENHA" },
-  { value: "frame", label: "SESSÃO DA FRAME" },
+  { value: "resenha", label: "Sessão da Resenha" },
+  { value: "frame", label: "Sessão da Frame" },
 ];
 
 export type TiktokCredential = {
