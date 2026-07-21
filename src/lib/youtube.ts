@@ -59,8 +59,7 @@ export async function startYoutubeAuth(account?: YoutubeAccount): Promise<string
 }
 
 export async function disconnectYoutube(account: YoutubeAccount) {
-  const { error } = await supabase.from("youtube_credentials" as any).delete().eq("account", account);
-  if (error) throw error;
+  await invoke("youtube-disconnect", { account });
 }
 
 export function refreshYoutubeToken(account: YoutubeAccount) {
