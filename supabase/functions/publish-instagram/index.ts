@@ -10,9 +10,11 @@ const INITIAL_POLL_DELAY_MS = 10000;      // Espera 10s após criar o container 
 const POLL_INTERVAL_MS = 10000;            // 10s entre consultas subsequentes.
 const MAX_CONTAINER_STATUS_ATTEMPTS = 8;   // Máximo 8 consultas por container.
 const PUBLISH_STABILIZATION_MS = 15000;    // Aguarda 15s após FINISHED antes do publish único.
-const MAX_PUBLICATION_CYCLES = 3;
+const MAX_PUBLICATION_CYCLES = 1;          // Sem retry automático em code=1: libera para nova tentativa manual.
 const CODE_4_COOLDOWN_MS = 5 * 60 * 1000;  // Cooldown de 5min após code=4.
 const ACCOUNT_LOCK_STALE_MS = 15 * 60 * 1000; // Considera lock preso após 15min.
+const CAPTION_MAX_LENGTH = 2200;           // Limite oficial da Meta.
+const HASHTAGS_MAX_COUNT = 20;             // Limite oficial da Meta para hashtags em uma publicação.
 
 // Sanitiza o Access Token: trim + remove aspas, whitespace interno, BOM,
 // caracteres de controle e QUALQUER caractere fora do intervalo ASCII imprimível
