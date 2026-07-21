@@ -111,13 +111,18 @@ export default function InstagramCredentialsCard() {
   const saveAccount = async (account: string) => {
     const e = edits[account];
     if (!e) return;
+    const cleanToken = (e.token ?? "").replace(/[\r\n\t]/g, "").trim().replace(/^["']|["']$/g, "");
+    if (cleanToken && !/^[\x21-\x7E]+$/.test(cleanToken)) {
+      toast.error("Token inválido ou formato incorreto. Remova espaços, quebras de linha e caracteres especiais.");
+      return;
+    }
     setSavingAccount(account);
     const body = {
       action: "save",
       accounts: [{
         account,
-        access_token: e.token.trim() || undefined,     // não sobrescreve se vazio
-        ig_business_id: e.token.trim() ? stored[account].ig_business_id : undefined,
+        access_token: cleanToken || undefined,     // não sobrescreve se vazio
+        ig_business_id: cleanToken ? stored[account].ig_business_id : undefined,
         display_name: stored[account].display_name ?? undefined,
         project_id: e.project_id,
       }],
@@ -144,8 +149,16 @@ export default function InstagramCredentialsCard() {
   };
 
   const createAccount = async () => {
-    if (!newForm.display_name.trim() || !newForm.access_token.trim() || !newForm.ig_business_id.trim()) {
+    const cleanToken = (newForm.access_token ?? "")
+      .replace(/[\r\n\t]/g, "")
+      .trim()
+      .replace(/^["']|["']$/g, "");
+    if (!newForm.display_name.trim() || !cleanToken || !newForm.ig_business_id.trim()) {
       toast.error("Preencha nome, Business ID e Access Token.");
+      return;
+    }
+    if (!/^[\x21-\x7E]+$/.test(cleanToken)) {
+      toast.error("Token inválido ou formato incorreto. Remova espaços, quebras de linha e caracteres especiais.");
       return;
     }
     if (!/^\d{6,20}$/.test(newForm.ig_business_id.trim())) {
@@ -157,7 +170,7 @@ export default function InstagramCredentialsCard() {
       body: {
         action: "create",
         display_name: newForm.display_name.trim(),
-        access_token: newForm.access_token.trim(),
+        access_token: cleanToken,
         ig_business_id: newForm.ig_business_id.trim(),
         project_id: newForm.project_id || null,
       },

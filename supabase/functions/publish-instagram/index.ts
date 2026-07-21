@@ -8,14 +8,26 @@ const BUCKET = "videos-processed";
 const MAX_POLL_MS = 5 * 60 * 1000;
 const POLL_INTERVAL_MS = 5000;
 
-// Sanitiza o Access Token: trim + remove aspas simples/duplas do início/fim,
-// mais limpeza de whitespace interno, BOM e caracteres de controle.
+// Sanitiza o Access Token: trim + remove aspas, whitespace interno, BOM,
+// caracteres de controle e QUALQUER caractere fora do intervalo ASCII imprimível
+// (garante ByteString válido para uso em headers HTTP).
 function sanitizeToken(raw: string | undefined | null): string {
-  if (!raw) return "";
+  if (raw === undefined || raw === null) return "";
   let t = String(raw).trim().replace(/^["']|["']$/g, "");
   t = t.replace(/[\s\r\n\t]+/g, "");
   t = t.replace(/[\u0000-\u001F\u007F\uFEFF]/g, "");
+  t = t.replace(/[^\x21-\x7E]/g, "");
   return t.trim();
+}
+
+// Lança erro amigável se o token não for utilizável como ByteString.
+function assertValidToken(token: string | null | undefined, account?: string | null) {
+  if (token === null || token === undefined || token === "") {
+    throw new Error(`Token inválido ou formato incorreto${account ? ` para '${account}'` : ""}.`);
+  }
+  if (!/^[\x21-\x7E]+$/.test(String(token))) {
+    throw new Error(`Token inválido ou formato incorreto${account ? ` para '${account}'` : ""}. O token contém caracteres não suportados.`);
+  }
 }
 
 
@@ -166,13 +178,12 @@ async function readMetaResponse(res: Response) {
 }
 
 async function metaPost(url: string, body: Record<string, string>, token?: string) {
+  if (token !== undefined) assertValidToken(token);
   const form = new URLSearchParams(body);
+  console.log(`[publish-instagram] meta_request POST ${url.split("?")[0]} body_keys=${Object.keys(body).join(",")}`);
   const res = await fetch(url, {
     method: "POST",
-    headers: {
-      "Content-Type": "application/x-www-form-urlencoded",
-      ...(token ? { Authorization: `Bearer ${token}` } : {}),
-    },
+    headers: { "Content-Type": "application/x-www-form-urlencoded" },
     body: form.toString(),
   });
   const payload = await readMetaResponse(res);
@@ -185,9 +196,9 @@ async function metaPost(url: string, body: Record<string, string>, token?: strin
 }
 
 async function metaGet(url: string, token?: string) {
-  const res = await fetch(url, {
-    headers: token ? { Authorization: `Bearer ${token}` } : undefined,
-  });
+  if (token !== undefined) assertValidToken(token);
+  console.log(`[publish-instagram] meta_request GET ${url.split("?")[0]}`);
+  const res = await fetch(url);
   const payload = await readMetaResponse(res);
   if (!res.ok || payload.data?.error) {
     const err: any = new Error(metaErrorMessage(payload.data, `HTTP ${res.status}: ${payload.text.slice(0, 500)}`));
@@ -430,6 +441,10 @@ Deno.serve(async (req) => {
     const { token, igId, tokenSource, tokenHead, tokenTail } = await tokensFor(supabase, account as Account);
     await appendLog(post.id, { event: "meta_token_resolved", account, token_source: tokenSource, token_length: token.length, token_head: tokenHead, token_tail: tokenTail, ig_id: igId });
     if (!token || !igId) throw new Error(`Credenciais Meta ausentes para a conta '${account}'.`);
+    try { assertValidToken(token, account); } catch (e: any) {
+      await markCredentialsValidationError(supabase, account as Account, "TOKEN_EXPIRED", e.message);
+      throw e;
+    }
 
     // Sem pré-consultas legadas: o IG Business Account ID cadastrado é usado direto
     // no endpoint de container. Removidas chamadas a account_type e à Página do Facebook.

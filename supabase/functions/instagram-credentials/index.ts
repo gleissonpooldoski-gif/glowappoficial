@@ -5,13 +5,19 @@ import { corsHeaders } from "npm:@supabase/supabase-js@2/cors";
 const GRAPH_VERSION = "v18.0";
 const FB_BASE = `https://graph.facebook.com/${GRAPH_VERSION}`;
 
-// Sanitiza o Access Token: remove aspas, espaços, quebras de linha e caracteres invisíveis.
+// Sanitiza o Access Token: remove aspas, espaços, quebras de linha, controle
+// e QUALQUER caractere fora do ASCII imprimível (necessário para header válido).
 function sanitizeToken(raw: string | undefined | null): string {
-  if (!raw) return "";
+  if (raw === undefined || raw === null) return "";
   let t = String(raw).trim().replace(/^["']|["']$/g, "");
   t = t.replace(/[\s\r\n\t]+/g, "");
   t = t.replace(/[\u0000-\u001F\u007F\uFEFF]/g, "");
+  t = t.replace(/[^\x21-\x7E]/g, "");
   return t.trim();
+}
+
+function isValidTokenFormat(token: string): boolean {
+  return !!token && /^[\x21-\x7E]+$/.test(token);
 }
 
 type ConnectionStatus = "CONNECTED" | "PENDING" | "ERROR";
@@ -51,15 +57,17 @@ async function validateAccount(rawToken: string, rawIgId: string): Promise<Valid
   if (!token || !igId) {
     return { ok: false, status: "EMPTY", message: "Access Token ou Instagram Business ID vazio." };
   }
+  if (!isValidTokenFormat(token)) {
+    return { ok: false, status: "TOKEN_INVALID", message: "Token inválido ou formato incorreto. Verifique se não há espaços, quebras de linha ou caracteres especiais." };
+  }
 
   const grantedPerms: string[] = [];
   const permissionWarning = "";
 
   try {
-    const igRes = await fetch(
-      `${FB_BASE}/${encodeURIComponent(igId)}?fields=id,username,name,profile_picture_url&access_token=${encodeURIComponent(token)}`,
-      { headers: { Authorization: `Bearer ${token}` } },
-    );
+    const url = `${FB_BASE}/${encodeURIComponent(igId)}?fields=id,username,name,profile_picture_url&access_token=${encodeURIComponent(token)}`;
+    console.log(`[instagram-credentials] validate GET ${FB_BASE}/${igId}?fields=... ig_id=${igId} token_len=${token.length}`);
+    const igRes = await fetch(url);
     const ig = await readMeta(igRes);
     if (ig.data?.error) {
 
