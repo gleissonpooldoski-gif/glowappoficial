@@ -1,7 +1,7 @@
 import { useEffect, useMemo, useState } from "react";
 import {
   Instagram, Youtube, Loader2, CheckCircle2, AlertCircle, Clock, Trash2, Calendar,
-  ScrollText, RotateCcw, Pencil, ExternalLink, Filter, Share2, Music2, Plus,
+  ScrollText, RotateCcw, Pencil, ExternalLink, Filter, Share2, Music2, Plus, MessageSquare,
 } from "lucide-react";
 import EditPostNetworksDialog from "@/components/EditPostNetworksDialog";
 import BulkAddNetworksDialog from "@/components/BulkAddNetworksDialog";
@@ -168,11 +168,11 @@ function EditScheduledDialog({
 
 function PostCard({
   post, kind, linkedYT, linkedTT, selectable, selected, onToggleSelect,
-  onEdit, onCancel, onDelete, onRetry, onLogs, onEditNetworks,
+  onEdit, onCancel, onDelete, onRetry, onLogs, onEditNetworks, onToggleAutoComment,
 }: {
   post: InstagramPost;
   kind: "scheduled" | "published";
-  linkedYT?: { status: string } | null;
+  linkedYT?: { id: string; status: string; auto_comment_enabled: boolean } | null;
   linkedTT?: { status: string } | null;
   selectable?: boolean;
   selected?: boolean;
@@ -183,6 +183,7 @@ function PostCard({
   onRetry: (p: InstagramPost) => void;
   onLogs: (p: InstagramPost) => void;
   onEditNetworks: (p: InstagramPost) => void;
+  onToggleAutoComment: (ytId: string, enable: boolean) => void;
 }) {
   const meta = PLATFORM_META[post.account];
   const dt =
@@ -231,6 +232,11 @@ function PostCard({
               <Music2 size={10} /> TikTok: {linkedTT.status.toLowerCase()}
             </Badge>
           )}
+          {linkedYT?.auto_comment_enabled && (
+            <Badge variant="outline" className="text-[10px] gap-1 border-emerald-400/40 text-emerald-300 bg-emerald-500/10">
+              <MessageSquare size={10} /> Comentário auto
+            </Badge>
+          )}
         </div>
 
         <div className="flex items-center justify-between gap-2 text-[11px]">
@@ -241,6 +247,16 @@ function PostCard({
             <span>{format(dt, "HH:mm", { locale: ptBR })}</span>
           </div>
           <div className="flex items-center gap-0.5">
+            {kind === "scheduled" && post.status === "AGENDADO" && linkedYT && (
+              <Button
+                size="icon" variant="ghost"
+                className={`h-6 w-6 ${linkedYT.auto_comment_enabled ? "text-emerald-400 hover:text-emerald-300" : "text-muted-foreground hover:text-emerald-400"}`}
+                onClick={() => onToggleAutoComment(linkedYT.id, !linkedYT.auto_comment_enabled)}
+                title={linkedYT.auto_comment_enabled ? "Desativar comentário automático do YouTube" : "Ativar comentário automático do YouTube"}
+              >
+                <MessageSquare size={12} />
+              </Button>
+            )}
             {kind === "scheduled" && post.status === "AGENDADO" && (
               <>
                 <Button size="icon" variant="ghost" className="h-6 w-6 text-muted-foreground hover:text-gold"
@@ -305,7 +321,7 @@ function PlatformSection({
   account: InstagramAccount;
   posts: InstagramPost[];
   statusFilter: StatusFilter;
-  ytByKey: Map<string, { status: string }>;
+  ytByKey: Map<string, { id: string; status: string; auto_comment_enabled: boolean }>;
   ttByKey: Map<string, { status: string }>;
   selectedIds: Set<string>;
   onToggleSelect: (p: InstagramPost) => void;
@@ -316,6 +332,7 @@ function PlatformSection({
   onRetry: (p: InstagramPost) => void;
   onLogs: (p: InstagramPost) => void;
   onEditNetworks: (p: InstagramPost) => void;
+  onToggleAutoComment: (ytId: string, enable: boolean) => void;
 }) {
   const meta = PLATFORM_META[account];
   const own = posts.filter((p) => p.account === account);
@@ -427,7 +444,7 @@ function PlatformSection({
 
 export default function Publications() {
   const [posts, setPosts] = useState<InstagramPost[] | null>(null);
-  const [ytByKey, setYtByKey] = useState<Map<string, { status: string }>>(new Map());
+  const [ytByKey, setYtByKey] = useState<Map<string, { id: string; status: string; auto_comment_enabled: boolean }>>(new Map());
   const [ttByKey, setTtByKey] = useState<Map<string, { status: string }>>(new Map());
   const [selectedIds, setSelectedIds] = useState<Set<string>>(new Set());
   const [bulkOpen, setBulkOpen] = useState(false);
@@ -440,9 +457,25 @@ export default function Publications() {
   const [customFrom, setCustomFrom] = useState("");
   const [customTo, setCustomTo] = useState("");
 
-  const loadLinkedByTable = async (table: "youtube_posts" | "tiktok_posts") => {
+  const loadYoutubeLinks = async () => {
     const { data } = await supabase
-      .from(table as any)
+      .from("youtube_posts" as any)
+      .select("id, video_id, scheduled_at, status, auto_comment_enabled")
+      .not("scheduled_at", "is", null)
+      .order("scheduled_at", { ascending: false })
+      .limit(500);
+    const map = new Map<string, { id: string; status: string; auto_comment_enabled: boolean }>();
+    for (const r of (data ?? []) as any[]) {
+      if (!r.video_id || !r.scheduled_at) continue;
+      map.set(`${r.video_id}|${r.scheduled_at}`, {
+        id: r.id, status: r.status, auto_comment_enabled: !!r.auto_comment_enabled,
+      });
+    }
+    setYtByKey(map);
+  };
+  const loadTiktokLinks = async () => {
+    const { data } = await supabase
+      .from("tiktok_posts" as any)
       .select("video_id, scheduled_at, status")
       .not("scheduled_at", "is", null)
       .order("scheduled_at", { ascending: false })
@@ -452,11 +485,8 @@ export default function Publications() {
       if (!r.video_id || !r.scheduled_at) continue;
       map.set(`${r.video_id}|${r.scheduled_at}`, { status: r.status });
     }
-    return map;
+    setTtByKey(map);
   };
-
-  const loadYoutubeLinks = async () => setYtByKey(await loadLinkedByTable("youtube_posts"));
-  const loadTiktokLinks = async () => setTtByKey(await loadLinkedByTable("tiktok_posts"));
 
   const toggleSelect = (p: InstagramPost) => {
     setSelectedIds((prev) => {
@@ -549,6 +579,32 @@ export default function Publications() {
     });
   }, [posts, periodFilter, customFrom, customTo]);
 
+  const toggleAutoComment = async (ytId: string, enable: boolean) => {
+    const { error } = await (supabase as any)
+      .from("youtube_posts").update({ auto_comment_enabled: enable }).eq("id", ytId);
+    if (error) return toast.error(error.message);
+    toast.success(enable ? "Comentário automático ativado" : "Comentário automático desativado");
+    loadYoutubeLinks();
+  };
+
+  const bulkEnableAutoComment = async () => {
+    const ytIds: string[] = [];
+    for (const p of (posts ?? []).filter((x) => selectedIds.has(x.id))) {
+      const linked = ytByKey.get(`${p.video_id ?? ""}|${p.scheduled_at ?? ""}`);
+      if (linked && !linked.auto_comment_enabled) ytIds.push(linked.id);
+    }
+    if (ytIds.length === 0) {
+      toast.info("Nenhum post selecionado tem YouTube agendado para ativar.");
+      return;
+    }
+    const { error } = await (supabase as any)
+      .from("youtube_posts").update({ auto_comment_enabled: true }).in("id", ytIds);
+    if (error) return toast.error(error.message);
+    toast.success(`Comentário automático ativado em ${ytIds.length} vídeo(s)`);
+    clearSelection();
+    loadYoutubeLinks();
+  };
+
   const handlers = {
     onEdit: (p: InstagramPost) => setEditing(p),
     onCancel: cancelScheduled,
@@ -556,6 +612,7 @@ export default function Publications() {
     onRetry: retry,
     onLogs: (p: InstagramPost) => setSelectedPost(p),
     onEditNetworks: (p: InstagramPost) => setEditingNetworks(p),
+    onToggleAutoComment: toggleAutoComment,
   };
 
   return (
@@ -664,6 +721,10 @@ export default function Publications() {
           </Badge>
           <Button size="sm" className="h-8 bg-gold-gradient text-black gap-1.5" onClick={() => setBulkOpen(true)}>
             <Plus size={12} /> Adicionar redes de publicação
+          </Button>
+          <Button size="sm" variant="outline" className="h-8 gap-1.5 border-emerald-400/50 text-emerald-300 hover:bg-emerald-500/10"
+            onClick={bulkEnableAutoComment}>
+            <MessageSquare size={12} /> Ativar comentário auto
           </Button>
           <Button size="sm" variant="ghost" className="h-8 text-xs text-muted-foreground" onClick={clearSelection}>
             Limpar

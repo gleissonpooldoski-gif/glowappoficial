@@ -1,0 +1,1 @@
+ALTER TABLE public.youtube_posts ADD COLUMN IF NOT EXISTS auto_comment_enabled boolean NOT NULL DEFAULT false;
