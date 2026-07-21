@@ -1,12 +1,14 @@
 import { useEffect, useMemo, useState } from "react";
 import {
   Instagram, Youtube, Loader2, CheckCircle2, AlertCircle, Clock, Trash2, Calendar,
-  ScrollText, RotateCcw, Pencil, ExternalLink, Filter, Share2,
+  ScrollText, RotateCcw, Pencil, ExternalLink, Filter, Share2, Music2, Plus,
 } from "lucide-react";
 import EditPostNetworksDialog from "@/components/EditPostNetworksDialog";
+import BulkAddNetworksDialog from "@/components/BulkAddNetworksDialog";
 import { Card, CardContent } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
+import { Checkbox } from "@/components/ui/checkbox";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Textarea } from "@/components/ui/textarea";
@@ -165,11 +167,16 @@ function EditScheduledDialog({
 /* ---------- post card ---------- */
 
 function PostCard({
-  post, kind, linkedYT, onEdit, onCancel, onDelete, onRetry, onLogs, onEditNetworks,
+  post, kind, linkedYT, linkedTT, selectable, selected, onToggleSelect,
+  onEdit, onCancel, onDelete, onRetry, onLogs, onEditNetworks,
 }: {
   post: InstagramPost;
   kind: "scheduled" | "published";
   linkedYT?: { status: string } | null;
+  linkedTT?: { status: string } | null;
+  selectable?: boolean;
+  selected?: boolean;
+  onToggleSelect?: (p: InstagramPost) => void;
   onEdit: (p: InstagramPost) => void;
   onCancel: (p: InstagramPost) => void;
   onDelete: (p: InstagramPost) => void;
@@ -187,7 +194,7 @@ function PostCard({
   const permalink = (post as any).permalink as string | undefined;
 
   return (
-    <Card className={`glass border ${meta.ring} overflow-hidden`}>
+    <Card className={`glass border ${meta.ring} overflow-hidden ${selected ? "ring-2 ring-gold/60" : ""}`}>
       <div className="relative aspect-video bg-black/60">
         {post.thumbnail_url ? (
           <img src={post.thumbnail_url} alt="" className="h-full w-full object-cover opacity-90" />
@@ -196,7 +203,12 @@ function PostCard({
             <Instagram size={28} className={meta.icon} />
           </div>
         )}
-        <Badge variant="outline" className={`absolute left-2 top-2 text-[10px] font-semibold ${meta.badge}`}>
+        {selectable && (
+          <div className="absolute left-2 top-2 z-10 flex h-6 w-6 items-center justify-center rounded-md bg-background/80 backdrop-blur">
+            <Checkbox checked={!!selected} onCheckedChange={() => onToggleSelect?.(post)} />
+          </div>
+        )}
+        <Badge variant="outline" className={`absolute ${selectable ? "left-11" : "left-2"} top-2 text-[10px] font-semibold ${meta.badge}`}>
           {meta.label.toUpperCase()}
         </Badge>
         <Badge variant="outline" className={`absolute right-2 top-2 text-[10px] ${statusStyles[post.status]}`}>
@@ -212,6 +224,11 @@ function PostCard({
           {linkedYT && (
             <Badge variant="outline" className="text-[10px] gap-1 border-red-400/40 text-red-300 bg-red-500/10">
               <Youtube size={10} /> YouTube: {linkedYT.status.toLowerCase()}
+            </Badge>
+          )}
+          {linkedTT && (
+            <Badge variant="outline" className="text-[10px] gap-1 border-fuchsia-400/40 text-fuchsia-300 bg-fuchsia-500/10">
+              <Music2 size={10} /> TikTok: {linkedTT.status.toLowerCase()}
             </Badge>
           )}
         </div>
@@ -282,12 +299,17 @@ function PostCard({
 /* ---------- platform section (Agendados + Publicados) ---------- */
 
 function PlatformSection({
-  account, posts, statusFilter, ytByKey, ...handlers
+  account, posts, statusFilter, ytByKey, ttByKey, selectedIds, onToggleSelect, onToggleAll,
+  ...handlers
 }: {
   account: InstagramAccount;
   posts: InstagramPost[];
   statusFilter: StatusFilter;
   ytByKey: Map<string, { status: string }>;
+  ttByKey: Map<string, { status: string }>;
+  selectedIds: Set<string>;
+  onToggleSelect: (p: InstagramPost) => void;
+  onToggleAll: (ids: string[], selectAll: boolean) => void;
   onEdit: (p: InstagramPost) => void;
   onCancel: (p: InstagramPost) => void;
   onDelete: (p: InstagramPost) => void;
@@ -303,7 +325,7 @@ function PlatformSection({
     .sort((a, b) => {
       const av = new Date(a.scheduled_at ?? a.created_at).getTime();
       const bv = new Date(b.scheduled_at ?? b.created_at).getTime();
-      return av - bv; // próximos primeiro
+      return av - bv;
     });
   const published = own
     .filter((p) => p.status === "PUBLICADO")
@@ -316,6 +338,9 @@ function PlatformSection({
 
   const linkKey = (p: InstagramPost) => `${p.video_id ?? ""}|${p.scheduled_at ?? ""}`;
 
+  const selectableIds = scheduled.filter((p) => p.status === "AGENDADO").map((p) => p.id);
+  const allSelected = selectableIds.length > 0 && selectableIds.every((id) => selectedIds.has(id));
+
   const grid = (items: InstagramPost[], kind: "scheduled" | "published", emptyMsg: string) =>
     items.length === 0 ? (
       <Card className={`glass border-dashed ${meta.ring}`}>
@@ -327,7 +352,15 @@ function PlatformSection({
     ) : (
       <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-3">
         {items.map((p) => (
-          <PostCard key={p.id} post={p} kind={kind} linkedYT={ytByKey.get(linkKey(p))} {...handlers} />
+          <PostCard
+            key={p.id} post={p} kind={kind}
+            linkedYT={ytByKey.get(linkKey(p))}
+            linkedTT={ttByKey.get(linkKey(p))}
+            selectable={kind === "scheduled" && p.status === "AGENDADO"}
+            selected={selectedIds.has(p.id)}
+            onToggleSelect={onToggleSelect}
+            {...handlers}
+          />
         ))}
       </div>
     );
@@ -357,7 +390,18 @@ function PlatformSection({
 
       {showScheduled && (
         <div className="space-y-2">
-          <h3 className="text-xs font-semibold uppercase tracking-wider text-muted-foreground">Agendados</h3>
+          <div className="flex items-center justify-between">
+            <h3 className="text-xs font-semibold uppercase tracking-wider text-muted-foreground">Agendados</h3>
+            {selectableIds.length > 0 && (
+              <label className="flex items-center gap-2 text-[11px] text-muted-foreground cursor-pointer">
+                <Checkbox
+                  checked={allSelected}
+                  onCheckedChange={(v) => onToggleAll(selectableIds, !!v)}
+                />
+                Selecionar todos ({selectableIds.length})
+              </label>
+            )}
+          </div>
           {grid(scheduled, "scheduled", `Nenhum conteúdo agendado no ${meta.label}.`)}
         </div>
       )}
@@ -384,6 +428,9 @@ function PlatformSection({
 export default function Publications() {
   const [posts, setPosts] = useState<InstagramPost[] | null>(null);
   const [ytByKey, setYtByKey] = useState<Map<string, { status: string }>>(new Map());
+  const [ttByKey, setTtByKey] = useState<Map<string, { status: string }>>(new Map());
+  const [selectedIds, setSelectedIds] = useState<Set<string>>(new Set());
+  const [bulkOpen, setBulkOpen] = useState(false);
   const [selectedPost, setSelectedPost] = useState<InstagramPost | null>(null);
   const [editing, setEditing] = useState<InstagramPost | null>(null);
   const [editingNetworks, setEditingNetworks] = useState<InstagramPost | null>(null);
@@ -393,9 +440,9 @@ export default function Publications() {
   const [customFrom, setCustomFrom] = useState("");
   const [customTo, setCustomTo] = useState("");
 
-  const loadYoutubeLinks = async () => {
+  const loadLinkedByTable = async (table: "youtube_posts" | "tiktok_posts") => {
     const { data } = await supabase
-      .from("youtube_posts" as any)
+      .from(table as any)
       .select("video_id, scheduled_at, status")
       .not("scheduled_at", "is", null)
       .order("scheduled_at", { ascending: false })
@@ -405,12 +452,32 @@ export default function Publications() {
       if (!r.video_id || !r.scheduled_at) continue;
       map.set(`${r.video_id}|${r.scheduled_at}`, { status: r.status });
     }
-    setYtByKey(map);
+    return map;
   };
+
+  const loadYoutubeLinks = async () => setYtByKey(await loadLinkedByTable("youtube_posts"));
+  const loadTiktokLinks = async () => setTtByKey(await loadLinkedByTable("tiktok_posts"));
+
+  const toggleSelect = (p: InstagramPost) => {
+    setSelectedIds((prev) => {
+      const s = new Set(prev);
+      if (s.has(p.id)) s.delete(p.id); else s.add(p.id);
+      return s;
+    });
+  };
+  const toggleAll = (ids: string[], selectAll: boolean) => {
+    setSelectedIds((prev) => {
+      const s = new Set(prev);
+      if (selectAll) ids.forEach((id) => s.add(id));
+      else ids.forEach((id) => s.delete(id));
+      return s;
+    });
+  };
+  const clearSelection = () => setSelectedIds(new Set());
 
   const load = async () => {
     try {
-      const [nextPosts] = await Promise.all([listInstagramPosts(), loadYoutubeLinks()]);
+      const [nextPosts] = await Promise.all([listInstagramPosts(), loadYoutubeLinks(), loadTiktokLinks()]);
       setPosts(nextPosts);
       const publishing = nextPosts.filter((p) => p.status === "PUBLICANDO" && p.container_id);
       if (publishing.length > 0) {
@@ -568,18 +635,49 @@ export default function Publications() {
                 posts={filteredPosts}
                 statusFilter={statusFilter}
                 ytByKey={ytByKey}
+                ttByKey={ttByKey}
+                selectedIds={selectedIds}
+                onToggleSelect={toggleSelect}
+                onToggleAll={toggleAll}
                 {...handlers}
               />
             ))}
           </TabsContent>
           <TabsContent value="frame">
-            <PlatformSection account="frame" posts={filteredPosts} statusFilter={statusFilter} ytByKey={ytByKey} {...handlers} />
+            <PlatformSection account="frame" posts={filteredPosts} statusFilter={statusFilter}
+              ytByKey={ytByKey} ttByKey={ttByKey} selectedIds={selectedIds}
+              onToggleSelect={toggleSelect} onToggleAll={toggleAll} {...handlers} />
           </TabsContent>
           <TabsContent value="resenha">
-            <PlatformSection account="resenha" posts={filteredPosts} statusFilter={statusFilter} ytByKey={ytByKey} {...handlers} />
+            <PlatformSection account="resenha" posts={filteredPosts} statusFilter={statusFilter}
+              ytByKey={ytByKey} ttByKey={ttByKey} selectedIds={selectedIds}
+              onToggleSelect={toggleSelect} onToggleAll={toggleAll} {...handlers} />
           </TabsContent>
         </Tabs>
       )}
+
+      {/* Bulk actions floating bar */}
+      {selectedIds.size > 0 && (
+        <div className="fixed bottom-6 left-1/2 z-40 -translate-x-1/2 flex items-center gap-3 rounded-full border border-gold/40 bg-background/95 px-5 py-2.5 shadow-lg backdrop-blur">
+          <Badge variant="outline" className="text-[11px] border-gold/50 text-gold bg-gold/10">
+            {selectedIds.size} selecionado(s)
+          </Badge>
+          <Button size="sm" className="h-8 bg-gold-gradient text-black gap-1.5" onClick={() => setBulkOpen(true)}>
+            <Plus size={12} /> Adicionar redes de publicação
+          </Button>
+          <Button size="sm" variant="ghost" className="h-8 text-xs text-muted-foreground" onClick={clearSelection}>
+            Limpar
+          </Button>
+        </div>
+      )}
+
+      {/* Bulk add networks dialog */}
+      <BulkAddNetworksDialog
+        posts={(posts ?? []).filter((p) => selectedIds.has(p.id))}
+        open={bulkOpen}
+        onOpenChange={setBulkOpen}
+        onSaved={() => { clearSelection(); load(); }}
+      />
 
       {/* Edit dialog */}
       <EditScheduledDialog
