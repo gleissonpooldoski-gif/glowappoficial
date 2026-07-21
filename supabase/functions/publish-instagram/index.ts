@@ -270,12 +270,17 @@ async function metaPost(url: string, body: Record<string, string>, token?: strin
 
 async function metaGet(url: string, token?: string) {
   if (token !== undefined) assertValidToken(token);
-  console.log(`[publish-instagram] meta_request GET ${url.split("?")[0]}`);
+  const endpoint = url.split("?")[0];
+  console.log(`[publish-instagram] meta_request GET ${endpoint}`);
   const res = await fetch(url);
   const payload = await readMetaResponse(res);
   if (!res.ok || payload.data?.error) {
+    if (isReduceDataError(payload.data, payload.text)) {
+      console.error(`[publish-instagram] reduce_data_error endpoint=${endpoint} method=GET meta_message=${payload.data?.error?.message ?? ""}`);
+    }
     const err: any = new Error(metaErrorMessage(payload.data, `HTTP ${res.status}: ${payload.text.slice(0, 500)}`));
     err.metaData = payload.data;
+    err.endpoint = endpoint;
     throw err;
   }
   return { status: res.status, data: payload.data };
