@@ -299,12 +299,17 @@ function PostCard({
 /* ---------- platform section (Agendados + Publicados) ---------- */
 
 function PlatformSection({
-  account, posts, statusFilter, ytByKey, ...handlers
+  account, posts, statusFilter, ytByKey, ttByKey, selectedIds, onToggleSelect, onToggleAll,
+  ...handlers
 }: {
   account: InstagramAccount;
   posts: InstagramPost[];
   statusFilter: StatusFilter;
   ytByKey: Map<string, { status: string }>;
+  ttByKey: Map<string, { status: string }>;
+  selectedIds: Set<string>;
+  onToggleSelect: (p: InstagramPost) => void;
+  onToggleAll: (ids: string[], selectAll: boolean) => void;
   onEdit: (p: InstagramPost) => void;
   onCancel: (p: InstagramPost) => void;
   onDelete: (p: InstagramPost) => void;
@@ -320,7 +325,7 @@ function PlatformSection({
     .sort((a, b) => {
       const av = new Date(a.scheduled_at ?? a.created_at).getTime();
       const bv = new Date(b.scheduled_at ?? b.created_at).getTime();
-      return av - bv; // próximos primeiro
+      return av - bv;
     });
   const published = own
     .filter((p) => p.status === "PUBLICADO")
@@ -333,6 +338,9 @@ function PlatformSection({
 
   const linkKey = (p: InstagramPost) => `${p.video_id ?? ""}|${p.scheduled_at ?? ""}`;
 
+  const selectableIds = scheduled.filter((p) => p.status === "AGENDADO").map((p) => p.id);
+  const allSelected = selectableIds.length > 0 && selectableIds.every((id) => selectedIds.has(id));
+
   const grid = (items: InstagramPost[], kind: "scheduled" | "published", emptyMsg: string) =>
     items.length === 0 ? (
       <Card className={`glass border-dashed ${meta.ring}`}>
@@ -344,7 +352,15 @@ function PlatformSection({
     ) : (
       <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-3">
         {items.map((p) => (
-          <PostCard key={p.id} post={p} kind={kind} linkedYT={ytByKey.get(linkKey(p))} {...handlers} />
+          <PostCard
+            key={p.id} post={p} kind={kind}
+            linkedYT={ytByKey.get(linkKey(p))}
+            linkedTT={ttByKey.get(linkKey(p))}
+            selectable={kind === "scheduled" && p.status === "AGENDADO"}
+            selected={selectedIds.has(p.id)}
+            onToggleSelect={onToggleSelect}
+            {...handlers}
+          />
         ))}
       </div>
     );
@@ -374,7 +390,18 @@ function PlatformSection({
 
       {showScheduled && (
         <div className="space-y-2">
-          <h3 className="text-xs font-semibold uppercase tracking-wider text-muted-foreground">Agendados</h3>
+          <div className="flex items-center justify-between">
+            <h3 className="text-xs font-semibold uppercase tracking-wider text-muted-foreground">Agendados</h3>
+            {selectableIds.length > 0 && (
+              <label className="flex items-center gap-2 text-[11px] text-muted-foreground cursor-pointer">
+                <Checkbox
+                  checked={allSelected}
+                  onCheckedChange={(v) => onToggleAll(selectableIds, !!v)}
+                />
+                Selecionar todos ({selectableIds.length})
+              </label>
+            )}
+          </div>
           {grid(scheduled, "scheduled", `Nenhum conteúdo agendado no ${meta.label}.`)}
         </div>
       )}
