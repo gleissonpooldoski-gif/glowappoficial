@@ -420,6 +420,68 @@ export type Database = {
         }
         Relationships: []
       }
+      publish_schedules_multi: {
+        Row: {
+          created_at: string
+          id: string
+          instagram_post_id: string | null
+          networks: string[]
+          scheduled_at: string
+          tiktok_post_id: string | null
+          video_id: string | null
+          youtube_post_id: string | null
+        }
+        Insert: {
+          created_at?: string
+          id?: string
+          instagram_post_id?: string | null
+          networks?: string[]
+          scheduled_at: string
+          tiktok_post_id?: string | null
+          video_id?: string | null
+          youtube_post_id?: string | null
+        }
+        Update: {
+          created_at?: string
+          id?: string
+          instagram_post_id?: string | null
+          networks?: string[]
+          scheduled_at?: string
+          tiktok_post_id?: string | null
+          video_id?: string | null
+          youtube_post_id?: string | null
+        }
+        Relationships: [
+          {
+            foreignKeyName: "publish_schedules_multi_instagram_post_id_fkey"
+            columns: ["instagram_post_id"]
+            isOneToOne: false
+            referencedRelation: "instagram_posts"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "publish_schedules_multi_tiktok_post_id_fkey"
+            columns: ["tiktok_post_id"]
+            isOneToOne: false
+            referencedRelation: "tiktok_posts"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "publish_schedules_multi_video_id_fkey"
+            columns: ["video_id"]
+            isOneToOne: false
+            referencedRelation: "videos"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "publish_schedules_multi_youtube_post_id_fkey"
+            columns: ["youtube_post_id"]
+            isOneToOne: false
+            referencedRelation: "youtube_posts"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
       render_jobs: {
         Row: {
           completed_at: string | null
@@ -825,6 +887,74 @@ export type Database = {
           state?: string
         }
         Relationships: []
+      }
+      youtube_posts: {
+        Row: {
+          account: string
+          category_id: string | null
+          created_at: string
+          description: string | null
+          error_message: string | null
+          id: string
+          logs: Json
+          privacy_status: string
+          published_at: string | null
+          scheduled_at: string | null
+          status: string
+          tags: string[] | null
+          title: string
+          updated_at: string
+          video_id: string | null
+          video_url: string | null
+          youtube_video_id: string | null
+        }
+        Insert: {
+          account?: string
+          category_id?: string | null
+          created_at?: string
+          description?: string | null
+          error_message?: string | null
+          id?: string
+          logs?: Json
+          privacy_status?: string
+          published_at?: string | null
+          scheduled_at?: string | null
+          status?: string
+          tags?: string[] | null
+          title: string
+          updated_at?: string
+          video_id?: string | null
+          video_url?: string | null
+          youtube_video_id?: string | null
+        }
+        Update: {
+          account?: string
+          category_id?: string | null
+          created_at?: string
+          description?: string | null
+          error_message?: string | null
+          id?: string
+          logs?: Json
+          privacy_status?: string
+          published_at?: string | null
+          scheduled_at?: string | null
+          status?: string
+          tags?: string[] | null
+          title?: string
+          updated_at?: string
+          video_id?: string | null
+          video_url?: string | null
+          youtube_video_id?: string | null
+        }
+        Relationships: [
+          {
+            foreignKeyName: "youtube_posts_video_id_fkey"
+            columns: ["video_id"]
+            isOneToOne: false
+            referencedRelation: "videos"
+            referencedColumns: ["id"]
+          },
+        ]
       }
     }
     Views: {
