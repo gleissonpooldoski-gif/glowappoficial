@@ -147,6 +147,17 @@ async function markCredentialsBlocked(supabase: any, account: Account, message: 
   } catch (_) { /* noop */ }
 }
 
+async function markCredentialsValidationError(supabase: any, account: Account, status: "TOKEN_EXPIRED" | "IG_ID_INVALID", message: string) {
+  try {
+    await supabase.from("instagram_credentials").update({
+      last_validated_at: new Date().toISOString(),
+      last_validation_status: status,
+      last_validation_detail: message,
+      connection_status: "ERROR",
+    }).eq("account", account);
+  } catch (_) { /* noop */ }
+}
+
 async function readMetaResponse(res: Response) {
   const text = await res.text();
   let data: any = {};
@@ -293,6 +304,10 @@ Deno.serve(async (req) => {
           const { data: cur } = await supabase.from("instagram_posts").select("account").eq("id", postId).maybeSingle();
           if (cur?.account) await markCredentialsBlocked(supabase, cur.account, rawMessage);
         } catch (_) { /* noop */ }
+      } else if (isTokenExpiredError(e?.metaData, rawMessage)) {
+        await markCredentialsValidationError(supabase, account, "TOKEN_EXPIRED", message);
+      } else if (isInstagramIdInvalidError(e?.metaData, rawMessage)) {
+        await markCredentialsValidationError(supabase, account, "IG_ID_INVALID", message);
       }
       await failPost(postId, message, { raw: rawMessage, meta: e?.metaData ?? null });
     }
@@ -445,6 +460,10 @@ Deno.serve(async (req) => {
     console.error("[publish-instagram]", rawMessage);
     if (blocked && body?.account && typeof body.account === "string") {
       await markCredentialsBlocked(supabase, body.account as Account, rawMessage);
+    } else if (body?.account && typeof body.account === "string" && isTokenExpiredError(e?.metaData, rawMessage)) {
+      await markCredentialsValidationError(supabase, body.account as Account, "TOKEN_EXPIRED", message);
+    } else if (body?.account && typeof body.account === "string" && isInstagramIdInvalidError(e?.metaData, rawMessage)) {
+      await markCredentialsValidationError(supabase, body.account as Account, "IG_ID_INVALID", message);
     }
     await failPost(activePostId ?? body?.postId ?? null, message, { raw: rawMessage, blocked, meta: e?.metaData ?? null });
     return new Response(JSON.stringify({ error: message, blocked, status: "ERRO" }),
