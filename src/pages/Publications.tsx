@@ -617,16 +617,40 @@ export default function Publications() {
     onToggleAutoComment: toggleAutoComment,
   };
 
+  // Posts agendados apenas com Instagram (sem YouTube nem TikTok) — candidatos à migração.
+  const legacyOnlyIg = useMemo(() => {
+    if (!posts) return [];
+    return posts.filter((p) => {
+      if (p.status !== "AGENDADO") return false;
+      const k = `${p.video_id ?? ""}|${p.scheduled_at ?? ""}`;
+      return !ytByKey.has(k) && !ttByKey.has(k);
+    });
+  }, [posts, ytByKey, ttByKey]);
+
   return (
     <div className="space-y-6">
-      <header className="flex flex-col gap-1">
-        <h1 className="text-2xl font-semibold tracking-tight">Publicações</h1>
-        <p className="text-sm text-muted-foreground">
-          Calendário independente por conta — cada plataforma organizada e visível de imediato.
-        </p>
+      <header className="flex items-start justify-between gap-3">
+        <div className="flex flex-col gap-1">
+          <h1 className="text-2xl font-semibold tracking-tight">Publicações</h1>
+          <p className="text-sm text-muted-foreground">
+            Calendário independente por conta — cada plataforma organizada e visível de imediato.
+          </p>
+        </div>
+        {legacyOnlyIg.length > 0 && (
+          <Button
+            size="sm"
+            variant="outline"
+            className="gap-1.5 border-red-400/40 text-red-300 hover:bg-red-500/10"
+            onClick={() => setMigrateOpen(true)}
+            title="Adicionar YouTube (ou TikTok) a agendamentos antigos que ficaram só com Instagram"
+          >
+            <Youtube size={14} /> Migrar antigos ({legacyOnlyIg.length})
+          </Button>
+        )}
       </header>
 
       <MultiScheduleTimeline />
+
 
       {/* Filters */}
       <Card className="glass border-border/50">
