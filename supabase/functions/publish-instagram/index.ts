@@ -689,6 +689,15 @@ Deno.serve(async (req) => {
           }).eq("id", postId);
           await appendLog(postId, { event: "published", publish_id: publishId, published_at: nowIso });
           await finalizeContainerLock(containerId, "done");
+          // CTA automático para a BIO (sem link). Falha aqui não invalida a publicação.
+          try {
+            const commentRes = await supabase.functions.invoke("instagram-post-comment", {
+              body: { instagram_post_id: postId },
+            });
+            await appendLog(postId, { event: "auto_comment_invoked", result: commentRes?.data ?? commentRes?.error ?? null });
+          } catch (commentErr: any) {
+            await appendLog(postId, { event: "auto_comment_error", message: commentErr?.message ?? String(commentErr) });
+          }
           return;
         } catch (err: any) {
           lastPublishErr = err;
