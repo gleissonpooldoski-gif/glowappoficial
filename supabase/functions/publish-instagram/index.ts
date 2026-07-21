@@ -371,7 +371,8 @@ Deno.serve(async (req) => {
       throw new Error(`URL pública do vídeo inacessível para a Meta (HTTP ${urlCheck.status}).`);
     }
 
-    const { token, igId } = await tokensFor(supabase, account as Account);
+    const { token, igId, tokenSource, tokenHead, tokenTail } = await tokensFor(supabase, account as Account);
+    await appendLog(post.id, { event: "meta_token_resolved", account, token_source: tokenSource, token_length: token.length, token_head: tokenHead, token_tail: tokenTail, ig_id: igId });
     if (!token || !igId) throw new Error(`Credenciais Meta ausentes para a conta '${account}'.`);
 
     const accountCheckUrl = `${baseForToken(token)}/${igId}?fields=id,username`;
