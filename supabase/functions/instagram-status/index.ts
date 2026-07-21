@@ -222,7 +222,10 @@ Deno.serve(async (req) => {
         { status: 200, headers: { ...corsHeaders, "Content-Type": "application/json" } });
     }
 
-    const statusRes = await metaGet(`${FB_BASE}/${post.container_id}?fields=id,status_code&access_token=${encodeURIComponent(token)}`);
+    const safeContainerId = assertGraphId(post.container_id, "creation_id");
+    const safeIgIdForStatus = assertGraphId(igId, "ig_business_id");
+    const statusRes = await metaGet(`${FB_BASE}/${safeContainerId}?fields=id,status_code&access_token=${encodeURIComponent(token)}`);
+
     const statusCode = statusRes.data?.status_code ?? "UNKNOWN";
     await appendLog(post.id, { event: "manual_container_status_response", status_code: statusCode, response: statusRes.data });
 
