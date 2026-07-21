@@ -233,11 +233,20 @@ export default function InstagramPublishDialog({
     if (!confirm(confirmMsg)) return;
     setBusy(true);
     try {
-      let iso: string | null = null;
+      // Modo schedule: cada rede pode ter seu próprio horário (modo auto) ou o mesmo (modo manual).
+      const manualIso = mode === "schedule" ? localDateTimeToIso(date, time) : null;
+      const igIso = mode === "schedule"
+        ? (scheduleMode === "auto" ? (autoSlots.instagram?.toISOString() ?? null) : manualIso)
+        : null;
+      const ytIso = mode === "schedule"
+        ? (scheduleMode === "auto" ? (autoSlots.youtube?.toISOString() ?? null) : manualIso)
+        : null;
       if (mode === "schedule") {
-        iso = localDateTimeToIso(date, time);
-        if (!iso || new Date(iso).getTime() < Date.now() + 60_000) {
-          throw new Error("Selecione uma data/hora futura (mín. 1 minuto).");
+        if (wantIG && (!igIso || new Date(igIso).getTime() < Date.now() + 60_000)) {
+          throw new Error("Instagram: horário indisponível. Configure a grade em Configurações.");
+        }
+        if (wantYT && (!ytIso || new Date(ytIso).getTime() < Date.now() + 60_000)) {
+          throw new Error("YouTube: horário indisponível. Configure a grade em Configurações.");
         }
       }
       let igPostId: string | null = null;
@@ -247,7 +256,7 @@ export default function InstagramPublishDialog({
       if (wantIG && account) {
         try {
           if (mode === "schedule") {
-            const res: any = await publishInstagram({ account, videoId, caption, hashtags, publishNow: false, scheduledAt: iso! });
+            const res: any = await publishInstagram({ account, videoId, caption, hashtags, publishNow: false, scheduledAt: igIso! });
             igPostId = res?.post?.id ?? null;
           } else {
             toast.message("Enviando para o Instagram…");
@@ -293,7 +302,7 @@ export default function InstagramPublishDialog({
               video_id: videoId, account: "default",
               title, description: desc, tags,
               category_id: "22", privacy_status: "public",
-              status: "AGENDADO", scheduled_at: iso,
+              status: "AGENDADO", scheduled_at: ytIso,
             }).select("id").maybeSingle();
             if (error) throw error;
             ytPostId = (data as any)?.id ?? null;
@@ -308,18 +317,20 @@ export default function InstagramPublishDialog({
         } catch (e: any) { errs.push(`YouTube: ${e?.message ?? "erro"}`); }
       }
 
-      // Registro consolidado (para o calendário exibir os ícones)
-      if (mode === "schedule" && iso) {
-        try {
-          await supabase.from("publish_schedules_multi" as any).insert({
-            video_id: videoId,
-            networks: Array.from(nets),
-            scheduled_at: iso,
-            instagram_post_id: igPostId,
-            youtube_post_id: ytPostId,
-            tiktok_post_id: null,
-          });
-        } catch { /* não bloqueia */ }
+      // Registro consolidado por rede (para o calendário exibir os ícones).
+      if (mode === "schedule") {
+        const rows: any[] = [];
+        if (wantIG && igIso) rows.push({
+          video_id: videoId, networks: ["instagram"], scheduled_at: igIso,
+          instagram_post_id: igPostId, youtube_post_id: null, tiktok_post_id: null,
+        });
+        if (wantYT && ytIso) rows.push({
+          video_id: videoId, networks: ["youtube"], scheduled_at: ytIso,
+          instagram_post_id: null, youtube_post_id: ytPostId, tiktok_post_id: null,
+        });
+        if (rows.length) {
+          try { await supabase.from("publish_schedules_multi" as any).insert(rows); } catch { /* não bloqueia */ }
+        }
       }
 
       if (errs.length === 0) {
