@@ -148,13 +148,13 @@ export default function InstagramBatchScheduleDialog({ open, onOpenChange, video
           frames,
         },
       });
-      if (error || (data as any)?.error) throw new Error((data as any)?.error ?? error?.message);
-      return {
-        caption: String((data as any)?.caption ?? ""),
-        hashtags: flattenHashtags((data as any)?.hashtags),
-      };
-    } catch {
-      return { caption: "", hashtags: "" };
+      if (error || (data as any)?.error) throw new Error((data as any)?.error ?? error?.message ?? "Falha ao gerar legenda");
+      const caption = String((data as any)?.caption ?? "").trim();
+      const hashtags = flattenHashtags((data as any)?.hashtags);
+      if (!caption) throw new Error("IA retornou legenda vazia");
+      return { caption, hashtags };
+    } catch (e: any) {
+      throw new Error(e?.message ?? "Falha ao gerar legenda");
     }
   };
 
@@ -262,9 +262,13 @@ export default function InstagramBatchScheduleDialog({ open, onOpenChange, video
       const v = videos[i];
       const slotFor: Partial<Record<NetworkId, Date>> = {};
       for (const n of nets) slotFor[n] = slotsByNet[n]?.[i];
-      const { caption, hashtags } = await genCaption(v);
-      const errs = await scheduleOne(v, slotFor, caption, hashtags, nets);
-      errs.forEach((e) => allErrs.push(`Vídeo ${i + 1} (${v.filename ?? v.id}): ${e}`));
+      try {
+        const { caption, hashtags } = await genCaption(v);
+        const errs = await scheduleOne(v, slotFor, caption, hashtags, nets);
+        errs.forEach((e) => allErrs.push(`Vídeo ${i + 1} (${v.filename ?? v.id}): ${e}`));
+      } catch (e: any) {
+        allErrs.push(`Vídeo ${i + 1} (${v.filename ?? v.id}): legenda não gerada — ${e?.message ?? "erro"}. Post não agendado.`);
+      }
       setDone(i + 1);
     }
     setErrors(allErrs);
