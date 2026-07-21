@@ -1,5 +1,5 @@
 import { useEffect, useState } from "react";
-import { Clock, Plus, Trash2, Save, Loader2, CalendarClock, RotateCcw, Sparkles, Instagram, Youtube } from "lucide-react";
+import { Clock, Plus, Trash2, Save, Loader2, CalendarClock, RotateCcw, Sparkles, Instagram, Youtube, CalendarDays } from "lucide-react";
 import { Card, CardContent } from "@/components/ui/card";
 import { Label } from "@/components/ui/label";
 import { Input } from "@/components/ui/input";
@@ -14,7 +14,9 @@ import {
   getSchedule,
   upsertSchedule,
   findNextSlot,
+  findNextSlots,
 } from "@/lib/schedules";
+import TimeInput from "@/components/TimeInput";
 
 function formatDateTimeBR(d: Date) {
   return d.toLocaleString("pt-BR", {
