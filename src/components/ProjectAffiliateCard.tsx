@@ -173,7 +173,7 @@ export default function ProjectAffiliateCard({ projectId, projectName }: { proje
             </div>
           )}
           <p className="text-[11px] text-muted-foreground">
-            O sistema alterna os modelos automaticamente (rotação por menos usado) e adapta o texto ao vídeo via IA, sempre mantendo o produto e o link intactos.
+            O sistema alterna os modelos automaticamente (rotação por menos usado) e adapta o texto ao vídeo via IA. Todos os modelos direcionam para a BIO — nunca inclua links, URLs ou @menções: eles são removidos antes da publicação.
           </p>
         </div>
       </CardContent>
