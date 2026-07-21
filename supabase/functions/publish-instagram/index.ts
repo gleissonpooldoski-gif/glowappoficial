@@ -176,9 +176,10 @@ Deno.serve(async (req) => {
       const start = Date.now();
       let lastStatus: any = null;
       while (Date.now() - start < MAX_POLL_MS) {
-        const statusUrl = `https://graph.facebook.com/${GRAPH_VERSION}/${containerId}?fields=status_code,status`;
+        const statusUrl = `${IG_BASE}/${containerId}?fields=status_code,status`;
         const statusRes = await metaGet(statusUrl, token);
         lastStatus = statusRes.data;
+
         const statusCode = statusRes.data?.status_code ?? "UNKNOWN";
         await appendLog(postId, { event: "container_status_response", elapsed_ms: Date.now() - start, status_code: statusCode, response: statusRes.data });
 
