@@ -1,5 +1,5 @@
 import { useEffect, useMemo, useState } from "react";
-import { Instagram, Save, Eye, EyeOff, CheckCircle2, XCircle, Loader2, RefreshCw, Plus, Trash2 } from "lucide-react";
+import { Instagram, Save, Eye, EyeOff, CheckCircle2, XCircle, Loader2, RefreshCw, Plus, Trash2, Clock3 } from "lucide-react";
 import { supabase } from "@/integrations/supabase/client";
 import { toast } from "sonner";
 import { Card, CardContent } from "@/components/ui/card";
@@ -22,6 +22,7 @@ type Stored = {
   ig_business_id: string;
   display_name: string | null;
   project_id: string | null;
+  connection_status?: "CONNECTED" | "PENDING" | "ERROR";
   updated_at: string;
   last_validation_status?: string;
   last_validation_detail?: string;
@@ -40,6 +41,12 @@ const STATUS_LABEL: Record<string, string> = {
   API_BLOCKED: "🚫 Bloqueado pela API — necessita reautenticação",
   EMPTY: "— Campos vazios",
   UNKNOWN_ERROR: "❌ Erro ao validar",
+};
+
+const CONNECTION_LABEL: Record<NonNullable<Stored["connection_status"]>, string> = {
+  CONNECTED: "✅ Conectado",
+  PENDING: "⏳ Pendente",
+  ERROR: "❌ Erro",
 };
 
 const LEGACY_LABEL: Record<string, string> = {
@@ -164,9 +171,13 @@ export default function InstagramCredentialsCard() {
         if (ctx && typeof ctx.text === "function") {
           const raw = await ctx.text();
           const parsed = JSON.parse(raw);
+          if (parsed?.result && parsed?.account) {
+            setResults((prev) => ({ ...prev, [parsed.account]: parsed.result }));
+          }
           if (parsed?.error) msg = parsed.error;
         }
       } catch { /* mantém msg */ }
+      await loadAll();
       return toast.error(msg, { duration: 10000 });
     }
     if (data?.error) return toast.error(data.error, { duration: 10000 });
@@ -231,6 +242,9 @@ export default function InstagramCredentialsCard() {
                 ? { ok: s.last_validation_status === "VALID", status: s.last_validation_status, message: s.last_validation_detail ?? "" }
                 : undefined);
             const label = s.display_name ?? LEGACY_LABEL[account] ?? account;
+            const connectionStatus = s.connection_status ?? (validation?.ok === false ? "ERROR" : "CONNECTED");
+            const isConnected = connectionStatus === "CONNECTED";
+            const isPending = connectionStatus === "PENDING";
 
             return (
               <div key={account} className="space-y-3 rounded-lg border border-border/50 bg-card/40 p-4">
@@ -242,9 +256,12 @@ export default function InstagramCredentialsCard() {
                     <p className="text-[11px] text-muted-foreground">Business ID: {s.ig_business_id}</p>
                   </div>
                   <div className="flex flex-col items-end gap-2">
-                    {validation && (
-                      <div className={`flex items-center gap-1.5 text-xs font-medium ${validation.ok ? "text-emerald-500" : "text-red-500"}`}>
-                        {validation.ok ? <CheckCircle2 size={14} /> : <XCircle size={14} />}
+                    <div className={`flex items-center gap-1.5 text-xs font-medium ${isConnected ? "text-emerald-500" : isPending ? "text-amber-500" : "text-red-500"}`}>
+                      {isConnected ? <CheckCircle2 size={14} /> : isPending ? <Clock3 size={14} /> : <XCircle size={14} />}
+                      {CONNECTION_LABEL[connectionStatus]}
+                    </div>
+                    {validation && connectionStatus !== "CONNECTED" && (
+                      <div className="text-right text-[11px] text-muted-foreground">
                         {STATUS_LABEL[validation.status] ?? validation.status}
                       </div>
                     )}

@@ -186,6 +186,7 @@ export type Database = {
         Row: {
           access_token: string
           account: string
+          connection_status: Database["public"]["Enums"]["instagram_connection_status"]
           created_at: string
           display_name: string | null
           id: string
@@ -199,6 +200,7 @@ export type Database = {
         Insert: {
           access_token: string
           account: string
+          connection_status?: Database["public"]["Enums"]["instagram_connection_status"]
           created_at?: string
           display_name?: string | null
           id?: string
@@ -212,6 +214,7 @@ export type Database = {
         Update: {
           access_token?: string
           account?: string
+          connection_status?: Database["public"]["Enums"]["instagram_connection_status"]
           created_at?: string
           display_name?: string | null
           id?: string
@@ -1088,6 +1091,7 @@ export type Database = {
     }
     Enums: {
       edit_status: "draft" | "editing" | "processing" | "completed" | "failed"
+      instagram_connection_status: "CONNECTED" | "PENDING" | "ERROR"
       project_category:
         | "motivacao"
         | "dinheiro"
@@ -1246,6 +1250,7 @@ export const Constants = {
   public: {
     Enums: {
       edit_status: ["draft", "editing", "processing", "completed", "failed"],
+      instagram_connection_status: ["CONNECTED", "PENDING", "ERROR"],
       project_category: [
         "motivacao",
         "dinheiro",

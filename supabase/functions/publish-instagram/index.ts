@@ -7,7 +7,7 @@ const BUCKET = "videos-processed";
 const MAX_POLL_MS = 5 * 60 * 1000;
 const POLL_INTERVAL_MS = 5000;
 
-type Account = "resenha" | "frame";
+type Account = string;
 
 function envTokensFor(account: Account) {
   if (account === "resenha") {
@@ -16,10 +16,13 @@ function envTokensFor(account: Account) {
       igId: Deno.env.get("META_RESENHA_INSTAGRAM_ID") ?? "",
     };
   }
-  return {
-    token: Deno.env.get("META_FRAME_ACCESS_TOKEN") ?? "",
-    igId: Deno.env.get("META_FRAME_INSTAGRAM_ID") ?? "",
-  };
+  if (account === "frame") {
+    return {
+      token: Deno.env.get("META_FRAME_ACCESS_TOKEN") ?? "",
+      igId: Deno.env.get("META_FRAME_INSTAGRAM_ID") ?? "",
+    };
+  }
+  return { token: "", igId: "" };
 }
 
 async function tokensFor(supabase: any, account: Account) {
@@ -74,6 +77,7 @@ async function markCredentialsBlocked(supabase: any, account: Account, message: 
       last_validated_at: new Date().toISOString(),
       last_validation_status: "API_BLOCKED",
       last_validation_detail: message,
+      connection_status: "ERROR",
     }).eq("account", account);
   } catch (_) { /* noop */ }
 }
