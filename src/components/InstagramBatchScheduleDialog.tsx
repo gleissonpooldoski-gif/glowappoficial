@@ -53,7 +53,9 @@ export default function InstagramBatchScheduleDialog({ open, onOpenChange, video
     return n;
   });
 
-  const [slots, setSlots] = useState<Date[]>([]);
+  const [slotsByNet, setSlotsByNet] = useState<Record<NetworkId, Date[]>>({
+    instagram: [], youtube: [], tiktok: [], facebook: [], linkedin: [],
+  });
   const [slotBusy, setSlotBusy] = useState(false);
   const [busy, setBusy] = useState(false);
   const [done, setDone] = useState(0);
@@ -74,17 +76,30 @@ export default function InstagramBatchScheduleDialog({ open, onOpenChange, video
   };
 
   const compute = async () => {
-    if (!igAccount) { setSlots([]); return; }
     setSlotBusy(true);
     try {
       const startFrom = parseStart();
       if (startMode === "manual" && startFrom && startFrom.getTime() < Date.now() + 60_000) {
         toast.error("Selecione uma data/hora futura para começar.");
-        setSlots([]);
+        setSlotsByNet({ instagram: [], youtube: [], tiktok: [], facebook: [], linkedin: [] });
         return;
       }
-      const s = await findNextSlots(igAccount, videos.length, { startFrom });
-      setSlots(s);
+      const results: Record<NetworkId, Date[]> = {
+        instagram: [], youtube: [], tiktok: [], facebook: [], linkedin: [],
+      };
+      await Promise.all(
+        (["instagram", "youtube", "tiktok"] as const).map(async (net) => {
+          if (!selectedNets.has(net)) return;
+          const acc = scheduleAccountFor(net, igAccount);
+          if (!acc) return;
+          try {
+            results[net] = await findNextSlots(
+              net as ScheduleNetwork, acc, videos.length, { startFrom },
+            );
+          } catch { /* ignore */ }
+        }),
+      );
+      setSlotsByNet(results);
     } catch (e: any) {
       toast.error(e?.message ?? "Falha ao calcular horários");
     } finally {
@@ -97,7 +112,7 @@ export default function InstagramBatchScheduleDialog({ open, onOpenChange, video
     setDone(0); setErrors([]);
     void compute();
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [open, igAccount, videos.length, startMode, startDate, startTime]);
+  }, [open, igAccount, videos.length, startMode, startDate, startTime, selectedNets]);
 
   const first = slots[0];
   const last = slots[slots.length - 1];
