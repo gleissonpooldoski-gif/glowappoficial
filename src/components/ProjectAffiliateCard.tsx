@@ -48,8 +48,8 @@ export default function ProjectAffiliateCard({ projectId, projectName }: { proje
   useEffect(() => { load(); }, [load]);
 
   const saveConfig = async () => {
-    if (!cfg?.product_name.trim() || !cfg?.affiliate_link.trim()) {
-      toast.error("Produto e link de afiliado são obrigatórios.");
+    if (!cfg?.product_name.trim()) {
+      toast.error("Nome do produto é obrigatório.");
       return;
     }
     setSaving(true);
@@ -57,7 +57,7 @@ export default function ProjectAffiliateCard({ projectId, projectName }: { proje
       project_id: projectId,
       product_name: cfg.product_name.trim(),
       product_category: cfg.product_category?.trim() || null,
-      affiliate_link: cfg.affiliate_link.trim(),
+      affiliate_link: "",
       is_active: cfg.is_active,
     };
     const { error } = await supabase.from("project_affiliate_configs" as any)
