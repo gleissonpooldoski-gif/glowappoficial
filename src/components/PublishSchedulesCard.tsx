@@ -215,7 +215,7 @@ function ScheduleEditor({
         </Button>
         <div className="ml-auto flex items-center gap-2">
           <Badge variant="outline" className="text-[10px]">
-            {uniqueCount} horário(s)
+            {uniqueCount} horário(s) de publicação
           </Badge>
           <Button size="sm" onClick={save} disabled={saving} className="bg-gold-gradient text-black">
             {saving ? <Loader2 size={12} className="mr-1 animate-spin" /> : <Save size={12} className="mr-1" />}
