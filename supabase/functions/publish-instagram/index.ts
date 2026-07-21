@@ -55,10 +55,15 @@ async function tokensFor(supabase: any, account: Account) {
     .eq("account", account)
     .maybeSingle();
   const env = envTokensFor(account);
-  return {
-    token: sanitizeToken(data?.access_token || env.token),
-    igId: (data?.ig_business_id || env.igId || "").toString().trim(),
-  };
+  const dbToken = data?.access_token ?? "";
+  const source = dbToken ? "database" : (env.token ? "env_fallback" : "none");
+  const token = sanitizeToken(dbToken || env.token);
+  const igId = (data?.ig_business_id || env.igId || "").toString().trim();
+  // Debug: mostra origem + primeiros 10 / últimos 10 caracteres do token de fato enviado à Meta.
+  const head = token.slice(0, 10);
+  const tail = token.slice(-10);
+  console.log(`[publish-instagram] account=${account} token_source=${source} token_len=${token.length} token_head=${head} token_tail=${tail} ig_id=${igId}`);
+  return { token, igId, tokenSource: source, tokenHead: head, tokenTail: tail };
 }
 
 function buildCaption(caption: string, hashtags: string) {
