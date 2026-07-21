@@ -247,8 +247,8 @@ Deno.serve(async (req) => {
       hashtags = data.hashtags ?? hashtags;
     }
 
-    if (!account || !["resenha", "frame"].includes(account)) {
-      return new Response(JSON.stringify({ error: "Conta inválida. Use 'resenha' ou 'frame'." }),
+    if (!account || typeof account !== "string") {
+      return new Response(JSON.stringify({ error: "Conta inválida." }),
         { status: 400, headers: { ...corsHeaders, "Content-Type": "application/json" } });
     }
     if (!videoId) {
@@ -376,7 +376,7 @@ Deno.serve(async (req) => {
     const blocked = isApiBlockedError(e?.metaData, rawMessage);
     const message = blocked ? FRIENDLY_BLOCKED_MESSAGE : rawMessage;
     console.error("[publish-instagram]", rawMessage);
-    if (blocked && body?.account && ["resenha", "frame"].includes(body.account)) {
+    if (blocked && body?.account && typeof body.account === "string") {
       await markCredentialsBlocked(supabase, body.account as Account, rawMessage);
     }
     await failPost(activePostId ?? body?.postId ?? null, message, { raw: rawMessage, blocked, meta: e?.metaData ?? null });
