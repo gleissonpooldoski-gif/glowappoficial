@@ -10,9 +10,11 @@ const INITIAL_POLL_DELAY_MS = 10000;      // Espera 10s após criar o container 
 const POLL_INTERVAL_MS = 10000;            // 10s entre consultas subsequentes.
 const MAX_CONTAINER_STATUS_ATTEMPTS = 8;   // Máximo 8 consultas por container.
 const PUBLISH_STABILIZATION_MS = 15000;    // Aguarda 15s após FINISHED antes do publish único.
-const MAX_PUBLICATION_CYCLES = 3;
+const MAX_PUBLICATION_CYCLES = 1;          // Sem retry automático em code=1: libera para nova tentativa manual.
 const CODE_4_COOLDOWN_MS = 5 * 60 * 1000;  // Cooldown de 5min após code=4.
 const ACCOUNT_LOCK_STALE_MS = 15 * 60 * 1000; // Considera lock preso após 15min.
+const CAPTION_MAX_LENGTH = 2200;           // Limite oficial da Meta.
+const HASHTAGS_MAX_COUNT = 20;             // Limite oficial da Meta para hashtags em uma publicação.
 
 // Sanitiza o Access Token: trim + remove aspas, whitespace interno, BOM,
 // caracteres de controle e QUALQUER caractere fora do intervalo ASCII imprimível
@@ -73,12 +75,43 @@ async function tokensFor(supabase: any, account: Account) {
   return { token, igId, tokenSource: source, tokenHead: head, tokenTail: tail };
 }
 
+function normalizeCaptionText(raw: string): string {
+  const trimmed = (raw ?? "").replace(/\r\n/g, "\n").trim();
+  if (!trimmed) return "";
+  // Colapsa 3+ quebras em duas e remove linhas duplicadas consecutivas.
+  const collapsed = trimmed.replace(/\n{3,}/g, "\n\n");
+  const seen = new Set<string>();
+  const dedupLines: string[] = [];
+  for (const line of collapsed.split("\n")) {
+    const key = line.trim().toLowerCase();
+    if (key && seen.has(key)) continue;
+    if (key) seen.add(key);
+    dedupLines.push(line);
+  }
+  return dedupLines.join("\n").trim();
+}
+
+function normalizeHashtagsText(raw: string): { text: string; count: number; dropped: number } {
+  const tokens = (raw ?? "").split(/\s+/).map((t) => t.trim()).filter(Boolean);
+  const unique: string[] = [];
+  const seen = new Set<string>();
+  for (const t of tokens) {
+    const tag = t.startsWith("#") ? t : `#${t.replace(/^#+/, "")}`;
+    const key = tag.toLowerCase();
+    if (seen.has(key)) continue;
+    seen.add(key);
+    unique.push(tag);
+  }
+  const kept = unique.slice(0, HASHTAGS_MAX_COUNT);
+  return { text: kept.join(" "), count: kept.length, dropped: unique.length - kept.length };
+}
+
 function buildCaption(caption: string, hashtags: string) {
-  const c = (caption ?? "").trim();
-  const h = (hashtags ?? "").trim();
-  if (!h) return c;
-  if (!c) return h;
-  return `${c}\n\n${h}`;
+  const c = normalizeCaptionText(caption);
+  const h = normalizeHashtagsText(hashtags).text;
+  let combined = c && h ? `${c}\n\n${h}` : (c || h);
+  if (combined.length > CAPTION_MAX_LENGTH) combined = combined.slice(0, CAPTION_MAX_LENGTH).trimEnd();
+  return combined;
 }
 
 function safeJson(value: unknown) {
@@ -588,6 +621,8 @@ Deno.serve(async (req) => {
 
         const captionLength = fullCaption?.length ?? 0;
         const hashtagCount = (fullCaption?.match(/#\w+/g) ?? []).length;
+        const publishBody: Record<string, string> = { creation_id: containerId, access_token: token };
+        const payloadBytes = new URLSearchParams(publishBody).toString().length;
         const publishRequestedAt = new Date().toISOString();
         try {
           await appendLog(postId, {
@@ -600,13 +635,14 @@ Deno.serve(async (req) => {
             creation_id: containerId,
             caption_length: captionLength,
             hashtag_count: hashtagCount,
+            payload_bytes: payloadBytes,
+            body_keys: Object.keys(publishBody),
             publish_requested_at: publishRequestedAt,
           });
           const publishRes = await metaPost(
             publishUrl,
-            { creation_id: containerId },
+            publishBody,
             token,
-            { authHeaderToken: token },
           );
           const publishResponseAt = new Date().toISOString();
           await appendLog(postId, { event: "media_publish_response", cycle, status: publishRes.status, publish_requested_at: publishRequestedAt, publish_response_at: publishResponseAt, response: publishRes.data });
@@ -654,9 +690,10 @@ Deno.serve(async (req) => {
             creation_id: containerId,
             caption_length: captionLength,
             hashtag_count: hashtagCount,
+            payload_bytes: payloadBytes,
             publish_requested_at: publishRequestedAt,
             failed_at: new Date().toISOString(),
-            next_action: cycle < MAX_PUBLICATION_CYCLES ? "create_new_container" : "fail_post",
+            next_action: "fail_post_manual_retry",
             raw_message: err?.message ?? null,
             meta_error: metaErrorDetails(err?.metaData, err?.message),
           });
@@ -666,9 +703,8 @@ Deno.serve(async (req) => {
           }).eq("id", postId);
 
           await finalizeContainerLock(containerId, "error");
-          if (cycle === MAX_PUBLICATION_CYCLES) throw err;
-          if (!(await ensureNotAlreadyPublished("new_container_skipped_already_published"))) return;
-          containerId = await createReplacementContainer(cycle + 1);
+          // Sem retry automático em code=1 — libera para nova tentativa manual.
+          throw err;
         }
       }
       throw lastPublishErr ?? new Error("Falha ao publicar mídia no Instagram.");
