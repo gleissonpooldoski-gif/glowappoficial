@@ -59,32 +59,18 @@ async function validateAccount(token: string, igId: string): Promise<ValidationR
       if (isApiBlocked(ig.data.error)) return { ok: false, status: "API_BLOCKED", message: `${BLOCKED_MSG} (${meta})` };
       if (code === 190) return { ok: false, status: "TOKEN_EXPIRED", message: meta || "Token expirado." };
 
-      // Se falhou, lista as contas IG que ESTE token realmente pode acessar (via /me/accounts)
-      let accessibleHint = "";
-      try {
-        const pagesRes = await fetch(`https://graph.facebook.com/${GRAPH_VERSION}/me/accounts?fields=name,instagram_business_account{id,username}&limit=50&access_token=${encodeURIComponent(token)}`);
-        const pages = await readMeta(pagesRes);
-        const linked: string[] = [];
-        for (const p of pages.data?.data ?? []) {
-          const iba = p?.instagram_business_account;
-          if (iba?.id) linked.push(`• Página "${p.name}" → IG ${iba.id}${iba.username ? ` (@${iba.username})` : ""}`);
-        }
-        if (linked.length > 0) {
-          accessibleHint = `\n\nContas Instagram que este token PODE acessar:\n${linked.join("\n")}\n\nUse um dos IDs acima em vez de ${igId}.`;
-        } else {
-          accessibleHint = `\n\nEste token não retornou contas Instagram vinculadas em /me/accounts. Isso pode ser normal para Token de Página/System User; confirme se o Instagram Business Account ID informado pertence ao token usado.`;
-        }
-      } catch { /* ignora */ }
+      const hint = `\n\nConfirme que o ID informado (${igId}) é o Instagram User ID (ex.: 17841…) e que o Access Token foi emitido para essa mesma conta no fluxo "Instagram API with Instagram Login".`;
 
       if (code === 100 || code === 803) {
         return {
           ok: false,
           status: "IG_ID_INVALID",
-          message: `${meta}\n\nDiagnóstico: o ID ${igId} não existe OU este token não tem acesso a ele. Confirme que é o Instagram Business/Professional Account ID (não Page ID, User ID ou Business Manager ID) e que o token pertence a um admin da Página vinculada.${accessibleHint}`,
+          message: `${meta}\n\nDiagnóstico: o ID ${igId} não existe OU este token não tem acesso a ele.${hint}`,
         };
       }
-      return { ok: false, status: "IG_ID_INVALID", message: `${meta || "Falha ao ler o Business ID."}${accessibleHint}` };
+      return { ok: false, status: "IG_ID_INVALID", message: `${meta || "Falha ao ler o Instagram User ID."}${hint}` };
     }
+
     if (!ig.data?.id) return { ok: false, status: "IG_ID_INVALID", message: "Instagram Business ID não retornou dados." };
     return {
       ok: true,
