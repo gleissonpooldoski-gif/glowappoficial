@@ -96,14 +96,28 @@ function ScheduleEditor({
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [network, account]);
 
+  const suggestNextTime = (): string => {
+    if (times.length === 0) return "09:00";
+    const last = times[times.length - 1];
+    const [h, m] = last.split(":").map(Number);
+    const total = (h * 60 + m + 90) % (24 * 60);
+    const nh = Math.floor(total / 60);
+    const nm = total % 60;
+    let candidate = `${String(nh).padStart(2, "0")}:${String(nm).padStart(2, "0")}`;
+    // avoid duplicates by incrementing 5 minutes at a time
+    let guard = 0;
+    while (times.includes(candidate) && guard < 288) {
+      const t = (nh * 60 + nm + 5 * (guard + 1)) % (24 * 60);
+      candidate = `${String(Math.floor(t / 60)).padStart(2, "0")}:${String(t % 60).padStart(2, "0")}`;
+      guard++;
+    }
+    return candidate;
+  };
+
   const add = () => {
-    if (!/^\d{1,2}:\d{2}$/.test(newTime)) return toast.error("Formato HH:MM");
-    const [h, m] = newTime.split(":").map(Number);
-    if (h < 0 || h > 23 || m < 0 || m > 59) return toast.error("Horário inválido");
-    const normalized = `${String(h).padStart(2, "0")}:${String(m).padStart(2, "0")}`;
-    if (times.includes(normalized)) return toast.error("Horário já existe");
-    setTimes([...times, normalized].sort());
-    setNewTime("09:00");
+    const candidate = suggestNextTime();
+    if (times.includes(candidate)) return toast.error("Horário já existe");
+    setTimes([...times, candidate].sort());
   };
 
   const remove = (t: string) => setTimes(times.filter((x) => x !== t));
