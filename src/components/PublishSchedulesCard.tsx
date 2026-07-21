@@ -179,15 +179,9 @@ function ScheduleEditor({
           </div>
         </div>
         <div className="flex items-center gap-2">
-          <Label className="text-xs text-muted-foreground">Posts/dia</Label>
-          <Input
-            type="number"
-            min={1}
-            max={50}
-            value={perDay}
-            onChange={(e) => setPerDay(Number(e.target.value))}
-            className="h-8 w-20"
-          />
+          <Badge variant="outline" className="text-[11px]">
+            {uniqueCount} posts/dia
+          </Badge>
         </div>
       </div>
 
