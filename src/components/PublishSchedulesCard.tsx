@@ -6,7 +6,7 @@ import { Input } from "@/components/ui/input";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
 import { toast } from "sonner";
-import { fetchInstagramAccounts, subscribeInstagramAccounts, type InstagramAccountInfo } from "@/lib/instagram";
+import { ACCOUNTS } from "@/lib/instagram";
 import {
   DEFAULT_TIMES,
   PublishSchedule,
@@ -315,14 +315,6 @@ function ScheduleEditor({
 }
 
 export default function PublishSchedulesCard() {
-  const [igAccounts, setIgAccounts] = useState<InstagramAccountInfo[]>([]);
-
-  useEffect(() => {
-    fetchInstagramAccounts().catch(() => {});
-    const unsub = subscribeInstagramAccounts(setIgAccounts);
-    return () => { unsub(); };
-  }, []);
-
   return (
     <Card className="glass border-border/50">
       <CardContent className="space-y-5 p-6">
@@ -339,20 +331,9 @@ export default function PublishSchedulesCard() {
             <Instagram size={14} className="text-pink-400" />
             <h3 className="text-sm font-semibold">Instagram</h3>
           </div>
-          {igAccounts.length === 0 ? (
-            <p className="rounded-lg border border-dashed border-border/60 p-3 text-xs text-muted-foreground">
-              Nenhuma conta do Instagram conectada. Adicione uma conta acima para configurar sua grade.
-            </p>
-          ) : (
-            igAccounts.map((a) => (
-              <ScheduleEditor
-                key={`ig-${a.account}`}
-                network="instagram"
-                account={a.account}
-                label={a.display_name}
-              />
-            ))
-          )}
+          {ACCOUNTS.map((a) => (
+            <ScheduleEditor key={`ig-${a.value}`} network="instagram" account={a.value} label={a.label} />
+          ))}
         </section>
 
         <section className="space-y-3">

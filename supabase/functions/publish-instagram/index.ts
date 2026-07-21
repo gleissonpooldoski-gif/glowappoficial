@@ -7,7 +7,7 @@ const BUCKET = "videos-processed";
 const MAX_POLL_MS = 5 * 60 * 1000;
 const POLL_INTERVAL_MS = 5000;
 
-type Account = string;
+type Account = "resenha" | "frame";
 
 function envTokensFor(account: Account) {
   if (account === "resenha") {
@@ -16,13 +16,10 @@ function envTokensFor(account: Account) {
       igId: Deno.env.get("META_RESENHA_INSTAGRAM_ID") ?? "",
     };
   }
-  if (account === "frame") {
-    return {
-      token: Deno.env.get("META_FRAME_ACCESS_TOKEN") ?? "",
-      igId: Deno.env.get("META_FRAME_INSTAGRAM_ID") ?? "",
-    };
-  }
-  return { token: "", igId: "" };
+  return {
+    token: Deno.env.get("META_FRAME_ACCESS_TOKEN") ?? "",
+    igId: Deno.env.get("META_FRAME_INSTAGRAM_ID") ?? "",
+  };
 }
 
 async function tokensFor(supabase: any, account: Account) {
@@ -250,8 +247,8 @@ Deno.serve(async (req) => {
       hashtags = data.hashtags ?? hashtags;
     }
 
-    if (!account || typeof account !== "string") {
-      return new Response(JSON.stringify({ error: "Conta inválida ou não informada." }),
+    if (!account || !["resenha", "frame"].includes(account)) {
+      return new Response(JSON.stringify({ error: "Conta inválida. Use 'resenha' ou 'frame'." }),
         { status: 400, headers: { ...corsHeaders, "Content-Type": "application/json" } });
     }
     if (!videoId) {
@@ -379,7 +376,7 @@ Deno.serve(async (req) => {
     const blocked = isApiBlockedError(e?.metaData, rawMessage);
     const message = blocked ? FRIENDLY_BLOCKED_MESSAGE : rawMessage;
     console.error("[publish-instagram]", rawMessage);
-    if (blocked && body?.account && typeof body.account === "string") {
+    if (blocked && body?.account && ["resenha", "frame"].includes(body.account)) {
       await markCredentialsBlocked(supabase, body.account as Account, rawMessage);
     }
     await failPost(activePostId ?? body?.postId ?? null, message, { raw: rawMessage, blocked, meta: e?.metaData ?? null });
