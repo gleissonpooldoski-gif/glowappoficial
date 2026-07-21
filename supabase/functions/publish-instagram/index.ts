@@ -423,10 +423,12 @@ Deno.serve(async (req) => {
         const publishRequestedAt = new Date().toISOString();
         try {
           await appendLog(postId, { event: "media_publish_attempt", cycle, attempt: 1, ig_id: igId, creation_id: containerId, publish_requested_at: publishRequestedAt, payload: publishPayload });
-          const publishRes = await metaPost(publishUrl, {
-            creation_id: containerId,
-            access_token: token,
-          }, token);
+          // media_publish: enviar SOMENTE creation_id no body; access_token vai na query string.
+          const publishRes = await metaPost(
+            `${publishUrl}?access_token=${encodeURIComponent(token)}`,
+            { creation_id: containerId },
+            token,
+          );
           const publishResponseAt = new Date().toISOString();
           await appendLog(postId, { event: "media_publish_response", cycle, attempt: 1, status: publishRes.status, publish_requested_at: publishRequestedAt, publish_response_at: publishResponseAt, response: publishRes.data });
           const publishId = publishRes.data?.id;
