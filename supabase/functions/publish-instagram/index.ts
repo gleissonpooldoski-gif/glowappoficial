@@ -140,6 +140,9 @@ function userFacingMetaError(account: string | null | undefined, rawMessage: str
   if (isTokenExpiredError(metaData, rawMessage)) {
     return `Token Meta expirado para ${label}. Recadastre o Access Token em Configurações e tente novamente.`;
   }
+  if (isTransientMetaError(metaData, rawMessage)) {
+    return `A Meta retornou um erro temporário (${metaData?.error?.code ?? "?"}) ao publicar em ${label}. O token continua válido — tente publicar novamente em alguns minutos.`;
+  }
   if (isInstagramIdInvalidError(metaData, rawMessage)) {
     return `Instagram Business Account ID inválido para ${label}. Confirme que o ID cadastrado é o instagram_business_account_id exato da conta selecionada.`;
   }
