@@ -137,6 +137,11 @@ export default function YoutubeCredentialsCard() {
           })}
         </div>
       </CardContent>
+      <YoutubeUploadDialog
+        open={!!uploadFor}
+        onOpenChange={(v) => !v && setUploadFor(null)}
+        account={uploadFor ?? "default"}
+      />
     </Card>
   );
 }
