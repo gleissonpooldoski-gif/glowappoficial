@@ -11,6 +11,7 @@ import { toast } from "sonner";
 import { supabase } from "@/integrations/supabase/client";
 import { InstagramAccount, publishInstagram, friendlyError, platformFromProject, PLATFORM_LABEL } from "@/lib/instagram";
 import { uploadToYoutube } from "@/lib/youtube";
+import YoutubeChannelPicker from "./YoutubeChannelPicker";
 import { findNextSlot, ScheduleNetwork, scheduleAccountFor } from "@/lib/schedules";
 import { useActiveProject } from "@/context/ProjectContext";
 import { extractVideoFrames } from "@/lib/videoFrames";
@@ -75,6 +76,7 @@ export default function InstagramPublishDialog({
   const [slotBusy, setSlotBusy] = useState(false);
   const [autoSlots, setAutoSlots] = useState<{ instagram: Date | null; youtube: Date | null }>({ instagram: null, youtube: null });
   const [nets, setNets] = useState<Set<NetId>>(new Set(["instagram"]));
+  const [ytChannels, setYtChannels] = useState<string[]>([]);
   const [hasVideoFile, setHasVideoFile] = useState<boolean | null>(null);
   const toggleNet = (n: NetId) => setNets((prev) => {
     const s = new Set(prev);
