@@ -381,46 +381,7 @@ export default function InstagramPublishDialog({
                   <Badge variant="outline" className="text-[10px] font-semibold bg-red-500/15 text-red-300 border-red-400/40">
                     ▶️ YouTube · Canal principal
                   </Badge>
-          </div>
-
-          {nets.has("youtube") && (
-            <div className="space-y-2 rounded-lg border border-red-400/30 bg-red-500/5 p-3">
-              <div className="flex items-center gap-1.5 text-[11px] font-semibold text-red-300">
-                <Youtube size={12} /> Detalhes do vídeo no YouTube
-              </div>
-              <div className="space-y-1.5">
-                <Label className="text-xs">Título do vídeo</Label>
-                <Input
-                  value={ytTitle}
-                  onChange={(e) => setYtTitle(e.target.value)}
-                  maxLength={100}
-                  placeholder="Se vazio, geramos a partir do conteúdo do post"
-                />
-                <p className="text-[10px] text-muted-foreground">
-                  {ytTitle.length}/100 · o nome do arquivo nunca é usado como título.
-                </p>
-              </div>
-              <div className="space-y-1.5">
-                <Label className="text-xs">Descrição do vídeo</Label>
-                <Textarea
-                  value={ytDescription}
-                  onChange={(e) => setYtDescription(e.target.value)}
-                  rows={3}
-                  placeholder="Se vazio, usamos a legenda + hashtags."
-                />
-              </div>
-              <div className="space-y-1.5">
-                <Label className="text-xs">Tags (opcional, separadas por vírgula)</Label>
-                <Input
-                  value={ytTags}
-                  onChange={(e) => setYtTags(e.target.value)}
-                  placeholder="skincare, rotina, dicas"
-                />
-              </div>
-            </div>
-          )}
-
-
+                </div>
               )}
               {nets.size === 0 && (
                 <span className="text-[11px] text-muted-foreground">Selecione ao menos uma rede acima.</span>
