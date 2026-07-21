@@ -106,7 +106,7 @@ function ScheduleEditor({
     const normalized = `${String(h).padStart(2, "0")}:${String(m).padStart(2, "0")}`;
     if (times.includes(normalized)) return toast.error("Horário já existe");
     setTimes([...times, normalized].sort());
-    setNewTime("");
+    setNewTime("09:00");
   };
 
   const remove = (t: string) => setTimes(times.filter((x) => x !== t));
