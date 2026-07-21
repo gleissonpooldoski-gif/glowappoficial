@@ -128,7 +128,7 @@ Deno.serve(async (req) => {
     if (!token || !igId) throw new Error(`Credenciais Meta ausentes para a conta '${post.account}'.`);
 
     if (post.status === "PUBLICADO" && post.publish_id) {
-      const published = await metaGet(`${IG_BASE}/${post.publish_id}?fields=id,permalink,timestamp&access_token=${encodeURIComponent(token)}`);
+      const published = await metaGet(`${baseForToken(token)}/${post.publish_id}?fields=id,permalink,timestamp&access_token=${encodeURIComponent(token)}`);
       await appendLog(post.id, { event: "published_status_response", response: published.data });
       return new Response(JSON.stringify({ success: true, status: "PUBLICADO", data: published.data }),
         { status: 200, headers: { ...corsHeaders, "Content-Type": "application/json" } });
@@ -145,7 +145,7 @@ Deno.serve(async (req) => {
       throw new Error("Publicação ainda não possui creation_id/container_id salvo.");
     }
 
-    const statusRes = await metaGet(`${IG_BASE}/${post.container_id}?fields=status_code,status&access_token=${encodeURIComponent(token)}`);
+    const statusRes = await metaGet(`${baseForToken(token)}/${post.container_id}?fields=status_code,status&access_token=${encodeURIComponent(token)}`);
     const statusCode = statusRes.data?.status_code ?? "UNKNOWN";
     await appendLog(post.id, { event: "manual_container_status_response", status_code: statusCode, response: statusRes.data });
 
@@ -157,7 +157,7 @@ Deno.serve(async (req) => {
         return new Response(JSON.stringify({ success: true, status: "PUBLICADO", publish_id: current.publish_id }),
           { status: 200, headers: { ...corsHeaders, "Content-Type": "application/json" } });
       }
-      const publishRes = await metaPost(`${IG_BASE}/${igId}/media_publish`, {
+      const publishRes = await metaPost(`${baseForToken(token)}/${igId}/media_publish`, {
         creation_id: post.container_id,
         access_token: token,
       });
