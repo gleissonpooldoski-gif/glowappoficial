@@ -118,6 +118,17 @@ function isInstagramIdInvalidError(data: any, message?: string): boolean {
   return code === 100 || code === 803 || msg.includes("ig_id_invalid") || msg.includes("unsupported post request") || msg.includes("object with id") || msg.includes("does not exist");
 }
 
+function isTransientMetaError(data: any, message?: string): boolean {
+  const err = data?.error;
+  const msg = `${err?.message ?? ""} ${message ?? ""}`.toLowerCase();
+  const code = Number(err?.code);
+  const sub = Number(err?.error_subcode);
+  if (code === 1 || code === 2 || code === 4 || code === 17 || code === 32 || code === 341) return true;
+  if (sub === 2207001 || sub === 2207020 || sub === 2207026) return true;
+  if (msg.includes("unknown error") || msg.includes("please reduce") || msg.includes("try again")) return true;
+  return false;
+}
+
 function userFacingMetaError(account: string | null | undefined, rawMessage: string, metaData?: any): string {
   const label = accountLabel(account);
   if (isSessionDaResenha(account) && isTokenExpiredError(metaData, rawMessage)) {
