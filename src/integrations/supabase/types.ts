@@ -354,6 +354,88 @@ export type Database = {
           },
         ]
       }
+      project_affiliate_configs: {
+        Row: {
+          affiliate_link: string
+          created_at: string
+          id: string
+          is_active: boolean
+          product_category: string | null
+          product_name: string
+          project_id: string
+          updated_at: string
+        }
+        Insert: {
+          affiliate_link: string
+          created_at?: string
+          id?: string
+          is_active?: boolean
+          product_category?: string | null
+          product_name: string
+          project_id: string
+          updated_at?: string
+        }
+        Update: {
+          affiliate_link?: string
+          created_at?: string
+          id?: string
+          is_active?: boolean
+          product_category?: string | null
+          product_name?: string
+          project_id?: string
+          updated_at?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "project_affiliate_configs_project_id_fkey"
+            columns: ["project_id"]
+            isOneToOne: true
+            referencedRelation: "projects"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
+      project_comment_templates: {
+        Row: {
+          created_at: string
+          id: string
+          is_active: boolean
+          last_used_at: string | null
+          position: number
+          project_id: string
+          template: string
+          updated_at: string
+        }
+        Insert: {
+          created_at?: string
+          id?: string
+          is_active?: boolean
+          last_used_at?: string | null
+          position?: number
+          project_id: string
+          template: string
+          updated_at?: string
+        }
+        Update: {
+          created_at?: string
+          id?: string
+          is_active?: boolean
+          last_used_at?: string | null
+          position?: number
+          project_id?: string
+          template?: string
+          updated_at?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "project_comment_templates_project_id_fkey"
+            columns: ["project_id"]
+            isOneToOne: false
+            referencedRelation: "projects"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
       projects: {
         Row: {
           category: Database["public"]["Enums"]["project_category"]
@@ -901,6 +983,11 @@ export type Database = {
         Row: {
           account: string
           category_id: string | null
+          comment_error: string | null
+          comment_id: string | null
+          comment_posted_at: string | null
+          comment_status: string | null
+          comment_text: string | null
           created_at: string
           description: string | null
           error_message: string | null
@@ -920,6 +1007,11 @@ export type Database = {
         Insert: {
           account?: string
           category_id?: string | null
+          comment_error?: string | null
+          comment_id?: string | null
+          comment_posted_at?: string | null
+          comment_status?: string | null
+          comment_text?: string | null
           created_at?: string
           description?: string | null
           error_message?: string | null
@@ -939,6 +1031,11 @@ export type Database = {
         Update: {
           account?: string
           category_id?: string | null
+          comment_error?: string | null
+          comment_id?: string | null
+          comment_posted_at?: string | null
+          comment_status?: string | null
+          comment_text?: string | null
           created_at?: string
           description?: string | null
           error_message?: string | null
