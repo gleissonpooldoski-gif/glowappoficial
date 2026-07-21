@@ -323,34 +323,31 @@ Deno.serve(async (req) => {
 
   const completePublication = async (postId: string, containerId: string, token: string, igId: string, account: Account) => {
     try {
-      const start = Date.now();
+      const startedAt = Date.now();
       let lastStatus: any = null;
-      while (Date.now() - start < MAX_POLL_MS) {
+      for (let attempt = 1; attempt <= MAX_CONTAINER_STATUS_ATTEMPTS; attempt++) {
         const statusUrl = `${FB_BASE}/${containerId}?fields=status_code,status&access_token=${encodeURIComponent(token)}`;
         const statusRes = await metaGet(statusUrl, token);
         lastStatus = statusRes.data;
 
         const statusCode = statusRes.data?.status_code ?? "UNKNOWN";
-        await appendLog(postId, { event: "container_status_response", elapsed_ms: Date.now() - start, status_code: statusCode, response: statusRes.data });
+        await appendLog(postId, { event: "container_status_response", attempt, max_attempts: MAX_CONTAINER_STATUS_ATTEMPTS, elapsed_ms: Date.now() - startedAt, status_code: statusCode, status: statusRes.data?.status ?? null, response: statusRes.data });
 
         if (statusCode === "FINISHED") break;
         if (statusCode === "ERROR" || statusCode === "EXPIRED") {
           const reason = statusRes.data?.status ?? statusRes.data?.error?.message ?? safeJson(statusRes.data);
-          throw new Error(`Container não finalizou (${statusCode}). Motivo Meta: ${reason}`);
+          const err: any = new Error(`Container não processado (${statusCode}). Motivo Meta: ${reason}`);
+          err.metaData = { error: { message: reason, type: "ContainerStatus", code: statusCode, fbtrace_id: statusRes.data?.fbtrace_id ?? null }, container_status: statusRes.data };
+          throw err;
         }
+        if (attempt === MAX_CONTAINER_STATUS_ATTEMPTS) break;
         await new Promise((resolve) => setTimeout(resolve, POLL_INTERVAL_MS));
       }
 
       if (lastStatus?.status_code !== "FINISHED") {
-        throw new Error(`Timeout de 5 minutos aguardando FINISHED. Último status Meta: ${safeJson(lastStatus)}`);
+        throw new Error(`Timeout de 60 segundos aguardando FINISHED. Último status Meta: ${safeJson(lastStatus)}`);
       }
       await appendLog(postId, { event: "container_finished", creation_id: containerId, response: lastStatus });
-
-      // Estabilização: aguarda o backend da Meta ficar pronto após FINISHED.
-      // Sem essa pausa, media_publish costuma retornar OAuthException code=1.
-      const STABILIZATION_MS = 8000;
-      await appendLog(postId, { event: "publish_stabilization_wait", wait_ms: STABILIZATION_MS });
-      await new Promise((r) => setTimeout(r, STABILIZATION_MS));
 
       const { data: current } = await supabase.from("instagram_posts").select("status, publish_id").eq("id", postId).maybeSingle();
       if (current?.status === "PUBLICADO" || current?.publish_id) {
@@ -359,13 +356,13 @@ Deno.serve(async (req) => {
       }
 
       const publishUrl = `${FB_BASE}/${igId}/media_publish`;
-      const MAX_PUBLISH_ATTEMPTS = 4;
+      const MAX_PUBLISH_ATTEMPTS = 3;
       let publishRes: any = null;
       let publishId: string | undefined;
       let lastPublishErr: any = null;
       for (let attempt = 1; attempt <= MAX_PUBLISH_ATTEMPTS; attempt++) {
         try {
-          await appendLog(postId, { event: "media_publish_attempt", attempt, creation_id: containerId });
+          await appendLog(postId, { event: "media_publish_attempt", attempt, max_attempts: MAX_PUBLISH_ATTEMPTS, ig_id: igId, creation_id: containerId });
           publishRes = await metaPost(publishUrl, {
             creation_id: containerId,
             access_token: token,
@@ -376,17 +373,18 @@ Deno.serve(async (req) => {
           throw new Error(`Meta não retornou publish_id. Resposta: ${safeJson(publishRes.data)}`);
         } catch (err: any) {
           lastPublishErr = err;
-          const transient = isTransientMetaError(err?.metaData, err?.message);
+          const retryable = isCodeOneMetaError(err?.metaData, err?.message);
+          const details = metaErrorDetails(err?.metaData, err?.message);
           await appendLog(postId, {
             event: "media_publish_error",
             attempt,
-            transient,
+            retryable_code_1: retryable,
             raw_message: err?.message ?? null,
-            meta: err?.metaData ?? null,
+            meta_error: details,
           });
-          if (!transient || attempt === MAX_PUBLISH_ATTEMPTS) throw err;
-          const backoffMs = 4000 * attempt;
-          await appendLog(postId, { event: "media_publish_retry_wait", attempt, backoff_ms: backoffMs });
+          if (!retryable || attempt === MAX_PUBLISH_ATTEMPTS) throw err;
+          const backoffMs = 5000 * attempt;
+          await appendLog(postId, { event: "media_publish_retry_wait", attempt, reason: "meta_code_1", backoff_ms: backoffMs });
           await new Promise((r) => setTimeout(r, backoffMs));
         }
       }
