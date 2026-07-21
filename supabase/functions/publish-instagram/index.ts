@@ -349,40 +349,16 @@ Deno.serve(async (req) => {
     const { token, igId } = await tokensFor(supabase, account as Account);
     if (!token || !igId) throw new Error(`Credenciais Meta ausentes para a conta '${account}'.`);
 
-    const accountCheckUrl = `https://graph.facebook.com/${GRAPH_VERSION}/${igId}?fields=id,username`;
+    const accountCheckUrl = `${IG_BASE}/${igId}?fields=id,username`;
     const accountCheck = await metaGet(accountCheckUrl, token);
     await appendLog(post.id, { event: "instagram_business_id_check", ig_id: igId, response: accountCheck.data });
 
-    try {
-      const permissionsUrl = `https://graph.facebook.com/${GRAPH_VERSION}/me/permissions`;
-      const permissionsCheck = await metaGet(permissionsUrl, token);
-      const permissions = Array.isArray(permissionsCheck.data?.data) ? permissionsCheck.data.data : [];
-      const granted = permissions.filter((p: any) => p?.status === "granted").map((p: any) => p.permission);
-      const hasInstagramPublishCapability = granted.includes("instagram_content_publish")
-        || granted.includes("instagram_basic")
-        || granted.some((p: string) => p.startsWith("instagram_business_"));
-      await appendLog(post.id, {
-        event: "access_token_permissions_check",
-        non_blocking: true,
-        has_instagram_publish_capability: hasInstagramPublishCapability,
-        granted,
-        response: permissionsCheck.data,
-      });
-      if (granted.length > 0 && !hasInstagramPublishCapability) {
-        throw new Error(`Access Token sem escopos Instagram reconhecidos. Escopos concedidos: ${granted.join(", ") || "nenhum"}.`);
-      }
-    } catch (permissionError: any) {
-      await appendLog(post.id, {
-        event: "access_token_permissions_check_skipped",
-        reason: "Token de Página/System User pode não expor /me/permissions; IG ID já foi validado diretamente.",
-        message: permissionError?.message ?? null,
-        meta: permissionError?.metaData ?? null,
-      });
-    }
+    // Não consultamos mais /me/permissions nem dados de Página do Facebook:
+    // o fluxo "Instagram API with Instagram Login" usa o IG User ID direto em graph.instagram.com.
 
     const fullCaption = buildCaption(caption, hashtags);
 
-    const containerUrl = `https://graph.facebook.com/${GRAPH_VERSION}/${igId}/media`;
+    const containerUrl = `${IG_BASE}/${igId}/media`;
     const containerRes = await metaPost(containerUrl, {
       media_type: "REELS",
       video_url: signed.signedUrl,
@@ -391,6 +367,7 @@ Deno.serve(async (req) => {
     const containerId = containerRes.data?.id;
     await appendLog(post.id, { event: "media_container_create_response", status: containerRes.status, response: containerRes.data });
     if (!containerId) throw new Error(`Meta não retornou creation_id. Resposta: ${safeJson(containerRes.data)}`);
+
 
     await supabase.from("instagram_posts").update({ container_id: containerId }).eq("id", post.id);
     await appendLog(post.id, { event: "creation_id_saved", creation_id: containerId });
