@@ -129,8 +129,30 @@ function isTransientMetaError(data: any, message?: string): boolean {
   return false;
 }
 
+function isPermissionError(data: any, message?: string): boolean {
+  const err = data?.error;
+  const msg = `${err?.message ?? ""} ${message ?? ""}`.toLowerCase();
+  const code = Number(err?.code);
+  const sub = Number(err?.error_subcode);
+  if (code === 10 || code === 200 || code === 294) return true;
+  if (sub === 2207051) return true;
+  if (msg.includes("permission") || msg.includes("scope") || msg.includes("not authorized")) return true;
+  return false;
+}
+
+function isInvalidVideoError(data: any, message?: string): boolean {
+  const err = data?.error;
+  const msg = `${err?.message ?? ""} ${message ?? ""}`.toLowerCase();
+  const sub = Number(err?.error_subcode);
+  if (sub === 2207003 || sub === 2207004 || sub === 2207005 || sub === 2207006 || sub === 2207008 || sub === 2207010 || sub === 2207052) return true;
+  if (msg.includes("media type") || msg.includes("video format") || msg.includes("aspect ratio") || msg.includes("duration") || msg.includes("codec") || msg.includes("invalid video")) return true;
+  return false;
+}
+
 function userFacingMetaError(account: string | null | undefined, rawMessage: string, metaData?: any): string {
   const label = accountLabel(account);
+  const code = metaData?.error?.code ?? "?";
+  const trace = metaData?.error?.fbtrace_id ? ` (trace ${metaData.error.fbtrace_id})` : "";
   if (isSessionDaResenha(account) && isTokenExpiredError(metaData, rawMessage)) {
     return `Token Meta expirado para ${label}. Recadastre o Access Token dessa conta em Configurações e tente publicar novamente.`;
   }
@@ -140,8 +162,14 @@ function userFacingMetaError(account: string | null | undefined, rawMessage: str
   if (isTokenExpiredError(metaData, rawMessage)) {
     return `Token Meta expirado para ${label}. Recadastre o Access Token em Configurações e tente novamente.`;
   }
+  if (isPermissionError(metaData, rawMessage)) {
+    return `Permissão insuficiente para publicar em ${label}. O token precisa dos escopos instagram_basic + instagram_content_publish. Reconecte a conta em Configurações.`;
+  }
+  if (isInvalidVideoError(metaData, rawMessage)) {
+    return `Vídeo rejeitado pelo Instagram em ${label}. Verifique formato (MP4/H.264 + AAC), duração (3s a 15min) e proporção 9:16. Detalhe Meta: ${rawMessage}`;
+  }
   if (isTransientMetaError(metaData, rawMessage)) {
-    return `A Meta retornou um erro temporário (${metaData?.error?.code ?? "?"}) ao publicar em ${label}. O token continua válido — tente publicar novamente em alguns minutos.`;
+    return `A Meta retornou um erro temporário (code=${code}) ao publicar em ${label}${trace}. O token continua válido — tentaremos novamente automaticamente; se persistir, tente publicar novamente em alguns minutos.`;
   }
   if (isInstagramIdInvalidError(metaData, rawMessage)) {
     return `Instagram Business Account ID inválido para ${label}. Confirme que o ID cadastrado é o instagram_business_account_id exato da conta selecionada.`;
@@ -489,15 +517,41 @@ Deno.serve(async (req) => {
     const fullCaption = buildCaption(caption, hashtags);
 
     const containerUrl = `${FB_BASE}/${igId}/media`;
-    const containerRes = await metaPost(containerUrl, {
-      media_type: "REELS",
-      video_url: signed.signedUrl,
-      caption: fullCaption,
-      access_token: token,
-    }, token);
-    const containerId = containerRes.data?.id;
-    await appendLog(post.id, { event: "media_container_create_response", status: containerRes.status, endpoint: containerUrl, response: containerRes.data });
-    if (!containerId) throw new Error(`Meta não retornou creation_id. Resposta: ${safeJson(containerRes.data)}`);
+    const MAX_CONTAINER_ATTEMPTS = 3;
+    let containerRes: any = null;
+    let containerId: string | undefined;
+    let lastContainerErr: any = null;
+    for (let attempt = 1; attempt <= MAX_CONTAINER_ATTEMPTS; attempt++) {
+      try {
+        await appendLog(post.id, { event: "media_container_create_attempt", attempt, endpoint: containerUrl, ig_id: igId });
+        containerRes = await metaPost(containerUrl, {
+          media_type: "REELS",
+          video_url: signed.signedUrl,
+          caption: fullCaption,
+          access_token: token,
+        }, token);
+        await appendLog(post.id, { event: "media_container_create_response", attempt, status: containerRes.status, endpoint: containerUrl, response: containerRes.data });
+        containerId = containerRes.data?.id;
+        if (containerId) { lastContainerErr = null; break; }
+        throw new Error(`Meta não retornou creation_id. Resposta: ${safeJson(containerRes.data)}`);
+      } catch (err: any) {
+        lastContainerErr = err;
+        const transient = isTransientMetaError(err?.metaData, err?.message);
+        await appendLog(post.id, {
+          event: "media_container_create_error",
+          attempt,
+          transient,
+          raw_message: err?.message ?? null,
+          meta: err?.metaData ?? null,
+        });
+        if (!transient || attempt === MAX_CONTAINER_ATTEMPTS) throw err;
+        const backoffMs = 4000 * attempt;
+        await appendLog(post.id, { event: "media_container_retry_wait", attempt, backoff_ms: backoffMs });
+        await new Promise((r) => setTimeout(r, backoffMs));
+      }
+    }
+    if (!containerId) throw lastContainerErr ?? new Error("Falha ao criar container de mídia no Instagram.");
+
 
 
     await supabase.from("instagram_posts").update({ container_id: containerId }).eq("id", post.id);
