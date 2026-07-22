@@ -65,6 +65,10 @@ export default function EditPostNetworksDialog({ post, open, onOpenChange, onSav
         setWantIG(true);
         setWantYT(yt.length > 0);
         setYtChannels(yt.map((l) => l.account).filter((a): a is string => !!a));
+        const existingTags = yt.flatMap((l) => Array.isArray(l.tags) ? l.tags : []);
+        const dedup = Array.from(new Set(existingTags.map((t) => String(t).trim()).filter(Boolean)));
+        setYtTags(dedup);
+        setTagsInitialized(dedup.length > 0);
         setHasVideoFile(Boolean((videoRow as any)?.data?.original_path || (videoRow as any)?.data?.processed_path));
       } finally {
         if (!cancelled) setLoading(false);
