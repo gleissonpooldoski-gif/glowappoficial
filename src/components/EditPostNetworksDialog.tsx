@@ -11,7 +11,9 @@ import { toast } from "sonner";
 import { format } from "date-fns";
 import { ptBR } from "date-fns/locale";
 import { supabase } from "@/integrations/supabase/client";
+import { buildYoutubeMetaFromCaption } from "@/lib/youtube-meta";
 import YoutubeChannelPicker from "./YoutubeChannelPicker";
+import YoutubeTagsEditor from "./YoutubeTagsEditor";
 import type { InstagramPost } from "@/lib/instagram";
 
 type Props = {
@@ -21,14 +23,14 @@ type Props = {
   onSaved?: () => void;
 };
 
-type LinkedYT = { id: string; status: string; account: string | null; scheduled_at: string | null };
+type LinkedYT = { id: string; status: string; account: string | null; scheduled_at: string | null; tags: string[] | null };
 
 /** Encontra YouTube posts vinculados (mesmo video_id e horário agendado). */
 async function findLinkedYoutube(post: InstagramPost): Promise<LinkedYT[]> {
   if (!post.video_id || !post.scheduled_at) return [];
   const { data } = await supabase
     .from("youtube_posts" as any)
-    .select("id, status, account, scheduled_at")
+    .select("id, status, account, scheduled_at, tags")
     .eq("video_id", post.video_id)
     .eq("scheduled_at", post.scheduled_at);
   return ((data ?? []) as any[]) as LinkedYT[];
@@ -41,6 +43,8 @@ export default function EditPostNetworksDialog({ post, open, onOpenChange, onSav
   const [wantIG, setWantIG] = useState(true);
   const [wantYT, setWantYT] = useState(false);
   const [ytChannels, setYtChannels] = useState<string[]>([]);
+  const [ytTags, setYtTags] = useState<string[]>([]);
+  const [tagsInitialized, setTagsInitialized] = useState(false);
   const [hasVideoFile, setHasVideoFile] = useState<boolean>(false);
 
   useEffect(() => {
@@ -60,6 +64,10 @@ export default function EditPostNetworksDialog({ post, open, onOpenChange, onSav
         setWantIG(true);
         setWantYT(yt.length > 0);
         setYtChannels(yt.map((l) => l.account).filter((a): a is string => !!a));
+        const existingTags = yt.flatMap((l) => Array.isArray(l.tags) ? l.tags : []);
+        const dedup = Array.from(new Set(existingTags.map((t) => String(t).trim()).filter(Boolean)));
+        setYtTags(dedup);
+        setTagsInitialized(dedup.length > 0);
         setHasVideoFile(Boolean((videoRow as any)?.data?.original_path || (videoRow as any)?.data?.processed_path));
       } finally {
         if (!cancelled) setLoading(false);
@@ -67,6 +75,24 @@ export default function EditPostNetworksDialog({ post, open, onOpenChange, onSav
     })();
     return () => { cancelled = true; };
   }, [open, post]);
+
+  // Ao ativar YouTube pela 1ª vez sem tags, gera automaticamente via IA.
+  useEffect(() => {
+    if (!open || !post) return;
+    if (!wantYT || tagsInitialized || ytTags.length > 0) return;
+    let cancelled = false;
+    (async () => {
+      try {
+        const meta = await buildYoutubeMetaFromCaption(
+          post.caption ?? "", post.hashtags ?? "", { videoId: post.video_id ?? null },
+        );
+        if (cancelled) return;
+        if (meta.tags.length) setYtTags(meta.tags);
+      } catch { /* silencioso — usuário pode gerar manualmente */ }
+      finally { if (!cancelled) setTagsInitialized(true); }
+    })();
+    return () => { cancelled = true; };
+  }, [open, post, wantYT, tagsInitialized, ytTags.length]);
 
   const save = async () => {
     if (!post) return;
@@ -92,18 +118,30 @@ export default function EditPostNetworksDialog({ post, open, onOpenChange, onSav
       const linkedByAcc = new Map(linkedYT.map((l) => [l.account ?? "default", l]));
       const selectedSet = new Set(wantYT ? ytChannels : []);
 
-      // 1) YouTube: adicionar canais recém-selecionados.
       if (wantYT) {
-        const { buildYoutubeMetaFromCaption } = await import("@/lib/youtube-meta");
-        const meta = await buildYoutubeMetaFromCaption(post.caption ?? "", post.hashtags ?? "");
+        const meta = await buildYoutubeMetaFromCaption(
+          post.caption ?? "", post.hashtags ?? "", { videoId: post.video_id ?? null },
+        );
+        const finalTags = ytTags.length ? ytTags : meta.tags;
         for (const acc of ytChannels) {
-          if (linkedByAcc.has(acc)) continue;
+          const existing = linkedByAcc.get(acc);
+          if (existing) {
+            // Atualiza tags do vínculo existente (se ainda AGENDADO).
+            if (existing.status === "AGENDADO") {
+              const { error } = await supabase
+                .from("youtube_posts" as any)
+                .update({ tags: finalTags })
+                .eq("id", existing.id);
+              if (error) throw error;
+            }
+            continue;
+          }
           const { error } = await supabase.from("youtube_posts" as any).insert({
             video_id: post.video_id,
             account: acc,
             title: meta.title,
             description: meta.description,
-            tags: meta.tags,
+            tags: finalTags,
             category_id: "22",
             privacy_status: "public",
             status: "AGENDADO",
@@ -205,9 +243,19 @@ export default function EditPostNetworksDialog({ post, open, onOpenChange, onSav
                   )}
                 </label>
                 {wantYT && (
-                  <div className="rounded-md border border-border/40 bg-background/20 px-3 py-2">
-                    <Label className="text-[11px] text-muted-foreground mb-1.5 block">Canais</Label>
-                    <YoutubeChannelPicker value={ytChannels} onChange={setYtChannels} disabled={busy} compact />
+                  <div className="space-y-2 rounded-md border border-border/40 bg-background/20 px-3 py-2">
+                    <div>
+                      <Label className="text-[11px] text-muted-foreground mb-1.5 block">Canais</Label>
+                      <YoutubeChannelPicker value={ytChannels} onChange={setYtChannels} disabled={busy} compact />
+                    </div>
+                    <YoutubeTagsEditor
+                      value={ytTags}
+                      onChange={setYtTags}
+                      caption={post?.caption ?? ""}
+                      hashtags={post?.hashtags ?? ""}
+                      videoId={post?.video_id ?? null}
+                      disabled={busy}
+                    />
                   </div>
                 )}
               </div>
