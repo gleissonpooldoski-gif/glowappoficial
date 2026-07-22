@@ -68,10 +68,20 @@ async function tokensFor(supabase: any, account: string) {
   return { token, igId };
 }
 
-async function adaptWithAI(base: string, ctx: { title?: string; description?: string; product: string }) {
+function isSegredoProject(name?: string | null, cat?: string | null): boolean {
+  const s = `${name ?? ""} ${cat ?? ""}`.toLowerCase();
+  return s.includes("segredo") || s.includes("promo") || s.includes("achad");
+}
+
+async function adaptWithAI(base: string, ctx: { title?: string; description?: string; product: string; isSegredo?: boolean }) {
   const key = Deno.env.get("LOVABLE_API_KEY");
   if (!key) return base;
   try {
+    const segredoRules = ctx.isSegredo
+      ? `\n- MODO SEGREDO DAS PROMOÇÕES (CONVERSÃO): o comentário DEVE despertar curiosidade e direcionar o usuário à BIO ou pedir o link nos comentários.\n` +
+        `- Alterne CTAs naturalmente entre: "produto disponível na bio 👀", "link na bio 🔥", "peça o link nos comentários 💬", "confira na bio 📦", "veja onde comprar na bio 🚀", "responda LINK nos comentários", "detalhes na bio", "veja o preço na bio". Nunca repita o mesmo CTA.\n` +
+        `- Misture curiosidade + benefício + chamada para ação. Nada de descrição fria do produto.`
+      : "";
     const res = await fetch("https://ai.gateway.lovable.dev/v1/chat/completions", {
       method: "POST",
       headers: { "Content-Type": "application/json", "Lovable-API-Key": key },
@@ -87,13 +97,13 @@ async function adaptWithAI(base: string, ctx: { title?: string; description?: st
             `- Ajuste levemente a primeira frase para conversar com o tema do vídeo.\n` +
             `- Máximo 280 caracteres.\n` +
             `- Nada de frases genéricas tipo "novo post", "confira", "segue a gente".\n` +
-            `- Retorne APENAS o texto final do comentário.` },
+            `- Retorne APENAS o texto final do comentário.` + segredoRules },
           { role: "user", content:
             `Título do vídeo: ${ctx.title ?? "(sem título)"}\n` +
             `Descrição (trecho): ${(ctx.description ?? "").slice(0, 400)}\n\n` +
             `Modelo base:\n${base}` },
         ],
-        temperature: 0.7,
+        temperature: 0.8,
       }),
     });
     if (!res.ok) return base;
@@ -133,6 +143,11 @@ Deno.serve(async (req) => {
     if (!cfg) return new Response(JSON.stringify({ skipped: "sem configuração ativa para este projeto" }),
       { status: 200, headers: { ...corsHeaders, "Content-Type": "application/json" } });
 
+    // Nome/categoria do projeto (para detectar SEGREDO DAS PROMOÇÕES)
+    const { data: project } = await supabase.from("projects")
+      .select("name, category").eq("id", video.project_id).maybeSingle();
+    const isSegredo = isSegredoProject(project?.name, (project as any)?.category);
+
     // Modelos ativos, rotação por last_used_at
     const { data: templates } = await supabase.from("project_comment_templates")
       .select("*").eq("project_id", video.project_id).eq("is_active", true)
@@ -145,6 +160,7 @@ Deno.serve(async (req) => {
       title: post.caption ?? undefined,
       description: video.prompt ?? post.description ?? undefined,
       product: cfg.product_name,
+      isSegredo,
     });
     const finalText = (stripLinks(adapted) || stripLinks(tpl.template)).slice(0, 280);
     if (!finalText) return new Response(JSON.stringify({ skipped: "texto vazio após sanitização" }),

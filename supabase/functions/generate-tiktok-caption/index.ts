@@ -25,6 +25,11 @@ Deno.serve(async (req) => {
     const apiKey = Deno.env.get("LOVABLE_API_KEY");
     if (!apiKey) throw new Error("LOVABLE_API_KEY ausente.");
 
+    const isSegredo = (() => {
+      const s = `${projectName ?? ""} ${projectCategory ?? ""}`.toLowerCase();
+      return s.includes("segredo") || s.includes("promo") || s.includes("achad");
+    })();
+
     const system =
       "Você é especialista no algoritmo do TikTok (PT-BR). " +
       "Adapte o conteúdo para MAXIMIZAR descoberta, visualizações e comentários no TikTok. " +
@@ -39,7 +44,15 @@ Deno.serve(async (req) => {
       "Regras das hashtags:\n" +
       "- 5 a 8 hashtags, sem #, minúsculas, sem acentos.\n" +
       "- Combine: nicho, tema do vídeo, tendências relacionadas ao assunto, termos de descoberta (fyp, foryou quando fizer sentido).\n" +
-      "- Preserve hashtags originais quando relevantes.";
+      "- Preserve hashtags originais quando relevantes." +
+      (isSegredo
+        ? "\n\nMODO ESPECIAL — SEGREDO DAS PROMOÇÕES (CONVERSÃO):\n" +
+          "- Nunca faça texto meramente descritivo do produto — desperte CURIOSIDADE.\n" +
+          "- PROIBIDO incluir links, URLs, domínios ou @menções.\n" +
+          "- A caption DEVE terminar com CTA direcionando para a BIO ou pedindo o link nos comentários. Alterne naturalmente entre: 'link na bio', 'produto na bio', 'peça o link nos comentários', 'confira na bio', 'responda LINK', 'detalhes na bio', 'veja o preço na bio'.\n" +
+          "- Nunca repita o mesmo CTA duas vezes seguidas.\n" +
+          "- Ganchos como: 'o produto que todo mundo está procurando', 'esse achado está viralizando', 'você não vai acreditar no que ele faz'."
+        : "");
 
     const user =
       `Conteúdo base:\n"""${cleanCaption || "(sem descrição)"}"""` +

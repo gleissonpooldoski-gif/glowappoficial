@@ -91,6 +91,11 @@ Deno.serve(async (req) => {
 
     const tagGuidance = categoryTagGuidance(projectName, projectCategory);
 
+    const isSegredo = (() => {
+      const s = `${projectName ?? ""} ${projectCategory ?? ""}`.toLowerCase();
+      return s.includes("segredo") || s.includes("promo") || s.includes("achad");
+    })();
+
     const system =
       "Você é especialista em SEO e algoritmo do YouTube (PT-BR). " +
       "Gere metadados otimizados para um vídeo curto (Shorts/Reels). " +
@@ -110,7 +115,20 @@ Deno.serve(async (req) => {
       "categoria do vídeo. Cada tag entre 2 e 60 caracteres. NUNCA repetir palavras. " +
       "NUNCA usar tags genéricas sem relação (ex: 'viral', 'foryou' sozinhos). " +
       "NUNCA usar tags enganosas. Priorize RELEVÂNCIA sobre quantidade.\n" +
-      `- ${tagGuidance}`;
+      `- ${tagGuidance}` +
+      (isSegredo
+        ? "\n\nMODO ESPECIAL — PROJETO SEGREDO DAS PROMOÇÕES (estratégia de CONVERSÃO):\n" +
+          "- O TÍTULO deve despertar CURIOSIDADE, nunca ser meramente descritivo. Evite genéricos. Use formatos como: " +
+          "'O produto que todo mundo está procurando', 'Você não vai acreditar no que esse produto faz', " +
+          "'Descobri um achado que vale muito a pena', 'Esse produto está viralizando', " +
+          "'Um dos produtos mais comentados do momento', 'Um achado que pode facilitar seu dia'. " +
+          "Crie VARIAÇÕES novas — não repita sempre os mesmos modelos.\n" +
+          "- A DESCRIÇÃO deve terminar OBRIGATORIAMENTE incentivando o usuário a acessar a BIO, conferir o produto ou comentar pedindo o LINK. " +
+          "Alterne CTAs como: 'produto disponível na bio', 'link na bio', 'peça o link nos comentários', " +
+          "'confira na bio', 'veja onde comprar na bio', 'responda LINK nos comentários', 'detalhes na bio', 'veja o preço na bio'.\n" +
+          "- PROIBIDO inserir links, URLs, domínios ou @menções na descrição.\n" +
+          "- Misture curiosidade + benefício + chamada para ação. Nunca repita exatamente o mesmo CTA."
+        : "");
 
     const user =
       `Legenda original:\n"""${cleanCaption || "(sem legenda)"}"""` +
