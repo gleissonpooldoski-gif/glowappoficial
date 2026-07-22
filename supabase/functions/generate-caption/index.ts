@@ -162,8 +162,10 @@ Seja rigoroso: se houver QUALQUER informação inventada ou desconectada, ok=fal
 
 async function generateOnce(apiKey: string, body: Body) {
   const parts = buildFrameContent(body);
+  const system = GENERATION_SYSTEM +
+    (isSegredoProject(body.projectName, body.projectCategory) ? SEGREDO_STRATEGY : "");
   const result = await callModel(apiKey, [
-    { role: "system", content: GENERATION_SYSTEM },
+    { role: "system", content: system },
     { role: "user", content: parts },
   ]);
   const caption = String(result?.caption ?? "").trim();
