@@ -244,9 +244,19 @@ export default function EditPostNetworksDialog({ post, open, onOpenChange, onSav
                   )}
                 </label>
                 {wantYT && (
-                  <div className="rounded-md border border-border/40 bg-background/20 px-3 py-2">
-                    <Label className="text-[11px] text-muted-foreground mb-1.5 block">Canais</Label>
-                    <YoutubeChannelPicker value={ytChannels} onChange={setYtChannels} disabled={busy} compact />
+                  <div className="space-y-2 rounded-md border border-border/40 bg-background/20 px-3 py-2">
+                    <div>
+                      <Label className="text-[11px] text-muted-foreground mb-1.5 block">Canais</Label>
+                      <YoutubeChannelPicker value={ytChannels} onChange={setYtChannels} disabled={busy} compact />
+                    </div>
+                    <YoutubeTagsEditor
+                      value={ytTags}
+                      onChange={setYtTags}
+                      caption={post?.caption ?? ""}
+                      hashtags={post?.hashtags ?? ""}
+                      videoId={post?.video_id ?? null}
+                      disabled={busy}
+                    />
                   </div>
                 )}
               </div>
