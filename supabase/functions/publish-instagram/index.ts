@@ -180,6 +180,21 @@ function isCodeOneMetaError(data: any, message?: string): boolean {
   return code === 1 || msg.includes("oauthexception") && msg.includes("code=1");
 }
 
+// Erro transitório da Meta (OAuthException code=2 is_transient=true).
+// Devem ser retentados automaticamente com backoff (30s, 120s).
+function isTransientCodeTwoError(data: any, message?: string): boolean {
+  const err = data?.error;
+  const msg = `${err?.message ?? ""} ${message ?? ""}`.toLowerCase();
+  const code = Number(err?.code);
+  if (code === 2) return true;
+  if (err?.is_transient === true && msg.includes("oauthexception")) return true;
+  if (msg.includes("code=2") && msg.includes("oauthexception")) return true;
+  return false;
+}
+
+// Delays entre tentativas para erros transitórios da Meta (code=2).
+const TRANSIENT_RETRY_DELAYS_MS = [30_000, 120_000];
+
 function isReduceDataError(data: any, message?: string): boolean {
   const msg = `${data?.error?.message ?? ""} ${message ?? ""}`.toLowerCase();
   return msg.includes("please reduce") || msg.includes("reduce the amount of data");
