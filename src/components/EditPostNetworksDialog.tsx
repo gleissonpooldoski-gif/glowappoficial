@@ -119,25 +119,6 @@ export default function EditPostNetworksDialog({ post, open, onOpenChange, onSav
       const linkedByAcc = new Map(linkedYT.map((l) => [l.account ?? "default", l]));
       const selectedSet = new Set(wantYT ? ytChannels : []);
 
-      // 1) YouTube: adicionar canais recém-selecionados.
-      if (wantYT) {
-        const { buildYoutubeMetaFromCaption } = await import("@/lib/youtube-meta");
-        const meta = await buildYoutubeMetaFromCaption(post.caption ?? "", post.hashtags ?? "");
-        for (const acc of ytChannels) {
-          if (linkedByAcc.has(acc)) continue;
-          const { error } = await supabase.from("youtube_posts" as any).insert({
-            video_id: post.video_id,
-            account: acc,
-            title: meta.title,
-            description: meta.description,
-            tags: meta.tags,
-            category_id: "22",
-            privacy_status: "public",
-            status: "AGENDADO",
-            scheduled_at: post.scheduled_at,
-          });
-          if (error) throw error;
-      // 1) YouTube: adicionar canais recém-selecionados + atualizar tags dos já vinculados.
       if (wantYT) {
         const meta = await buildYoutubeMetaFromCaption(
           post.caption ?? "", post.hashtags ?? "", { videoId: post.video_id ?? null },
