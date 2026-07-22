@@ -44,6 +44,8 @@ export default function EditPostNetworksDialog({ post, open, onOpenChange, onSav
   const [wantIG, setWantIG] = useState(true);
   const [wantYT, setWantYT] = useState(false);
   const [ytChannels, setYtChannels] = useState<string[]>([]);
+  const [ytTags, setYtTags] = useState<string[]>([]);
+  const [tagsInitialized, setTagsInitialized] = useState(false);
   const [hasVideoFile, setHasVideoFile] = useState<boolean>(false);
 
   useEffect(() => {
