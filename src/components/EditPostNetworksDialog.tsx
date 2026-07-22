@@ -77,6 +77,24 @@ export default function EditPostNetworksDialog({ post, open, onOpenChange, onSav
     return () => { cancelled = true; };
   }, [open, post]);
 
+  // Ao ativar YouTube pela 1ª vez sem tags, gera automaticamente via IA.
+  useEffect(() => {
+    if (!open || !post) return;
+    if (!wantYT || tagsInitialized || ytTags.length > 0) return;
+    let cancelled = false;
+    (async () => {
+      try {
+        const meta = await buildYoutubeMetaFromCaption(
+          post.caption ?? "", post.hashtags ?? "", { videoId: post.video_id ?? null },
+        );
+        if (cancelled) return;
+        if (meta.tags.length) setYtTags(meta.tags);
+      } catch { /* silencioso — usuário pode gerar manualmente */ }
+      finally { if (!cancelled) setTagsInitialized(true); }
+    })();
+    return () => { cancelled = true; };
+  }, [open, post, wantYT, tagsInitialized, ytTags.length]);
+
   const save = async () => {
     if (!post) return;
     if (!wantIG && !wantYT) {
