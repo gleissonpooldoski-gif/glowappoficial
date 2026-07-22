@@ -143,6 +143,11 @@ Deno.serve(async (req) => {
     if (!cfg) return new Response(JSON.stringify({ skipped: "sem configuração ativa para este projeto" }),
       { status: 200, headers: { ...corsHeaders, "Content-Type": "application/json" } });
 
+    // Nome/categoria do projeto (para detectar SEGREDO DAS PROMOÇÕES)
+    const { data: project } = await supabase.from("projects")
+      .select("name, category").eq("id", video.project_id).maybeSingle();
+    const isSegredo = isSegredoProject(project?.name, (project as any)?.category);
+
     // Modelos ativos, rotação por last_used_at
     const { data: templates } = await supabase.from("project_comment_templates")
       .select("*").eq("project_id", video.project_id).eq("is_active", true)
@@ -155,6 +160,7 @@ Deno.serve(async (req) => {
       title: post.caption ?? undefined,
       description: video.prompt ?? post.description ?? undefined,
       product: cfg.product_name,
+      isSegredo,
     });
     const finalText = (stripLinks(adapted) || stripLinks(tpl.template)).slice(0, 280);
     if (!finalText) return new Response(JSON.stringify({ skipped: "texto vazio após sanitização" }),
