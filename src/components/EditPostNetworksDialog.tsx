@@ -1,5 +1,5 @@
 import { useEffect, useState } from "react";
-import { Instagram, Youtube, Loader2, Share2, Lock } from "lucide-react";
+import { Instagram, Youtube, Loader2, Share2, Lock, Sparkles, X } from "lucide-react";
 import {
   Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter, DialogDescription,
 } from "@/components/ui/dialog";
@@ -7,11 +7,14 @@ import { Button } from "@/components/ui/button";
 import { Label } from "@/components/ui/label";
 import { Checkbox } from "@/components/ui/checkbox";
 import { Badge } from "@/components/ui/badge";
+import { Input } from "@/components/ui/input";
 import { toast } from "sonner";
 import { format } from "date-fns";
 import { ptBR } from "date-fns/locale";
 import { supabase } from "@/integrations/supabase/client";
+import { buildYoutubeMetaFromCaption } from "@/lib/youtube-meta";
 import YoutubeChannelPicker from "./YoutubeChannelPicker";
+import YoutubeTagsEditor from "./YoutubeTagsEditor";
 import type { InstagramPost } from "@/lib/instagram";
 
 type Props = {
