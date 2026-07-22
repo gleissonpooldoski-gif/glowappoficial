@@ -137,6 +137,37 @@ export default function EditPostNetworksDialog({ post, open, onOpenChange, onSav
             scheduled_at: post.scheduled_at,
           });
           if (error) throw error;
+      // 1) YouTube: adicionar canais recém-selecionados + atualizar tags dos já vinculados.
+      if (wantYT) {
+        const meta = await buildYoutubeMetaFromCaption(
+          post.caption ?? "", post.hashtags ?? "", { videoId: post.video_id ?? null },
+        );
+        const finalTags = ytTags.length ? ytTags : meta.tags;
+        for (const acc of ytChannels) {
+          const existing = linkedByAcc.get(acc);
+          if (existing) {
+            // Atualiza tags do vínculo existente (se ainda AGENDADO).
+            if (existing.status === "AGENDADO") {
+              const { error } = await supabase
+                .from("youtube_posts" as any)
+                .update({ tags: finalTags })
+                .eq("id", existing.id);
+              if (error) throw error;
+            }
+            continue;
+          }
+          const { error } = await supabase.from("youtube_posts" as any).insert({
+            video_id: post.video_id,
+            account: acc,
+            title: meta.title,
+            description: meta.description,
+            tags: finalTags,
+            category_id: "22",
+            privacy_status: "public",
+            status: "AGENDADO",
+            scheduled_at: post.scheduled_at,
+          });
+          if (error) throw error;
           actions.push(`YouTube (${acc.slice(0, 8)}…) adicionado`);
         }
       }
