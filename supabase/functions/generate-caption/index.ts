@@ -137,11 +137,25 @@ const SEGREDO_STRATEGY = `
 MODO ESPECIAL — PROJETO SEGREDO DAS PROMOÇÕES (estratégia de CONVERSÃO por curiosidade):
 - Nunca faça texto meramente descritivo do produto. O objetivo é DESPERTAR CURIOSIDADE e levar o usuário à BIO.
 - PROIBIDO incluir links, URLs, domínios, códigos de afiliado ou @menções na legenda.
-- A legenda deve terminar OBRIGATORIAMENTE com uma CTA direcionando para a BIO ou pedindo o link nos comentários. Varie naturalmente entre modelos como:
-  "produto disponível na bio", "link na bio", "peça o link nos comentários", "confira na bio",
-  "veja onde comprar na bio", "responda LINK nos comentários", "detalhes na bio", "veja o preço na bio", "acesso pela bio".
-- Nunca repita exatamente a mesma CTA. Misture curiosidade + benefício + chamada para ação.
-- Tom: gancho forte de curiosidade, sem exagero de clickbait. Exemplos de ganchos: "o produto que todo mundo está procurando", "você não vai acreditar no que esse produto faz", "descobri um achado que vale muito a pena", "esse produto está viralizando".`;
+- A legenda deve terminar OBRIGATORIAMENTE com uma CTA direcionando para a BIO ou pedindo o link nos comentários. Selecione ALEATORIAMENTE um dos modelos abaixo (ou crie variações naturais no mesmo estilo, sem repetir sempre o mesmo):
+  "👀 Tem muita gente perguntando onde encontrar esse produto. Confira a bio."
+  "🔥 Esse produto está chamando muita atenção. Os detalhes estão na bio."
+  "✨ Achei esse produto e precisei compartilhar. Veja na bio."
+  "💡 Esse pode ser um daqueles produtos que facilitam bastante o dia a dia. Confira na bio."
+  "🤔 Muita gente ainda não conhece esse achado. Dá uma olhada na bio."
+  "💬 Se quiser saber qual é esse produto, comenta que eu respondo."
+  "😅 Depois que descobri esse produto fiquei pensando como não conhecia antes. Mais informações na bio."
+  "🚀 Esse produto está aparecendo para muita gente ultimamente. Veja onde encontrar na bio."
+  "👀 Você teria esse produto? Os detalhes estão na bio."
+  "😳 Confesso que não esperava que isso existisse. Confira na bio."
+  "📦 Mais um achadinho interessante. Veja na bio."
+  "✨ Esse é um daqueles produtos que quase ninguém conhece. Confira na bio."
+  "👀 Vale a pena conhecer esse produto. Mais informações na bio."
+  "😅 Muita gente já perguntou onde encontrar. Está tudo na bio."
+  "📍 Se quiser conhecer melhor esse produto, passa na bio."
+  "💬 Quem já conhece esse produto sabe do que estou falando. Os detalhes estão na bio."
+- Nunca repita exatamente a mesma CTA em vídeos consecutivos. Mantenha linguagem natural, evite soar robótico.
+- Tom: gancho forte de curiosidade, sem exagero de clickbait. O objetivo é despertar curiosidade, incentivar o acesso à bio ou estimular o usuário a comentar pedindo mais informações.`;
 
 const GENERATION_SYSTEM = GENERATION_SYSTEM_BASE;
 
