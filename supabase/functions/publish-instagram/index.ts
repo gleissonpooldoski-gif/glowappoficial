@@ -959,17 +959,30 @@ Deno.serve(async (req) => {
           });
           throw err;
         }
-        const retryable = isCodeOneMetaError(err?.metaData, err?.message);
+        const transientCode2 = isTransientCodeTwoError(err?.metaData, err?.message);
+        const retryable = isCodeOneMetaError(err?.metaData, err?.message) || transientCode2;
         await appendLog(post.id, {
           event: "media_container_create_error",
           attempt,
-          retryable_code_1: retryable,
+          attempt_at: new Date().toISOString(),
+          retryable_code_1: isCodeOneMetaError(err?.metaData, err?.message),
+          retryable_transient_code_2: transientCode2,
           raw_message: err?.message ?? null,
           meta_error: metaErrorDetails(err?.metaData, err?.message),
+          meta_response_raw: err?.metaData ?? null,
         });
         if (!retryable || attempt === MAX_CONTAINER_ATTEMPTS) throw err;
-        const backoffMs = 5000 * attempt;
-        await appendLog(post.id, { event: "media_container_retry_wait", attempt, reason: "meta_code_1", backoff_ms: backoffMs });
+        const backoffMs = transientCode2
+          ? (TRANSIENT_RETRY_DELAYS_MS[attempt - 1] ?? TRANSIENT_RETRY_DELAYS_MS[TRANSIENT_RETRY_DELAYS_MS.length - 1])
+          : 5000 * attempt;
+        await appendLog(post.id, {
+          event: "media_container_retry_wait",
+          attempt,
+          next_attempt: attempt + 1,
+          reason: transientCode2 ? "meta_code_2_transient" : "meta_code_1",
+          backoff_ms: backoffMs,
+          retry_scheduled_for: new Date(Date.now() + backoffMs).toISOString(),
+        });
         await new Promise((r) => setTimeout(r, backoffMs));
       }
     }
