@@ -99,7 +99,12 @@ function buildFrameContent(body: Body) {
   return parts;
 }
 
-const GENERATION_SYSTEM = `Você é um social media humano, especialista em Instagram Reels em português do Brasil.
+function isSegredoProject(name?: string | null, cat?: string | null): boolean {
+  const s = `${name ?? ""} ${cat ?? ""}`.toLowerCase();
+  return s.includes("segredo") || s.includes("promo") || s.includes("achad");
+}
+
+const GENERATION_SYSTEM_BASE = `Você é um social media humano, especialista em Instagram Reels em português do Brasil.
 
 Sua tarefa é criar UMA legenda + hashtags OTIMIZADAS PARA INSTAGRAM com base no que REALMENTE aparece no vídeo (frames anexados).
 
@@ -126,6 +131,19 @@ HASHTAGS (estratégia de descoberta no Instagram):
 
 Responda SOMENTE em JSON válido:
 {"caption":"...", "hashtags":{"alcance":["#..."],"nicho":["#..."],"tema":["#..."]}}`;
+
+const SEGREDO_STRATEGY = `
+
+MODO ESPECIAL — PROJETO SEGREDO DAS PROMOÇÕES (estratégia de CONVERSÃO por curiosidade):
+- Nunca faça texto meramente descritivo do produto. O objetivo é DESPERTAR CURIOSIDADE e levar o usuário à BIO.
+- PROIBIDO incluir links, URLs, domínios, códigos de afiliado ou @menções na legenda.
+- A legenda deve terminar OBRIGATORIAMENTE com uma CTA direcionando para a BIO ou pedindo o link nos comentários. Varie naturalmente entre modelos como:
+  "produto disponível na bio", "link na bio", "peça o link nos comentários", "confira na bio",
+  "veja onde comprar na bio", "responda LINK nos comentários", "detalhes na bio", "veja o preço na bio", "acesso pela bio".
+- Nunca repita exatamente a mesma CTA. Misture curiosidade + benefício + chamada para ação.
+- Tom: gancho forte de curiosidade, sem exagero de clickbait. Exemplos de ganchos: "o produto que todo mundo está procurando", "você não vai acreditar no que esse produto faz", "descobri um achado que vale muito a pena", "esse produto está viralizando".`;
+
+const GENERATION_SYSTEM = GENERATION_SYSTEM_BASE;
 
 const VALIDATION_SYSTEM = `Você é um revisor crítico de social media. Receberá os frames de um vídeo e uma legenda proposta.
 
