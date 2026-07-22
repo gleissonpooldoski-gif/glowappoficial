@@ -180,6 +180,21 @@ function isCodeOneMetaError(data: any, message?: string): boolean {
   return code === 1 || msg.includes("oauthexception") && msg.includes("code=1");
 }
 
+// Erro transitório da Meta (OAuthException code=2 is_transient=true).
+// Devem ser retentados automaticamente com backoff (30s, 120s).
+function isTransientCodeTwoError(data: any, message?: string): boolean {
+  const err = data?.error;
+  const msg = `${err?.message ?? ""} ${message ?? ""}`.toLowerCase();
+  const code = Number(err?.code);
+  if (code === 2) return true;
+  if (err?.is_transient === true && msg.includes("oauthexception")) return true;
+  if (msg.includes("code=2") && msg.includes("oauthexception")) return true;
+  return false;
+}
+
+// Delays entre tentativas para erros transitórios da Meta (code=2).
+const TRANSIENT_RETRY_DELAYS_MS = [30_000, 120_000];
+
 function isReduceDataError(data: any, message?: string): boolean {
   const msg = `${data?.error?.message ?? ""} ${message ?? ""}`.toLowerCase();
   return msg.includes("please reduce") || msg.includes("reduce the amount of data");
@@ -670,11 +685,61 @@ Deno.serve(async (req) => {
             body_keys: Object.keys(publishBody),
             publish_requested_at: publishRequestedAt,
           });
-          const publishRes = await metaPost(
-            publishUrl,
-            publishBody,
-            token,
-          );
+          // Retry automático para OAuthException code=2 (is_transient=true).
+          // Tentativas: imediata, +30s, +2min. Outros erros propagam de imediato.
+          const maxTransientAttempts = TRANSIENT_RETRY_DELAYS_MS.length + 1;
+          let publishRes: any = null;
+          let transientAttempt = 1;
+          while (true) {
+            const transientAttemptAt = new Date().toISOString();
+            try {
+              publishRes = await metaPost(
+                publishUrl,
+                publishBody,
+                token,
+              );
+              if (transientAttempt > 1) {
+                await appendLog(postId, {
+                  event: "media_publish_transient_retry_success",
+                  cycle,
+                  creation_id: containerId,
+                  attempt: transientAttempt,
+                  attempt_at: transientAttemptAt,
+                });
+              }
+              break;
+            } catch (transientErr: any) {
+              const isTransient = isTransientCodeTwoError(transientErr?.metaData, transientErr?.message);
+              await appendLog(postId, {
+                event: "media_publish_attempt_failed",
+                cycle,
+                creation_id: containerId,
+                attempt: transientAttempt,
+                max_attempts: maxTransientAttempts,
+                attempt_at: transientAttemptAt,
+                is_transient_code_2: isTransient,
+                raw_message: transientErr?.message ?? null,
+                meta_response_raw: transientErr?.metaData ?? null,
+                meta_error: metaErrorDetails(transientErr?.metaData, transientErr?.message),
+              });
+              if (!isTransient || transientAttempt >= maxTransientAttempts) {
+                throw transientErr;
+              }
+              const delayMs = TRANSIENT_RETRY_DELAYS_MS[transientAttempt - 1];
+              await appendLog(postId, {
+                event: "media_publish_transient_retry_wait",
+                cycle,
+                creation_id: containerId,
+                attempt: transientAttempt,
+                next_attempt: transientAttempt + 1,
+                backoff_ms: delayMs,
+                retry_scheduled_for: new Date(Date.now() + delayMs).toISOString(),
+                reason: "meta_code_2_transient",
+              });
+              await new Promise((r) => setTimeout(r, delayMs));
+              transientAttempt++;
+            }
+          }
           const publishResponseAt = new Date().toISOString();
           await appendLog(postId, { event: "media_publish_response", cycle, status: publishRes.status, publish_requested_at: publishRequestedAt, publish_response_at: publishResponseAt, response: publishRes.data });
           const publishId = publishRes.data?.id;
@@ -944,17 +1009,30 @@ Deno.serve(async (req) => {
           });
           throw err;
         }
-        const retryable = isCodeOneMetaError(err?.metaData, err?.message);
+        const transientCode2 = isTransientCodeTwoError(err?.metaData, err?.message);
+        const retryable = isCodeOneMetaError(err?.metaData, err?.message) || transientCode2;
         await appendLog(post.id, {
           event: "media_container_create_error",
           attempt,
-          retryable_code_1: retryable,
+          attempt_at: new Date().toISOString(),
+          retryable_code_1: isCodeOneMetaError(err?.metaData, err?.message),
+          retryable_transient_code_2: transientCode2,
           raw_message: err?.message ?? null,
           meta_error: metaErrorDetails(err?.metaData, err?.message),
+          meta_response_raw: err?.metaData ?? null,
         });
         if (!retryable || attempt === MAX_CONTAINER_ATTEMPTS) throw err;
-        const backoffMs = 5000 * attempt;
-        await appendLog(post.id, { event: "media_container_retry_wait", attempt, reason: "meta_code_1", backoff_ms: backoffMs });
+        const backoffMs = transientCode2
+          ? (TRANSIENT_RETRY_DELAYS_MS[attempt - 1] ?? TRANSIENT_RETRY_DELAYS_MS[TRANSIENT_RETRY_DELAYS_MS.length - 1])
+          : 5000 * attempt;
+        await appendLog(post.id, {
+          event: "media_container_retry_wait",
+          attempt,
+          next_attempt: attempt + 1,
+          reason: transientCode2 ? "meta_code_2_transient" : "meta_code_1",
+          backoff_ms: backoffMs,
+          retry_scheduled_for: new Date(Date.now() + backoffMs).toISOString(),
+        });
         await new Promise((r) => setTimeout(r, backoffMs));
       }
     }
