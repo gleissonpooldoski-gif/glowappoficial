@@ -24,14 +24,14 @@ type Props = {
   onSaved?: () => void;
 };
 
-type LinkedYT = { id: string; status: string; account: string | null; scheduled_at: string | null };
+type LinkedYT = { id: string; status: string; account: string | null; scheduled_at: string | null; tags: string[] | null };
 
 /** Encontra YouTube posts vinculados (mesmo video_id e horário agendado). */
 async function findLinkedYoutube(post: InstagramPost): Promise<LinkedYT[]> {
   if (!post.video_id || !post.scheduled_at) return [];
   const { data } = await supabase
     .from("youtube_posts" as any)
-    .select("id, status, account, scheduled_at")
+    .select("id, status, account, scheduled_at, tags")
     .eq("video_id", post.video_id)
     .eq("scheduled_at", post.scheduled_at);
   return ((data ?? []) as any[]) as LinkedYT[];
