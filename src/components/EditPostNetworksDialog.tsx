@@ -113,37 +113,34 @@ export default function EditPostNetworksDialog({ post, open, onOpenChange, onSav
       toast.error("Post sem horário agendado.");
       return;
     }
-    if (wantYT && ytChannels.length === 0) {
-      toast.error("Selecione ao menos um canal do YouTube.");
+    if (wantYT && !ytAccount) {
+      toast.error("Este projeto não tem um canal do YouTube vinculado. Configure em Configurações → YouTube.");
       return;
     }
     setBusy(true);
     try {
       const actions: string[] = [];
       const linkedByAcc = new Map(linkedYT.map((l) => [l.account ?? "default", l]));
-      const selectedSet = new Set(wantYT ? ytChannels : []);
+      const selectedSet = new Set<string>(wantYT && ytAccount ? [ytAccount] : []);
 
-      if (wantYT) {
+      if (wantYT && ytAccount) {
         const meta = await buildYoutubeMetaFromCaption(
           post.caption ?? "", post.hashtags ?? "", { videoId: post.video_id ?? null },
         );
         const finalTags = ytTags.length ? ytTags : meta.tags;
-        for (const acc of ytChannels) {
-          const existing = linkedByAcc.get(acc);
-          if (existing) {
-            // Atualiza tags do vínculo existente (se ainda AGENDADO).
-            if (existing.status === "AGENDADO") {
-              const { error } = await supabase
-                .from("youtube_posts" as any)
-                .update({ tags: finalTags })
-                .eq("id", existing.id);
-              if (error) throw error;
-            }
-            continue;
+        const existing = linkedByAcc.get(ytAccount);
+        if (existing) {
+          if (existing.status === "AGENDADO") {
+            const { error } = await supabase
+              .from("youtube_posts" as any)
+              .update({ tags: finalTags })
+              .eq("id", existing.id);
+            if (error) throw error;
           }
+        } else {
           const { error } = await supabase.from("youtube_posts" as any).insert({
             video_id: post.video_id,
-            account: acc,
+            account: ytAccount,
             title: meta.title,
             description: meta.description,
             tags: finalTags,
@@ -153,7 +150,7 @@ export default function EditPostNetworksDialog({ post, open, onOpenChange, onSav
             scheduled_at: post.scheduled_at,
           });
           if (error) throw error;
-          actions.push(`YouTube (${acc.slice(0, 8)}…) adicionado`);
+          actions.push("YouTube adicionado");
         }
       }
 
