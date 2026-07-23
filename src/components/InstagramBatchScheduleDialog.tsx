@@ -382,31 +382,32 @@ export default function InstagramBatchScheduleDialog({ open, onOpenChange, video
             {activeNets.length === 0 && (
               <p className="text-[11px] text-muted-foreground">Selecione ao menos uma rede acima.</p>
             )}
-            {activeNets.map((n) => {
-              const meta = NETWORKS.find((x) => x.id === n)!;
-              const Icon = meta.icon;
-              const list = slotsByNet[n] ?? [];
-              const enough = list.length >= videos.length;
-              return (
-                <div key={n} className="rounded-md border border-border/40 bg-background/30 p-2 space-y-1.5">
-                  <div className="flex items-center gap-2">
-                    <Icon size={12} className={meta.color} />
-                    <span className="font-medium">{meta.label}</span>
-                    <Badge variant="outline" className={`ml-auto text-[10px] ${enough ? "" : "border-destructive/60 text-destructive"}`}>
-                      {list.length}/{videos.length} slots
-                    </Badge>
+            {activeNets.length > 0 && (
+              <div className="rounded-md border border-border/40 bg-background/30 p-2 space-y-1.5">
+                <div className="flex items-center gap-2">
+                  <span className="font-medium">Cronograma do projeto</span>
+                  <div className="flex items-center gap-1 ml-1">
+                    {activeNets.map((n) => {
+                      const meta = NETWORKS.find((x) => x.id === n)!;
+                      const Icon = meta.icon;
+                      return <Icon key={n} size={12} className={meta.color} />;
+                    })}
                   </div>
-                  <div className="grid grid-cols-2 gap-1 text-muted-foreground">
-                    <div>Primeiro: <span className="text-foreground font-medium">{list[0] ? fmt(list[0]) : "—"}</span></div>
-                    <div>Último: <span className="text-foreground font-medium">{list[videos.length - 1] ? fmt(list[videos.length - 1]) : "—"}</span></div>
-                  </div>
+                  <Badge variant="outline" className={`ml-auto text-[10px] ${insufficient ? "border-destructive/60 text-destructive" : ""}`}>
+                    {slots.length}/{videos.length} slots
+                  </Badge>
                 </div>
-              );
-            })}
+                <div className="grid grid-cols-2 gap-1 text-muted-foreground">
+                  <div>Primeiro: <span className="text-foreground font-medium">{slots[0] ? fmt(slots[0]) : "—"}</span></div>
+                  <div>Último: <span className="text-foreground font-medium">{slots[videos.length - 1] ? fmt(slots[videos.length - 1]) : "—"}</span></div>
+                </div>
+              </div>
+            )}
             <div className="flex items-center gap-1.5 text-[11px] text-muted-foreground">
               <Sparkles size={11} className="text-gold" />
-              Legenda e hashtags são geradas automaticamente. Cada rede segue sua própria grade.
+              Legenda e hashtags são geradas automaticamente. Todas as redes usam o mesmo horário do cronograma.
             </div>
+          </div>
           </div>
 
           {(busy || done > 0) && (
