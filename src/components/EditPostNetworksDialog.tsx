@@ -12,7 +12,7 @@ import { format } from "date-fns";
 import { ptBR } from "date-fns/locale";
 import { supabase } from "@/integrations/supabase/client";
 import { buildYoutubeMetaFromCaption } from "@/lib/youtube-meta";
-import YoutubeChannelPicker from "./YoutubeChannelPicker";
+import { getYoutubeChannelForProject } from "@/lib/youtube";
 import YoutubeTagsEditor from "./YoutubeTagsEditor";
 import type { InstagramPost } from "@/lib/instagram";
 
@@ -42,7 +42,8 @@ export default function EditPostNetworksDialog({ post, open, onOpenChange, onSav
   const [linkedYT, setLinkedYT] = useState<LinkedYT[]>([]);
   const [wantIG, setWantIG] = useState(true);
   const [wantYT, setWantYT] = useState(false);
-  const [ytChannels, setYtChannels] = useState<string[]>([]);
+  const [ytAccount, setYtAccount] = useState<string | null>(null);
+  const [ytChannelTitle, setYtChannelTitle] = useState<string | null>(null);
   const [ytTags, setYtTags] = useState<string[]>([]);
   const [tagsInitialized, setTagsInitialized] = useState(false);
   const [hasVideoFile, setHasVideoFile] = useState<boolean>(false);
@@ -56,14 +57,18 @@ export default function EditPostNetworksDialog({ post, open, onOpenChange, onSav
         const [yt, videoRow] = await Promise.all([
           findLinkedYoutube(post),
           post.video_id
-            ? supabase.from("videos").select("original_path, processed_path").eq("id", post.video_id).maybeSingle()
+            ? supabase.from("videos").select("original_path, processed_path, project_id").eq("id", post.video_id).maybeSingle()
             : Promise.resolve({ data: null } as any),
         ]);
         if (cancelled) return;
         setLinkedYT(yt);
         setWantIG(true);
         setWantYT(yt.length > 0);
-        setYtChannels(yt.map((l) => l.account).filter((a): a is string => !!a));
+        const projectId = (videoRow as any)?.data?.project_id ?? null;
+        const linked = await getYoutubeChannelForProject(projectId);
+        if (cancelled) return;
+        setYtAccount(linked?.account ?? null);
+        setYtChannelTitle(linked?.channel_title ?? linked?.label ?? null);
         const existingTags = yt.flatMap((l) => Array.isArray(l.tags) ? l.tags : []);
         const dedup = Array.from(new Set(existingTags.map((t) => String(t).trim()).filter(Boolean)));
         setYtTags(dedup);
@@ -108,37 +113,34 @@ export default function EditPostNetworksDialog({ post, open, onOpenChange, onSav
       toast.error("Post sem horário agendado.");
       return;
     }
-    if (wantYT && ytChannels.length === 0) {
-      toast.error("Selecione ao menos um canal do YouTube.");
+    if (wantYT && !ytAccount) {
+      toast.error("Este projeto não tem um canal do YouTube vinculado. Configure em Configurações → YouTube.");
       return;
     }
     setBusy(true);
     try {
       const actions: string[] = [];
       const linkedByAcc = new Map(linkedYT.map((l) => [l.account ?? "default", l]));
-      const selectedSet = new Set(wantYT ? ytChannels : []);
+      const selectedSet = new Set<string>(wantYT && ytAccount ? [ytAccount] : []);
 
-      if (wantYT) {
+      if (wantYT && ytAccount) {
         const meta = await buildYoutubeMetaFromCaption(
           post.caption ?? "", post.hashtags ?? "", { videoId: post.video_id ?? null },
         );
         const finalTags = ytTags.length ? ytTags : meta.tags;
-        for (const acc of ytChannels) {
-          const existing = linkedByAcc.get(acc);
-          if (existing) {
-            // Atualiza tags do vínculo existente (se ainda AGENDADO).
-            if (existing.status === "AGENDADO") {
-              const { error } = await supabase
-                .from("youtube_posts" as any)
-                .update({ tags: finalTags })
-                .eq("id", existing.id);
-              if (error) throw error;
-            }
-            continue;
+        const existing = linkedByAcc.get(ytAccount);
+        if (existing) {
+          if (existing.status === "AGENDADO") {
+            const { error } = await supabase
+              .from("youtube_posts" as any)
+              .update({ tags: finalTags })
+              .eq("id", existing.id);
+            if (error) throw error;
           }
+        } else {
           const { error } = await supabase.from("youtube_posts" as any).insert({
             video_id: post.video_id,
-            account: acc,
+            account: ytAccount,
             title: meta.title,
             description: meta.description,
             tags: finalTags,
@@ -148,7 +150,7 @@ export default function EditPostNetworksDialog({ post, open, onOpenChange, onSav
             scheduled_at: post.scheduled_at,
           });
           if (error) throw error;
-          actions.push(`YouTube (${acc.slice(0, 8)}…) adicionado`);
+          actions.push("YouTube adicionado");
         }
       }
 
@@ -244,9 +246,12 @@ export default function EditPostNetworksDialog({ post, open, onOpenChange, onSav
                 </label>
                 {wantYT && (
                   <div className="space-y-2 rounded-md border border-border/40 bg-background/20 px-3 py-2">
-                    <div>
-                      <Label className="text-[11px] text-muted-foreground mb-1.5 block">Canais</Label>
-                      <YoutubeChannelPicker value={ytChannels} onChange={setYtChannels} disabled={busy} compact />
+                    <div className="flex items-center gap-2 rounded-md border border-border/60 bg-background/40 px-2.5 py-1.5 text-[11px]">
+                      <Lock size={10} />
+                      <span className="text-muted-foreground">Canal do projeto:</span>
+                      <Badge variant="outline" className="text-[10px]">
+                        ▶️ {ytChannelTitle ?? ytAccount ?? "sem canal vinculado"}
+                      </Badge>
                     </div>
                     <YoutubeTagsEditor
                       value={ytTags}

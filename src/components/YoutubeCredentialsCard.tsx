@@ -1,8 +1,11 @@
 import { useEffect, useState } from "react";
-import { Youtube, Loader2, CheckCircle2, XCircle, LogIn, LogOut, RefreshCw, ExternalLink, Upload, Plus } from "lucide-react";
+import { Youtube, Loader2, CheckCircle2, XCircle, LogIn, LogOut, RefreshCw, ExternalLink, Upload, Plus, Link2 } from "lucide-react";
 import { Card, CardContent } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
+import { Label } from "@/components/ui/label";
+import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { toast } from "sonner";
+import { supabase } from "@/integrations/supabase/client";
 import {
   YoutubeAccount,
   YoutubeCredential,
@@ -10,23 +13,45 @@ import {
   listYoutubeChannels,
   refreshYoutubeToken,
   startYoutubeAuth,
+  setYoutubeChannelProject,
 } from "@/lib/youtube";
 import YoutubeUploadDialog from "./YoutubeUploadDialog";
 
+type ProjectRow = { id: string; name: string };
+
 export default function YoutubeCredentialsCard() {
   const [channels, setChannels] = useState<YoutubeCredential[]>([]);
+  const [projects, setProjects] = useState<ProjectRow[]>([]);
   const [loading, setLoading] = useState(true);
   const [busy, setBusy] = useState<string | null>(null);
   const [uploadFor, setUploadFor] = useState<YoutubeAccount | null>(null);
 
   const load = async () => {
     setLoading(true);
-    try { setChannels(await listYoutubeChannels()); }
+    try {
+      const [ch, pr] = await Promise.all([
+        listYoutubeChannels(),
+        supabase.from("projects").select("id, name").order("name"),
+      ]);
+      setChannels(ch);
+      setProjects(((pr.data as any[]) ?? []) as ProjectRow[]);
+    }
     catch (e: any) { toast.error(e?.message ?? "Falha ao carregar canais do YouTube."); }
     finally { setLoading(false); }
   };
 
   useEffect(() => { load(); }, []);
+
+  const updateProject = async (account: string, projectId: string | null) => {
+    setBusy(account);
+    try {
+      await setYoutubeChannelProject(account, projectId);
+      toast.success(projectId ? "Projeto vinculado ao canal." : "Vínculo removido.");
+      await load();
+    } catch (e: any) {
+      toast.error(e?.message ?? "Falha ao vincular projeto.");
+    } finally { setBusy(null); }
+  };
 
   const connectNew = async () => {
     setBusy("__new__");
@@ -148,6 +173,32 @@ export default function YoutubeCredentialsCard() {
                       <span>Última validação: <b>{c.last_validated_at ? new Date(c.last_validated_at).toLocaleString() : "—"}</b></span>
                     </div>
                   )}
+
+                  <div className="flex items-center gap-2 rounded-md border border-border/40 bg-background/30 px-3 py-2">
+                    <Link2 size={13} className="text-gold shrink-0" />
+                    <Label className="text-[11px] text-muted-foreground shrink-0">Projeto vinculado</Label>
+                    <Select
+                      value={c.project_id ?? "__none__"}
+                      onValueChange={(v) => updateProject(c.account, v === "__none__" ? null : v)}
+                      disabled={isBusy}
+                    >
+                      <SelectTrigger className="h-8 flex-1 text-xs">
+                        <SelectValue placeholder="Nenhum projeto" />
+                      </SelectTrigger>
+                      <SelectContent>
+                        <SelectItem value="__none__">— Nenhum projeto —</SelectItem>
+                        {projects.map((p) => {
+                          const takenBy = channels.find((x) => x.project_id === p.id && x.account !== c.account);
+                          return (
+                            <SelectItem key={p.id} value={p.id} disabled={!!takenBy}>
+                              {p.name}{takenBy ? ` (usado por ${takenBy.channel_title ?? takenBy.account})` : ""}
+                            </SelectItem>
+                          );
+                        })}
+                      </SelectContent>
+                    </Select>
+                  </div>
+
 
                   <div className="flex flex-wrap justify-end gap-2">
                     <Button variant="ghost" size="sm" disabled={isBusy} onClick={() => refresh(c.account)}>
