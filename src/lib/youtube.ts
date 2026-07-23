@@ -35,7 +35,7 @@ export async function listYoutubeChannels(): Promise<YoutubeCredential[]> {
   const { data, error } = await supabase
     .from("youtube_credentials" as any)
     .select(
-      "account, channel_id, channel_title, thumbnail, expires_at, scope, status, label, last_validated_at, last_validation_status, last_validation_detail, updated_at",
+      "account, channel_id, channel_title, thumbnail, expires_at, scope, status, label, project_id, last_validated_at, last_validation_status, last_validation_detail, updated_at",
     )
     .order("updated_at", { ascending: false });
   if (error) throw error;
