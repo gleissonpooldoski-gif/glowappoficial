@@ -306,34 +306,30 @@ export default function BulkAddNetworksDialog({ posts, open, onOpenChange, onSav
 
           {nets.facebook && (
             <div className="rounded-md border border-border/40 bg-background/20 px-3 py-2 space-y-1.5">
-              <Label className="text-[11px] text-muted-foreground">Páginas do Facebook</Label>
+              <Label className="text-[11px] text-muted-foreground">
+                Página vinculada por projeto (somente leitura)
+              </Label>
               {fbAccounts.length === 0 ? (
                 <p className="text-[11px] text-muted-foreground italic">
                   Nenhuma Página conectada. Conecte em Configurações → Facebook.
                 </p>
               ) : (
                 <>
-                  <label className="flex items-center gap-2 text-[11px] cursor-pointer">
-                    <Checkbox checked={allFbSelected} onCheckedChange={toggleFbAll} disabled={busy} />
-                    <span className="font-medium">Selecionar todas</span>
-                  </label>
-                  <div className="space-y-1 pt-1 border-t border-border/40">
+                  <div className="space-y-1 pt-1">
                     {fbAccounts.map((a) => (
-                      <label key={a.id} className="flex items-center gap-2 text-[11px] cursor-pointer">
-                        <Checkbox
-                          checked={fbSelected.has(a.project_id)}
-                          onCheckedChange={() => toggleFb(a.project_id)}
-                          disabled={busy}
-                        />
+                      <div key={a.id} className="flex items-center gap-2 text-[11px]">
                         {a.page_picture && (
                           <img src={a.page_picture} alt="" className="h-4 w-4 rounded-full object-cover" />
                         )}
                         <span className="flex-1 truncate">
                           {a.project_name ? `${a.project_name} · ` : ""}{a.page_name ?? a.page_id}
                         </span>
-                      </label>
+                      </div>
                     ))}
                   </div>
+                  <p className="text-[10px] text-muted-foreground pt-1 border-t border-border/40">
+                    Cada post publicará automaticamente na Página vinculada ao seu projeto. Para trocar, vá em Configurações → Facebook.
+                  </p>
                 </>
               )}
             </div>
