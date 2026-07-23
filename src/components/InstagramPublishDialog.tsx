@@ -15,8 +15,9 @@ import YoutubeChannelPicker from "./YoutubeChannelPicker";
 import { findNextSlot, ScheduleNetwork, scheduleAccountFor } from "@/lib/schedules";
 import { useActiveProject } from "@/context/ProjectContext";
 import { extractVideoFrames } from "@/lib/videoFrames";
+import { createFacebookPost, getFacebookAccountForProject, friendlyFacebookError } from "@/lib/facebook";
 
-type NetId = "instagram" | "youtube";
+type NetId = "instagram" | "youtube" | "facebook";
 
 type VideoMeta = {
   filename?: string;
