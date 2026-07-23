@@ -228,6 +228,8 @@ export default function BulkAddNetworksDialog({ posts, open, onOpenChange, onSav
     }
     setBusy(true);
     let added = 0, skipped = 0, failed = 0;
+    const skipReasons: Array<{ network: NetId; post_id: string; reason: string }> = [];
+    const failureReasons: Array<{ network: NetId; post_id: string; error: unknown }> = [];
     const fbAccountByProject = new Map(fbAccounts.map((a) => [a.project_id, a]));
     const projectCache = new Map<string, string | null>();
     try {
@@ -238,26 +240,29 @@ export default function BulkAddNetworksDialog({ posts, open, onOpenChange, onSav
               for (const ch of ytChannels) {
                 try {
                   const res = await ensureYoutubeForChannel(post, ch);
-                  if ((res as any).added) added++; else skipped++;
+                  if ((res as any).added) added++; else { skipped++; skipReasons.push({ network: net, post_id: post.id, reason: (res as any).skipped ?? "ignorado" }); }
                 } catch (error) {
                   console.error("[bulk-networks] YouTube falhou", { post_id: post.id, channel: ch, error });
+                  failureReasons.push({ network: net, post_id: post.id, error });
                   failed++;
                 }
               }
             } else if (net === "tiktok") {
               const res = await ensureTiktok(post);
-              if ((res as any).added) added++; else skipped++;
+              if ((res as any).added) added++; else { skipped++; skipReasons.push({ network: net, post_id: post.id, reason: (res as any).skipped ?? "ignorado" }); }
             } else if (net === "facebook") {
               const res = await ensureFacebook(post, fbAccountByProject, projectCache);
-              if ((res as any).added) added++; else skipped++;
+              if ((res as any).added) added++; else { skipped++; skipReasons.push({ network: net, post_id: post.id, reason: (res as any).skipped ?? "ignorado" }); }
             }
           } catch (error) {
             console.error("[bulk-networks] Rede falhou", { post_id: post.id, network: net, error });
             if (net === "facebook") console.error("FACEBOOK ERROR", error);
+            failureReasons.push({ network: net, post_id: post.id, error });
             failed++;
           }
         }
       }
+      console.info("[bulk-networks] Resultado detalhado", { added, skipped, failed, skipReasons, failureReasons });
       toast.success(`Concluído — adicionados: ${added}, ignorados: ${skipped}${failed ? `, falhas: ${failed}` : ""}`);
       onOpenChange(false);
       onSaved?.();
