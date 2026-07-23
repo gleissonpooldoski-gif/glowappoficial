@@ -629,32 +629,22 @@ export default function InstagramPublishDialog({
 
               {scheduleMode === "auto" ? (
                 <div className="space-y-1 text-xs text-muted-foreground">
-                  {slotBusy && <div>Buscando próximos slots por rede…</div>}
+                  {slotBusy && <div>Buscando próximo horário do cronograma…</div>}
                   {!slotBusy && (
                     <>
-                      {nets.has("instagram") && (
-                        <div className="flex items-center gap-2">
-                          <Instagram size={11} className="text-pink-400" />
-                          <span>Instagram:</span>
+                      {autoSlot ? (
+                        <div className="flex items-center gap-2 flex-wrap">
+                          <div className="flex items-center gap-1">
+                            {nets.has("instagram") && <Instagram size={12} className="text-pink-400" />}
+                            {nets.has("facebook") && <Facebook size={12} className="text-blue-400" />}
+                            {nets.has("youtube") && <Youtube size={12} className="text-red-400" />}
+                          </div>
                           <span className="text-foreground font-medium">
-                            {autoSlots.instagram
-                              ? autoSlots.instagram.toLocaleString("pt-BR", { dateStyle: "short", timeStyle: "short" })
-                              : "grade não configurada"}
+                            {autoSlot.toLocaleString("pt-BR", { dateStyle: "short", timeStyle: "short" })}
                           </span>
+                          <span className="text-[10px] text-muted-foreground">· cronograma do projeto</span>
                         </div>
-                      )}
-                      {nets.has("youtube") && (
-                        <div className="flex items-center gap-2">
-                          <Youtube size={11} className="text-red-400" />
-                          <span>YouTube:</span>
-                          <span className="text-foreground font-medium">
-                            {autoSlots.youtube
-                              ? autoSlots.youtube.toLocaleString("pt-BR", { dateStyle: "short", timeStyle: "short" })
-                              : "grade não configurada"}
-                          </span>
-                        </div>
-                      )}
-                      {!autoSlots.instagram && !autoSlots.youtube && (
+                      ) : (
                         <div className="text-destructive">
                           Nenhum horário configurado. Vá em Configurações → Horários de publicação.
                         </div>
