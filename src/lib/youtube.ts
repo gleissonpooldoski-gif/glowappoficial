@@ -1,4 +1,5 @@
 // Helper client-side para as edge functions do YouTube (multi-canal).
+import { useEffect, useState } from "react";
 import { supabase } from "@/integrations/supabase/client";
 
 export type YoutubeAccount = string; // channel_id ou slug legado ("default")
