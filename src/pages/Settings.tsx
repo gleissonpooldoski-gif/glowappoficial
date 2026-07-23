@@ -14,6 +14,7 @@ import {
   SelectValue,
 } from "@/components/ui/select";
 import InstagramCredentialsCard from "@/components/InstagramCredentialsCard";
+import FacebookCredentialsCard from "@/components/FacebookCredentialsCard";
 import TiktokCredentialsCard from "@/components/TiktokCredentialsCard";
 import YoutubeCredentialsCard from "@/components/YoutubeCredentialsCard";
 import PublishSchedulesCard from "@/components/PublishSchedulesCard";
@@ -148,6 +149,8 @@ export default function Settings() {
       </Card>
 
       <InstagramCredentialsCard />
+
+      <FacebookCredentialsCard />
 
       <TiktokCredentialsCard />
 
