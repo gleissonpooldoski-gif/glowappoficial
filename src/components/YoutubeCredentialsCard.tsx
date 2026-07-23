@@ -174,6 +174,32 @@ export default function YoutubeCredentialsCard() {
                     </div>
                   )}
 
+                  <div className="flex items-center gap-2 rounded-md border border-border/40 bg-background/30 px-3 py-2">
+                    <Link2 size={13} className="text-gold shrink-0" />
+                    <Label className="text-[11px] text-muted-foreground shrink-0">Projeto vinculado</Label>
+                    <Select
+                      value={c.project_id ?? "__none__"}
+                      onValueChange={(v) => updateProject(c.account, v === "__none__" ? null : v)}
+                      disabled={isBusy}
+                    >
+                      <SelectTrigger className="h-8 flex-1 text-xs">
+                        <SelectValue placeholder="Nenhum projeto" />
+                      </SelectTrigger>
+                      <SelectContent>
+                        <SelectItem value="__none__">— Nenhum projeto —</SelectItem>
+                        {projects.map((p) => {
+                          const takenBy = channels.find((x) => x.project_id === p.id && x.account !== c.account);
+                          return (
+                            <SelectItem key={p.id} value={p.id} disabled={!!takenBy}>
+                              {p.name}{takenBy ? ` (usado por ${takenBy.channel_title ?? takenBy.account})` : ""}
+                            </SelectItem>
+                          );
+                        })}
+                      </SelectContent>
+                    </Select>
+                  </div>
+
+
                   <div className="flex flex-wrap justify-end gap-2">
                     <Button variant="ghost" size="sm" disabled={isBusy} onClick={() => refresh(c.account)}>
                       {isBusy ? <Loader2 size={13} className="mr-1 animate-spin" /> : <RefreshCw size={13} className="mr-1" />}
