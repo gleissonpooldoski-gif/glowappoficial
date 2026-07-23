@@ -314,8 +314,27 @@ export default function BulkAddNetworksDialog({ posts, open, onOpenChange, onSav
 
           {nets.youtube && (
             <div className="rounded-md border border-border/40 bg-background/20 px-3 py-2 space-y-1.5">
-              <Label className="text-[11px] text-muted-foreground">Canais do YouTube</Label>
-              <YoutubeChannelPicker value={ytChannels} onChange={setYtChannels} disabled={busy} compact />
+              <Label className="text-[11px] text-muted-foreground">
+                Canal do YouTube vinculado por projeto (somente leitura)
+              </Label>
+              {ytChannels.length === 0 ? (
+                <div className="text-[11px] text-muted-foreground">Nenhum canal conectado.</div>
+              ) : (
+                <ul className="space-y-1 text-[11px]">
+                  {ytChannels.map((c) => (
+                    <li key={c.account} className="flex items-center gap-2">
+                      <Youtube size={11} className="text-red-400 shrink-0" />
+                      <span className="flex-1 truncate">{c.channel_title ?? c.label ?? c.account}</span>
+                      <Badge variant="outline" className="text-[10px]">
+                        {c.project_id ? "projeto vinculado" : "sem projeto"}
+                      </Badge>
+                    </li>
+                  ))}
+                </ul>
+              )}
+              <p className="text-[10px] text-muted-foreground">
+                Cada post usa automaticamente o canal do projeto do vídeo. Ajuste vínculos em Configurações → YouTube.
+              </p>
             </div>
           )}
 
