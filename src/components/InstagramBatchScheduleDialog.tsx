@@ -149,15 +149,15 @@ export default function InstagramBatchScheduleDialog({ open, onOpenChange, video
   };
 
   const scheduleOne = async (
-    v: VideoMeta, slotFor: Partial<Record<NetworkId, Date>>, caption: string, hashtags: string, nets: NetworkId[],
+    v: VideoMeta, slot: Date, caption: string, hashtags: string, nets: NetworkId[],
   ): Promise<string[]> => {
     const errs: string[] = [];
+    const iso = slot.toISOString();
     let igPostId: string | null = null;
     let ttPostId: string | null = null;
     let ytPostId: string | null = null;
 
-    if (nets.includes("instagram") && slotFor.instagram) {
-      const iso = slotFor.instagram.toISOString();
+    if (nets.includes("instagram")) {
       if (!igAccount) errs.push("Instagram: projeto ativo inválido");
       else {
         try {
@@ -174,13 +174,11 @@ export default function InstagramBatchScheduleDialog({ open, onOpenChange, video
       }
     }
 
-    if (nets.includes("tiktok") && slotFor.tiktok) {
-      const iso = slotFor.tiktok.toISOString();
+    if (nets.includes("tiktok")) {
       const ttAccount = igAccount;
       if (!ttAccount) errs.push("TikTok: projeto ativo inválido");
       else {
         try {
-          // Caption adaptada para TikTok (gancho + hashtags de descoberta).
           const { buildTiktokCaptionFromBase } = await import("@/lib/tiktok-meta");
           const tt = await buildTiktokCaptionFromBase(caption, hashtags, {
             projectName: v.projectName ?? null, projectCategory: v.projectCategory ?? null,
@@ -200,13 +198,11 @@ export default function InstagramBatchScheduleDialog({ open, onOpenChange, video
       }
     }
 
-    if (nets.includes("youtube") && slotFor.youtube) {
-      const iso = slotFor.youtube.toISOString();
+    if (nets.includes("youtube")) {
       if (!ytAccount) {
         errs.push("YouTube: nenhum canal vinculado a este projeto.");
       } else {
         try {
-          // Título NUNCA usa nome do arquivo — sempre gerado a partir da legenda.
           const { buildYoutubeMetaFromCaption } = await import("@/lib/youtube-meta");
           const { title, description, tags } = await buildYoutubeMetaFromCaption(caption, hashtags);
           try {
