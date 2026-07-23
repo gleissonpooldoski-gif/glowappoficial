@@ -1,5 +1,5 @@
 import { useEffect, useState } from "react";
-import { Loader2, Instagram, Youtube, CalendarClock, Send, Sparkles, RefreshCw, Wand2, Hand, Lock } from "lucide-react";
+import { Loader2, Instagram, Youtube, Facebook, CalendarClock, Send, Sparkles, RefreshCw, Wand2, Hand, Lock } from "lucide-react";
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter, DialogDescription } from "@/components/ui/dialog";
 import { Button } from "@/components/ui/button";
 import { Label } from "@/components/ui/label";
@@ -15,8 +15,9 @@ import YoutubeChannelPicker from "./YoutubeChannelPicker";
 import { findNextSlot, ScheduleNetwork, scheduleAccountFor } from "@/lib/schedules";
 import { useActiveProject } from "@/context/ProjectContext";
 import { extractVideoFrames } from "@/lib/videoFrames";
+import { createFacebookPost, getFacebookAccountForProject, friendlyFacebookError } from "@/lib/facebook";
 
-type NetId = "instagram" | "youtube";
+type NetId = "instagram" | "youtube" | "facebook";
 
 type VideoMeta = {
   filename?: string;
@@ -80,10 +81,15 @@ export default function InstagramPublishDialog({
   const [nets, setNets] = useState<Set<NetId>>(new Set(["instagram"]));
   const [ytChannels, setYtChannels] = useState<string[]>([]);
   const [hasVideoFile, setHasVideoFile] = useState<boolean | null>(null);
+  const [fbAccount, setFbAccount] = useState<{ id: string; page_id: string; page_name: string | null; page_picture: string | null } | null>(null);
   const toggleNet = (n: NetId) => setNets((prev) => {
     const s = new Set(prev);
     if (n === "youtube" && !s.has("youtube") && hasVideoFile === false) {
       toast.error("Para publicar no YouTube, adicione um vídeo ao post.");
+      return prev;
+    }
+    if (n === "facebook" && !s.has("facebook") && !fbAccount) {
+      toast.error("Este projeto não tem uma Página do Facebook conectada. Configure em Configurações → Facebook.");
       return prev;
     }
     if (s.has(n)) s.delete(n); else s.add(n);
@@ -115,6 +121,18 @@ export default function InstagramPublishDialog({
     })();
     return () => { cancelled = true; };
   }, [open, videoId]);
+
+  // Carrega Página do Facebook vinculada ao projeto ativo.
+  useEffect(() => {
+    if (!open || !activeProject?.id) { setFbAccount(null); return; }
+    let cancelled = false;
+    (async () => {
+      const acc = await getFacebookAccountForProject(activeProject.id);
+      if (!cancelled) setFbAccount(acc);
+    })();
+    return () => { cancelled = true; };
+  }, [open, activeProject?.id]);
+
 
   // Auto-gera legenda/hashtags ao abrir se não vieram prontos
   useEffect(() => {
@@ -220,7 +238,8 @@ export default function InstagramPublishDialog({
     if (!videoId) { toast.error("Vídeo inválido."); return; }
     const wantIG = nets.has("instagram");
     const wantYT = nets.has("youtube");
-    if (!wantIG && !wantYT) { toast.error("Selecione ao menos uma rede."); return; }
+    const wantFB = nets.has("facebook");
+    if (!wantIG && !wantYT && !wantFB) { toast.error("Selecione ao menos uma rede."); return; }
     if (wantIG && !account) {
       toast.error("Este projeto não tem uma conta do Instagram vinculada. Cadastre em Configurações → Instagram.");
       return;
@@ -229,11 +248,19 @@ export default function InstagramPublishDialog({
       toast.error("Para publicar no YouTube, adicione um vídeo ao post.");
       return;
     }
+    if (wantFB && !fbAccount) {
+      toast.error("Este projeto não tem uma Página do Facebook vinculada. Conecte em Configurações → Facebook.");
+      return;
+    }
+    if (wantFB && hasVideoFile === false) {
+      toast.error("Para publicar no Facebook, adicione um vídeo ao post.");
+      return;
+    }
     if (!caption.trim()) {
       toast.error("Legenda vazia. Gere a legenda automaticamente ou escreva manualmente antes de publicar.");
       return;
     }
-    const netsLabel = [wantIG && "Instagram", wantYT && "YouTube"].filter(Boolean).join(" + ");
+    const netsLabel = [wantIG && "Instagram", wantFB && "Facebook", wantYT && "YouTube"].filter(Boolean).join(" + ");
     const confirmMsg =
       mode === "schedule"
         ? `Agendar em ${netsLabel}. Confirmar?`
@@ -249,6 +276,8 @@ export default function InstagramPublishDialog({
       const ytIso = mode === "schedule"
         ? (scheduleMode === "auto" ? (autoSlots.youtube?.toISOString() ?? null) : manualIso)
         : null;
+      // Facebook usa o slot do Instagram (mesma cadência da conta) ou fallback manual/YT.
+      const fbIso = mode === "schedule" ? (igIso ?? ytIso ?? manualIso) : null;
       if (mode === "schedule") {
         if (wantIG && (!igIso || new Date(igIso).getTime() < Date.now() + 60_000)) {
           throw new Error("Instagram: horário indisponível. Configure a grade em Configurações.");
@@ -256,9 +285,13 @@ export default function InstagramPublishDialog({
         if (wantYT && (!ytIso || new Date(ytIso).getTime() < Date.now() + 60_000)) {
           throw new Error("YouTube: horário indisponível. Configure a grade em Configurações.");
         }
+        if (wantFB && (!fbIso || new Date(fbIso).getTime() < Date.now() + 60_000)) {
+          throw new Error("Facebook: horário indisponível.");
+        }
       }
       let igPostId: string | null = null;
       let ytPostId: string | null = null;
+      let fbPostId: string | null = null;
       const errs: string[] = [];
 
       if (wantIG && account) {
@@ -336,6 +369,28 @@ export default function InstagramPublishDialog({
         }
       }
 
+      // === FACEBOOK (independente: erros não afetam IG/YT) ===
+      if (wantFB && fbAccount && activeProject?.id) {
+        try {
+          if (mode === "schedule") {
+            const res: any = await createFacebookPost({
+              project_id: activeProject.id, video_id: videoId,
+              description: [caption, hashtags].filter(Boolean).join("\n\n"),
+              publish_now: false, scheduled_at: fbIso!,
+            });
+            fbPostId = res?.post?.id ?? null;
+          } else {
+            toast.message("Enviando para o Facebook…");
+            const res: any = await createFacebookPost({
+              project_id: activeProject.id, video_id: videoId,
+              description: [caption, hashtags].filter(Boolean).join("\n\n"),
+              publish_now: true,
+            });
+            fbPostId = res?.post?.id ?? null;
+          }
+        } catch (e: any) { errs.push(`Facebook: ${friendlyFacebookError(e)}`); }
+      }
+
       // Registro consolidado por rede (para o calendário exibir os ícones).
       if (mode === "schedule") {
         const rows: any[] = [];
@@ -346,6 +401,10 @@ export default function InstagramPublishDialog({
         if (wantYT && ytIso) rows.push({
           video_id: videoId, networks: ["youtube"], scheduled_at: ytIso,
           instagram_post_id: null, youtube_post_id: ytPostId, tiktok_post_id: null,
+        });
+        if (wantFB && fbIso) rows.push({
+          video_id: videoId, networks: ["facebook"], scheduled_at: fbIso,
+          instagram_post_id: null, youtube_post_id: null, tiktok_post_id: null,
         });
         if (rows.length) {
           try { await supabase.from("publish_schedules_multi" as any).insert(rows); } catch { /* não bloqueia */ }
@@ -407,10 +466,24 @@ export default function InstagramPublishDialog({
                 <Youtube size={14} className="text-red-400" />
                 <span className="flex-1">YouTube</span>
               </label>
+              <label
+                title={!fbAccount ? "Conecte uma Página do Facebook em Configurações → Facebook." : undefined}
+                className={`flex items-center gap-2 rounded-md border px-2.5 py-2 text-xs transition-colors ${
+                  nets.has("facebook") ? "border-gold/50 bg-gold/5" : "border-border/60 bg-background/30 hover:bg-background/60"
+                } ${!fbAccount || hasVideoFile === false ? "opacity-50 cursor-not-allowed" : "cursor-pointer"}`}
+              >
+                <Checkbox
+                  checked={nets.has("facebook")}
+                  onCheckedChange={() => toggleNet("facebook")}
+                  disabled={busy || !fbAccount || hasVideoFile === false}
+                />
+                <Facebook size={14} className="text-blue-400" />
+                <span className="flex-1">Facebook</span>
+              </label>
             </div>
             {hasVideoFile === false && (
               <p className="text-[11px] text-muted-foreground">
-                Para publicar no YouTube, adicione um vídeo ao post.
+                Para publicar no YouTube ou Facebook, adicione um vídeo ao post.
               </p>
             )}
           </div>
@@ -436,6 +509,17 @@ export default function InstagramPublishDialog({
                     <span className="text-[11px] font-semibold text-red-300">▶️ YouTube · canais</span>
                   </div>
                   <YoutubeChannelPicker value={ytChannels} onChange={setYtChannels} disabled={busy} compact />
+                </div>
+              )}
+              {nets.has("facebook") && (
+                <div className="flex items-center gap-2">
+                  <Facebook size={14} className="text-blue-400" />
+                  {fbAccount?.page_picture && (
+                    <img src={fbAccount.page_picture} alt="" className="h-4 w-4 rounded-full object-cover" />
+                  )}
+                  <Badge variant="outline" className="text-[10px] font-semibold bg-blue-500/15 text-blue-300 border-blue-400/40">
+                    📘 Facebook · {fbAccount?.page_name ?? "Página"}
+                  </Badge>
                 </div>
               )}
               {nets.size === 0 && (

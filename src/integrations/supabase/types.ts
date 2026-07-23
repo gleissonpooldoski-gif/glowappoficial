@@ -232,6 +232,94 @@ export type Database = {
           },
         ]
       }
+      facebook_posts: {
+        Row: {
+          created_at: string
+          description: string
+          error_message: string | null
+          facebook_account_id: string | null
+          fb_post_id: string | null
+          fb_video_id: string | null
+          id: string
+          logs: Json
+          meta_response: Json | null
+          page_id: string
+          page_name: string | null
+          project_id: string | null
+          published_at: string | null
+          scheduled_at: string | null
+          status: string
+          thumbnail_url: string | null
+          updated_at: string
+          video_id: string | null
+          video_url: string | null
+        }
+        Insert: {
+          created_at?: string
+          description?: string
+          error_message?: string | null
+          facebook_account_id?: string | null
+          fb_post_id?: string | null
+          fb_video_id?: string | null
+          id?: string
+          logs?: Json
+          meta_response?: Json | null
+          page_id: string
+          page_name?: string | null
+          project_id?: string | null
+          published_at?: string | null
+          scheduled_at?: string | null
+          status?: string
+          thumbnail_url?: string | null
+          updated_at?: string
+          video_id?: string | null
+          video_url?: string | null
+        }
+        Update: {
+          created_at?: string
+          description?: string
+          error_message?: string | null
+          facebook_account_id?: string | null
+          fb_post_id?: string | null
+          fb_video_id?: string | null
+          id?: string
+          logs?: Json
+          meta_response?: Json | null
+          page_id?: string
+          page_name?: string | null
+          project_id?: string | null
+          published_at?: string | null
+          scheduled_at?: string | null
+          status?: string
+          thumbnail_url?: string | null
+          updated_at?: string
+          video_id?: string | null
+          video_url?: string | null
+        }
+        Relationships: [
+          {
+            foreignKeyName: "facebook_posts_facebook_account_id_fkey"
+            columns: ["facebook_account_id"]
+            isOneToOne: false
+            referencedRelation: "facebook_accounts"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "facebook_posts_project_id_fkey"
+            columns: ["project_id"]
+            isOneToOne: false
+            referencedRelation: "projects"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "facebook_posts_video_id_fkey"
+            columns: ["video_id"]
+            isOneToOne: false
+            referencedRelation: "videos"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
       instagram_account_locks: {
         Row: {
           cooldown_until: string | null
@@ -740,6 +828,7 @@ export type Database = {
           account: string | null
           created_at: string
           error_message: string | null
+          facebook_post_id: string | null
           id: string
           instagram_post_id: string | null
           platform: string
@@ -755,6 +844,7 @@ export type Database = {
           account?: string | null
           created_at?: string
           error_message?: string | null
+          facebook_post_id?: string | null
           id?: string
           instagram_post_id?: string | null
           platform: string
@@ -770,6 +860,7 @@ export type Database = {
           account?: string | null
           created_at?: string
           error_message?: string | null
+          facebook_post_id?: string | null
           id?: string
           instagram_post_id?: string | null
           platform?: string
@@ -782,6 +873,13 @@ export type Database = {
           youtube_post_id?: string | null
         }
         Relationships: [
+          {
+            foreignKeyName: "publish_targets_facebook_post_id_fkey"
+            columns: ["facebook_post_id"]
+            isOneToOne: false
+            referencedRelation: "facebook_posts"
+            referencedColumns: ["id"]
+          },
           {
             foreignKeyName: "publish_targets_instagram_post_id_fkey"
             columns: ["instagram_post_id"]
