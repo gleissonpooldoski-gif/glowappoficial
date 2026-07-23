@@ -182,6 +182,56 @@ export type Database = {
           },
         ]
       }
+      facebook_accounts: {
+        Row: {
+          connected_at: string
+          connection_logs: Json
+          created_at: string
+          id: string
+          page_access_token: string
+          page_id: string
+          page_name: string
+          page_picture: string | null
+          project_id: string | null
+          updated_at: string
+          user_access_token: string | null
+        }
+        Insert: {
+          connected_at?: string
+          connection_logs?: Json
+          created_at?: string
+          id?: string
+          page_access_token: string
+          page_id: string
+          page_name: string
+          page_picture?: string | null
+          project_id?: string | null
+          updated_at?: string
+          user_access_token?: string | null
+        }
+        Update: {
+          connected_at?: string
+          connection_logs?: Json
+          created_at?: string
+          id?: string
+          page_access_token?: string
+          page_id?: string
+          page_name?: string
+          page_picture?: string | null
+          project_id?: string | null
+          updated_at?: string
+          user_access_token?: string | null
+        }
+        Relationships: [
+          {
+            foreignKeyName: "facebook_accounts_project_id_fkey"
+            columns: ["project_id"]
+            isOneToOne: false
+            referencedRelation: "projects"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
       instagram_account_locks: {
         Row: {
           cooldown_until: string | null
