@@ -240,7 +240,7 @@ export default function InstagramBatchScheduleDialog({ open, onOpenChange, video
     }
     if (videos.length === 0) return;
     if (insufficient) {
-      toast.error(`Slots insuficientes em: ${insufficientNets.join(", ")}.`);
+      toast.error(`Cronograma tem apenas ${slots.length} slot(s) para ${videos.length} vídeo(s). Ajuste em Configurações → Horários de publicação.`);
       return;
     }
     if (!confirm(`Agendar ${videos.length} vídeo(s) em ${nets.length} rede(s): ${nets.join(", ")}?`)) return;
@@ -248,11 +248,11 @@ export default function InstagramBatchScheduleDialog({ open, onOpenChange, video
     const allErrs: string[] = [];
     for (let i = 0; i < videos.length; i++) {
       const v = videos[i];
-      const slotFor: Partial<Record<NetworkId, Date>> = {};
-      for (const n of nets) slotFor[n] = slotsByNet[n]?.[i];
+      const slot = slots[i];
+      if (!slot) { allErrs.push(`Vídeo ${i + 1}: sem slot disponível`); setDone(i + 1); continue; }
       try {
         const { caption, hashtags } = await genCaption(v);
-        const errs = await scheduleOne(v, slotFor, caption, hashtags, nets);
+        const errs = await scheduleOne(v, slot, caption, hashtags, nets);
         errs.forEach((e) => allErrs.push(`Vídeo ${i + 1} (${v.filename ?? v.id}): ${e}`));
       } catch (e: any) {
         allErrs.push(`Vídeo ${i + 1} (${v.filename ?? v.id}): legenda não gerada — ${e?.message ?? "erro"}. Post não agendado.`);
