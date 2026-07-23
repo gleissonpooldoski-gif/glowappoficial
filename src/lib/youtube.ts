@@ -13,6 +13,7 @@ export type YoutubeCredential = {
   scope: string | null;
   status: string | null;
   label: string | null;
+  project_id: string | null;
   last_validated_at: string | null;
   last_validation_status: string | null;
   last_validation_detail: string | null;
