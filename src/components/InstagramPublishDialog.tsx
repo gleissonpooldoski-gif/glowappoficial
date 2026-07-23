@@ -307,8 +307,8 @@ export default function InstagramPublishDialog({
       }
 
       if (wantYT) {
-        if (ytChannels.length === 0) {
-          errs.push("YouTube: selecione ao menos um canal.");
+        if (!ytAccount) {
+          errs.push("YouTube: nenhum canal vinculado ao projeto atual. Vincule em Configurações → YouTube.");
         } else {
           try {
             // Extrai hashtags da legenda + campo hashtags. Título nunca usa nome do arquivo.
@@ -340,29 +340,26 @@ export default function InstagramPublishDialog({
             // Tags: hashtags extraídas (sem #), até 15.
             const tags = allHashtags.map((t) => t.replace(/^#/, "")).filter(Boolean).slice(0, 15);
 
-            // Publica/agenda um post por canal selecionado.
-            for (const channelAcc of ytChannels) {
-              try {
-                if (mode === "schedule") {
-                  const { data, error } = await supabase.from("youtube_posts" as any).insert({
-                    video_id: videoId, account: channelAcc,
-                    title, description: desc, tags,
-                    category_id: "22", privacy_status: "public",
-                    status: "AGENDADO", scheduled_at: ytIso,
-                  }).select("id").maybeSingle();
-                  if (error) throw error;
-                  if (!ytPostId) ytPostId = (data as any)?.id ?? null;
-                } else {
-                  toast.message(`Enviando para o YouTube (${channelAcc.slice(0, 8)}…)`);
-                  await uploadToYoutube({
-                    account: channelAcc, video_id: videoId,
-                    title, description: desc, tags,
-                    category_id: "22", privacy_status: "public",
-                  });
-                }
-              } catch (e: any) {
-                errs.push(`YouTube (${channelAcc.slice(0, 8)}…): ${e?.message ?? "erro"}`);
+            try {
+              if (mode === "schedule") {
+                const { data, error } = await supabase.from("youtube_posts" as any).insert({
+                  video_id: videoId, account: ytAccount,
+                  title, description: desc, tags,
+                  category_id: "22", privacy_status: "public",
+                  status: "AGENDADO", scheduled_at: ytIso,
+                }).select("id").maybeSingle();
+                if (error) throw error;
+                ytPostId = (data as any)?.id ?? null;
+              } else {
+                toast.message("Enviando para o YouTube…");
+                await uploadToYoutube({
+                  account: ytAccount, video_id: videoId,
+                  title, description: desc, tags,
+                  category_id: "22", privacy_status: "public",
+                });
               }
+            } catch (e: any) {
+              errs.push(`YouTube: ${e?.message ?? "erro"}`);
             }
           } catch (e: any) { errs.push(`YouTube: ${e?.message ?? "erro"}`); }
         }
