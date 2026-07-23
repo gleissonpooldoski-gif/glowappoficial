@@ -1,5 +1,5 @@
 import { useEffect, useState } from "react";
-import { Loader2, Instagram, Youtube, Facebook, CalendarClock, Send, Sparkles, RefreshCw, Wand2, Hand, Lock } from "lucide-react";
+import { Loader2, Instagram, Youtube, Facebook, CalendarClock, Send, Sparkles, RefreshCw, Lock } from "lucide-react";
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter, DialogDescription } from "@/components/ui/dialog";
 import { Button } from "@/components/ui/button";
 import { Label } from "@/components/ui/label";
@@ -11,7 +11,7 @@ import { toast } from "sonner";
 import { supabase } from "@/integrations/supabase/client";
 import { InstagramAccount, publishInstagram, friendlyError, useIgAccountForProject, platformLabelFor } from "@/lib/instagram";
 import { uploadToYoutube, useYoutubeChannelForProject } from "@/lib/youtube";
-import { findNextSlot, ScheduleNetwork, scheduleAccountFor } from "@/lib/schedules";
+
 import { useActiveProject } from "@/context/ProjectContext";
 import { extractVideoFrames } from "@/lib/videoFrames";
 import { createFacebookPost, getFacebookAccountForProject, friendlyFacebookError } from "@/lib/facebook";
@@ -74,9 +74,6 @@ export default function InstagramPublishDialog({
   const [time, setTime] = useState(plus1h.toTimeString().slice(0, 5));
   const [busy, setBusy] = useState(false);
   const [genBusy, setGenBusy] = useState(false);
-  const [scheduleMode, setScheduleMode] = useState<"auto" | "manual">("auto");
-  const [slotBusy, setSlotBusy] = useState(false);
-  const [autoSlots, setAutoSlots] = useState<{ instagram: Date | null; youtube: Date | null }>({ instagram: null, youtube: null });
   const [nets, setNets] = useState<Set<NetId>>(new Set(["instagram"]));
   const { account: ytAccount, channelTitle: ytChannelTitle, loading: ytLoading } = useYoutubeChannelForProject(activeProject?.id ?? null);
   const [hasVideoFile, setHasVideoFile] = useState<boolean | null>(null);
@@ -148,40 +145,7 @@ export default function InstagramPublishDialog({
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [open, videoId]);
 
-  // Ao abrir em modo agendar (ou quando trocar redes/conta), calcula próximo slot POR REDE
-  useEffect(() => {
-    if (!open || mode !== "schedule" || scheduleMode !== "auto") return;
-    void computeAutoSlot();
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [open, mode, scheduleMode, account, nets]);
-
-  const computeAutoSlot = async () => {
-    setSlotBusy(true);
-    try {
-      const results: { instagram: Date | null; youtube: Date | null } = { instagram: null, youtube: null };
-      await Promise.all(
-        (["instagram", "youtube"] as const).map(async (net) => {
-          if (!nets.has(net)) return;
-          const acc = scheduleAccountFor(net, account);
-          if (!acc) return;
-          try {
-            results[net] = await findNextSlot(net as ScheduleNetwork, acc);
-          } catch { /* ignore */ }
-        }),
-      );
-      setAutoSlots(results);
-      // Preenche date/time visíveis com o primeiro slot disponível (para exibição/manual)
-      const first = results.instagram ?? results.youtube;
-      if (first) {
-        setDate(`${first.getFullYear()}-${String(first.getMonth() + 1).padStart(2, "0")}-${String(first.getDate()).padStart(2, "0")}`);
-        setTime(first.toTimeString().slice(0, 5));
-      }
-    } catch (e: any) {
-      console.error(e);
-    } finally {
-      setSlotBusy(false);
-    }
-  };
+  // Horário único agora é sempre manual (date/time acima). Nenhum cálculo por rede.
 
   const generate = async (silent = false) => {
     if (!videoMeta) return;
@@ -271,16 +235,11 @@ export default function InstagramPublishDialog({
     if (!confirm(confirmMsg)) return;
     setBusy(true);
     try {
-      // Modo schedule: cada rede pode ter seu próprio horário (modo auto) ou o mesmo (modo manual).
-      const manualIso = mode === "schedule" ? localDateTimeToIso(date, time) : null;
-      const igIso = mode === "schedule"
-        ? (scheduleMode === "auto" ? (autoSlots.instagram?.toISOString() ?? null) : manualIso)
-        : null;
-      const ytIso = mode === "schedule"
-        ? (scheduleMode === "auto" ? (autoSlots.youtube?.toISOString() ?? null) : manualIso)
-        : null;
-      // Facebook usa o slot do Instagram (mesma cadência da conta) ou fallback manual/YT.
-      const fbIso = mode === "schedule" ? (igIso ?? ytIso ?? manualIso) : null;
+      // Horário ÚNICO para todas as redes selecionadas.
+      const unifiedIso = mode === "schedule" ? localDateTimeToIso(date, time) : null;
+      const igIso = mode === "schedule" ? unifiedIso : null;
+      const ytIso = mode === "schedule" ? unifiedIso : null;
+      const fbIso = mode === "schedule" ? unifiedIso : null;
       if (mode === "schedule") {
         if (wantIG && (!igIso || new Date(igIso).getTime() < Date.now() + 60_000)) {
           throw new Error("Instagram: horário indisponível. Configure a grade em Configurações.");
@@ -604,88 +563,44 @@ export default function InstagramPublishDialog({
           </div>
 
           {mode === "schedule" && (
-            <div className="space-y-2 rounded-lg border border-border/50 bg-background/40 p-3">
-              <div className="flex items-center gap-1">
-                <Button
-                  type="button"
-                  size="sm"
-                  variant={scheduleMode === "auto" ? "default" : "ghost"}
-                  className={scheduleMode === "auto" ? "bg-gold-gradient text-black h-8" : "h-8"}
-                  onClick={() => setScheduleMode("auto")}
-                >
-                  <Wand2 size={12} className="mr-1" /> Automático
-                </Button>
-                <Button
-                  type="button"
-                  size="sm"
-                  variant={scheduleMode === "manual" ? "default" : "ghost"}
-                  className={scheduleMode === "manual" ? "bg-gold-gradient text-black h-8" : "h-8"}
-                  onClick={() => setScheduleMode("manual")}
-                >
-                  <Hand size={12} className="mr-1" /> Manual
-                </Button>
-                {scheduleMode === "auto" && (
-                  <Button
-                    type="button"
-                    size="sm"
-                    variant="ghost"
-                    className="ml-auto h-8 text-[11px]"
-                    onClick={computeAutoSlot}
-                    disabled={slotBusy}
-                  >
-                    {slotBusy ? <Loader2 size={12} className="mr-1 animate-spin" /> : <RefreshCw size={12} className="mr-1" />}
-                    Recalcular
-                  </Button>
-                )}
+            <div className="space-y-3 rounded-lg border border-border/50 bg-background/40 p-3">
+              <div className="flex items-center gap-2 text-xs font-medium text-foreground">
+                <CalendarClock size={14} className="text-gold" />
+                Agendar publicação
               </div>
-
-              {scheduleMode === "auto" ? (
-                <div className="space-y-1 text-xs text-muted-foreground">
-                  {slotBusy && <div>Buscando próximos slots por rede…</div>}
-                  {!slotBusy && (
-                    <>
-                      {nets.has("instagram") && (
-                        <div className="flex items-center gap-2">
-                          <Instagram size={11} className="text-pink-400" />
-                          <span>Instagram:</span>
-                          <span className="text-foreground font-medium">
-                            {autoSlots.instagram
-                              ? autoSlots.instagram.toLocaleString("pt-BR", { dateStyle: "short", timeStyle: "short" })
-                              : "grade não configurada"}
-                          </span>
-                        </div>
-                      )}
-                      {nets.has("youtube") && (
-                        <div className="flex items-center gap-2">
-                          <Youtube size={11} className="text-red-400" />
-                          <span>YouTube:</span>
-                          <span className="text-foreground font-medium">
-                            {autoSlots.youtube
-                              ? autoSlots.youtube.toLocaleString("pt-BR", { dateStyle: "short", timeStyle: "short" })
-                              : "grade não configurada"}
-                          </span>
-                        </div>
-                      )}
-                      {!autoSlots.instagram && !autoSlots.youtube && (
-                        <div className="text-destructive">
-                          Nenhum horário configurado. Vá em Configurações → Horários de publicação.
-                        </div>
-                      )}
-                    </>
+              <div className="grid grid-cols-2 gap-2">
+                <div className="space-y-1.5">
+                  <Label className="text-xs">📅 Data</Label>
+                  <Input type="date" value={date} onChange={(e) => setDate(e.target.value)} />
+                </div>
+                <div className="space-y-1.5">
+                  <Label className="text-xs">🕒 Hora</Label>
+                  <Input type="time" value={time} onChange={(e) => setTime(e.target.value)} />
+                </div>
+              </div>
+              <div className="space-y-1.5 border-t border-border/40 pt-2">
+                <Label className="text-[11px] text-muted-foreground">Publicar em</Label>
+                <div className="flex flex-wrap items-center gap-2">
+                  {nets.has("instagram") && (
+                    <span className="inline-flex items-center gap-1 rounded-full border border-pink-400/40 bg-pink-500/10 px-2 py-0.5 text-[11px] text-pink-300">
+                      <Instagram size={11} /> Instagram
+                    </span>
+                  )}
+                  {nets.has("facebook") && (
+                    <span className="inline-flex items-center gap-1 rounded-full border border-blue-400/40 bg-blue-500/10 px-2 py-0.5 text-[11px] text-blue-300">
+                      <Facebook size={11} /> Facebook
+                    </span>
+                  )}
+                  {nets.has("youtube") && (
+                    <span className="inline-flex items-center gap-1 rounded-full border border-red-400/40 bg-red-500/10 px-2 py-0.5 text-[11px] text-red-300">
+                      <Youtube size={11} /> YouTube
+                    </span>
                   )}
                 </div>
-              ) : (
-                <div className="grid grid-cols-2 gap-2">
-                  <div className="space-y-1.5">
-                    <Label className="text-xs">Data</Label>
-                    <Input type="date" value={date} onChange={(e) => setDate(e.target.value)} />
-                  </div>
-                  <div className="space-y-1.5">
-                    <Label className="text-xs">Hora</Label>
-                    <Input type="time" value={time} onChange={(e) => setTime(e.target.value)} />
-                  </div>
-                </div>
-              )}
+                <p className="text-[10px] text-muted-foreground">
+                  O horário escolhido será usado para todas as redes selecionadas.
+                </p>
+              </div>
             </div>
           )}
 
