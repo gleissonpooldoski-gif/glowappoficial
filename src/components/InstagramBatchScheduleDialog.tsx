@@ -337,9 +337,12 @@ export default function InstagramBatchScheduleDialog({ open, onOpenChange, video
               </div>
             )}
             {selectedNets.has("youtube") && (
-              <div className="rounded-md border border-border/60 bg-background/40 px-2.5 py-2 space-y-1.5">
-                <Label className="text-[11px] text-muted-foreground">Canais do YouTube</Label>
-                <YoutubeChannelPicker value={ytChannels} onChange={setYtChannels} disabled={busy} compact />
+              <div className="flex items-center gap-2 rounded-md border border-border/60 bg-background/40 px-2.5 py-1.5 text-[11px]">
+                <Lock size={10} />
+                <span className="text-muted-foreground">YouTube usa o canal do projeto:</span>
+                <Badge variant="outline" className="text-[10px]">
+                  ▶️ {ytChannelTitle ?? (ytLoading ? "carregando…" : ytAccount ?? "sem canal vinculado")}
+                </Badge>
               </div>
             )}
           </div>
