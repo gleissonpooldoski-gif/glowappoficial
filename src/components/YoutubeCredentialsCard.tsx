@@ -21,18 +21,37 @@ type ProjectRow = { id: string; name: string };
 
 export default function YoutubeCredentialsCard() {
   const [channels, setChannels] = useState<YoutubeCredential[]>([]);
+  const [projects, setProjects] = useState<ProjectRow[]>([]);
   const [loading, setLoading] = useState(true);
   const [busy, setBusy] = useState<string | null>(null);
   const [uploadFor, setUploadFor] = useState<YoutubeAccount | null>(null);
 
   const load = async () => {
     setLoading(true);
-    try { setChannels(await listYoutubeChannels()); }
+    try {
+      const [ch, pr] = await Promise.all([
+        listYoutubeChannels(),
+        supabase.from("projects").select("id, name").order("name"),
+      ]);
+      setChannels(ch);
+      setProjects(((pr.data as any[]) ?? []) as ProjectRow[]);
+    }
     catch (e: any) { toast.error(e?.message ?? "Falha ao carregar canais do YouTube."); }
     finally { setLoading(false); }
   };
 
   useEffect(() => { load(); }, []);
+
+  const updateProject = async (account: string, projectId: string | null) => {
+    setBusy(account);
+    try {
+      await setYoutubeChannelProject(account, projectId);
+      toast.success(projectId ? "Projeto vinculado ao canal." : "Vínculo removido.");
+      await load();
+    } catch (e: any) {
+      toast.error(e?.message ?? "Falha ao vincular projeto.");
+    } finally { setBusy(null); }
+  };
 
   const connectNew = async () => {
     setBusy("__new__");
