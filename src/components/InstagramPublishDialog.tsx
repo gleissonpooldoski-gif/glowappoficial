@@ -369,6 +369,28 @@ export default function InstagramPublishDialog({
         }
       }
 
+      // === FACEBOOK (independente: erros não afetam IG/YT) ===
+      if (wantFB && fbAccount && activeProject?.id) {
+        try {
+          if (mode === "schedule") {
+            const res: any = await createFacebookPost({
+              project_id: activeProject.id, video_id: videoId,
+              description: [caption, hashtags].filter(Boolean).join("\n\n"),
+              publish_now: false, scheduled_at: fbIso!,
+            });
+            fbPostId = res?.post?.id ?? null;
+          } else {
+            toast.message("Enviando para o Facebook…");
+            const res: any = await createFacebookPost({
+              project_id: activeProject.id, video_id: videoId,
+              description: [caption, hashtags].filter(Boolean).join("\n\n"),
+              publish_now: true,
+            });
+            fbPostId = res?.post?.id ?? null;
+          }
+        } catch (e: any) { errs.push(`Facebook: ${friendlyFacebookError(e)}`); }
+      }
+
       // Registro consolidado por rede (para o calendário exibir os ícones).
       if (mode === "schedule") {
         const rows: any[] = [];
@@ -379,6 +401,10 @@ export default function InstagramPublishDialog({
         if (wantYT && ytIso) rows.push({
           video_id: videoId, networks: ["youtube"], scheduled_at: ytIso,
           instagram_post_id: null, youtube_post_id: ytPostId, tiktok_post_id: null,
+        });
+        if (wantFB && fbIso) rows.push({
+          video_id: videoId, networks: ["facebook"], scheduled_at: fbIso,
+          instagram_post_id: null, youtube_post_id: null, tiktok_post_id: null,
         });
         if (rows.length) {
           try { await supabase.from("publish_schedules_multi" as any).insert(rows); } catch { /* não bloqueia */ }
