@@ -45,10 +45,10 @@ function fmt(d: Date) {
 export default function InstagramBatchScheduleDialog({ open, onOpenChange, videos, onDone }: Props) {
   const { activeProject } = useActiveProject();
   const { account: igAccount, displayName: igDisplayName, loading: igLoading } = useIgAccountForProject(activeProject?.id ?? null);
+  const { account: ytAccount, channelTitle: ytChannelTitle, loading: ytLoading } = useYoutubeChannelForProject(activeProject?.id ?? null);
   const platformLabel = platformLabelFor(igAccount, igDisplayName);
 
   const [selectedNets, setSelectedNets] = useState<Set<NetworkId>>(new Set(["instagram"]));
-  const [ytChannels, setYtChannels] = useState<string[]>([]);
   const toggleNet = (id: NetworkId) => setSelectedNets((prev) => {
     const n = new Set(prev);
     if (n.has(id)) n.delete(id); else n.add(id);
