@@ -10,11 +10,11 @@ import { Checkbox } from "@/components/ui/checkbox";
 import { toast } from "sonner";
 import { supabase } from "@/integrations/supabase/client";
 import { InstagramAccount, publishInstagram, friendlyError, useIgAccountForProject, platformLabelFor } from "@/lib/instagram";
+import { useYoutubeChannelForProject } from "@/lib/youtube";
 import { findNextSlots, ScheduleNetwork, scheduleAccountFor } from "@/lib/schedules";
 import { useActiveProject } from "@/context/ProjectContext";
 import { extractVideoFrames } from "@/lib/videoFrames";
 import { NETWORKS, NetworkId } from "@/lib/publish-networks";
-import YoutubeChannelPicker from "./YoutubeChannelPicker";
 
 type VideoMeta = {
   id: string;
