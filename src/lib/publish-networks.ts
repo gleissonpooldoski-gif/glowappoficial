@@ -16,7 +16,7 @@ export const NETWORKS: NetworkMeta[] = [
   { id: "instagram", label: "Instagram", icon: Instagram, color: "text-pink-400", available: true },
   { id: "youtube", label: "YouTube", icon: Youtube, color: "text-red-400", available: true },
   { id: "tiktok", label: "TikTok", icon: Music2, color: "text-fuchsia-400", available: true },
-  { id: "facebook", label: "Facebook", icon: Facebook, color: "text-blue-400", available: false, soonLabel: "em breve" },
+  { id: "facebook", label: "Facebook", icon: Facebook, color: "text-blue-400", available: true },
   { id: "linkedin", label: "LinkedIn", icon: Linkedin, color: "text-sky-400", available: false, soonLabel: "em breve" },
 ];
 
