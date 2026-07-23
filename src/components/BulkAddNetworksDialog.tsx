@@ -209,8 +209,8 @@ export default function BulkAddNetworksDialog({ posts, open, onOpenChange, onSav
       toast.error("Selecione ao menos um canal do YouTube.");
       return;
     }
-    if (chosen.includes("facebook") && fbSelected.size === 0) {
-      toast.error("Selecione ao menos uma Página do Facebook.");
+    if (chosen.includes("facebook") && fbAccounts.length === 0) {
+      toast.error("Nenhuma Página do Facebook conectada. Conecte em Configurações → Facebook.");
       return;
     }
     setBusy(true);
