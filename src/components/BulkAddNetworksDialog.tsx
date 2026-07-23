@@ -177,7 +177,7 @@ export default function BulkAddNetworksDialog({ posts, open, onOpenChange, onSav
   const [nets, setNets] = useState<Record<NetId, boolean>>({
     instagram: false, youtube: true, tiktok: false, facebook: false,
   });
-  const [ytChannels, setYtChannels] = useState<string[]>([]);
+  const [ytChannels, setYtChannels] = useState<YoutubeCredential[]>([]);
   const [fbAccounts, setFbAccounts] = useState<FbAccount[]>([]);
 
   const toggle = (id: NetId) => setNets((s) => ({ ...s, [id]: !s[id] }));
@@ -185,16 +185,20 @@ export default function BulkAddNetworksDialog({ posts, open, onOpenChange, onSav
   useEffect(() => {
     if (!open) return;
     (async () => {
-      const { data } = await supabase
-        .from("facebook_accounts" as any)
-        .select("id, project_id, page_id, page_name, page_picture, projects:project_id(name)")
-        .order("created_at", { ascending: true });
-      const list: FbAccount[] = ((data as any[]) ?? []).map((r) => ({
+      const [{ data: fbData }, ytList] = await Promise.all([
+        supabase
+          .from("facebook_accounts" as any)
+          .select("id, project_id, page_id, page_name, page_picture, projects:project_id(name)")
+          .order("created_at", { ascending: true }),
+        listYoutubeChannels().catch(() => [] as YoutubeCredential[]),
+      ]);
+      const list: FbAccount[] = ((fbData as any[]) ?? []).map((r) => ({
         id: r.id, project_id: r.project_id, page_id: r.page_id,
         page_name: r.page_name, page_picture: r.page_picture,
         project_name: r.projects?.name ?? null,
       }));
       setFbAccounts(list);
+      setYtChannels(ytList);
     })();
   }, [open]);
 
