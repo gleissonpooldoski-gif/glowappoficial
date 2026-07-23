@@ -1,20 +1,18 @@
 import { useEffect, useMemo, useState } from "react";
-import { Loader2, CalendarClock, RefreshCw, Sparkles, Wand2, Hand, Lock } from "lucide-react";
+import { Loader2, CalendarClock, Sparkles, Instagram, Youtube, Facebook, Music2 } from "lucide-react";
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter, DialogDescription } from "@/components/ui/dialog";
 import { Button } from "@/components/ui/button";
 import { Label } from "@/components/ui/label";
-import { Input } from "@/components/ui/input";
 import { Badge } from "@/components/ui/badge";
 import { Progress } from "@/components/ui/progress";
 import { Checkbox } from "@/components/ui/checkbox";
 import { toast } from "sonner";
 import { supabase } from "@/integrations/supabase/client";
-import { InstagramAccount, publishInstagram, friendlyError, useIgAccountForProject, platformLabelFor } from "@/lib/instagram";
-import { useYoutubeChannelForProject } from "@/lib/youtube";
-import { findNextSlots, ScheduleNetwork, scheduleAccountFor } from "@/lib/schedules";
-import { useActiveProject } from "@/context/ProjectContext";
+import { publishInstagram, friendlyError } from "@/lib/instagram";
+import { getYoutubeChannelForProject, type YoutubeCredential } from "@/lib/youtube";
+import { getFacebookAccountForProject, createFacebookPost } from "@/lib/facebook";
+import { getSchedule, DEFAULT_TIMES, type ScheduleNetwork } from "@/lib/schedules";
 import { extractVideoFrames } from "@/lib/videoFrames";
-import { NETWORKS, NetworkId } from "@/lib/publish-networks";
 
 type VideoMeta = {
   id: string;
@@ -31,6 +29,26 @@ type Props = {
   onDone?: () => void;
 };
 
+type NetId = "instagram" | "facebook" | "youtube" | "tiktok";
+
+const NETS: { id: NetId; label: string; icon: any; color: string }[] = [
+  { id: "instagram", label: "Instagram", icon: Instagram, color: "text-pink-400" },
+  { id: "facebook", label: "Facebook", icon: Facebook, color: "text-blue-400" },
+  { id: "youtube", label: "YouTube", icon: Youtube, color: "text-red-400" },
+  { id: "tiktok", label: "TikTok", icon: Music2, color: "text-fuchsia-400" },
+];
+
+type ProjectBundle = {
+  projectId: string;
+  projectName: string | null;
+  projectCategory: string | null;
+  igAccount: string | null;      // slug em instagram_credentials.account
+  ytChannel: YoutubeCredential | null;
+  fbAccount: { id: string; page_id: string; page_name: string | null } | null;
+  ttAccount: string | null;      // usa mesmo slug do IG (frame/resenha)
+  times: string[];               // horários da grade do projeto
+};
+
 function flattenHashtags(h: any): string {
   if (!h) return "";
   if (typeof h === "string") return h;
@@ -38,134 +56,155 @@ function flattenHashtags(h: any): string {
   return groups.flat().join(" ");
 }
 
-function fmt(d: Date) {
-  return d.toLocaleString("pt-BR", { dateStyle: "short", timeStyle: "short" });
+/** Constrói lista de N slots futuros a partir da grade do projeto, avançando
+ *  automaticamente para o próximo dia quando esgotar os horários do dia. */
+function buildSlotsFromTimes(times: string[], count: number, offsetToday: Set<number> = new Set()): Date[] {
+  if (times.length === 0 || count <= 0) return [];
+  const parsed = times
+    .map((t) => t.split(":").map(Number))
+    .filter(([h, m]) => Number.isFinite(h) && Number.isFinite(m))
+    .sort((a, b) => a[0] * 60 + a[1] - (b[0] * 60 + b[1]));
+  const out: Date[] = [];
+  const minStart = Date.now() + 60_000;
+  const day = new Date();
+  day.setHours(0, 0, 0, 0);
+  for (let d = 0; d < 365 && out.length < count; d++) {
+    for (const [h, m] of parsed) {
+      if (out.length >= count) break;
+      const slot = new Date(day);
+      slot.setDate(day.getDate() + d);
+      slot.setHours(h, m, 0, 0);
+      if (slot.getTime() < minStart) continue;
+      if (offsetToday.has(slot.getTime())) continue;
+      out.push(slot);
+    }
+  }
+  return out;
 }
 
 export default function InstagramBatchScheduleDialog({ open, onOpenChange, videos, onDone }: Props) {
-  const { activeProject } = useActiveProject();
-  const { account: igAccount, displayName: igDisplayName, loading: igLoading } = useIgAccountForProject(activeProject?.id ?? null);
-  const { account: ytAccount, channelTitle: ytChannelTitle, loading: ytLoading } = useYoutubeChannelForProject(activeProject?.id ?? null);
-  const platformLabel = platformLabelFor(igAccount, igDisplayName);
+  const [selectedNets, setSelectedNets] = useState<Set<NetId>>(
+    new Set(["instagram", "facebook", "youtube", "tiktok"]),
+  );
+  const [busy, setBusy] = useState(false);
+  const [done, setDone] = useState(0);
+  const [errors, setErrors] = useState<string[]>([]);
 
-  const [selectedNets, setSelectedNets] = useState<Set<NetworkId>>(new Set(["instagram"]));
-  const toggleNet = (id: NetworkId) => setSelectedNets((prev) => {
+  useEffect(() => {
+    if (!open) { setDone(0); setErrors([]); }
+  }, [open]);
+
+  const toggleNet = (id: NetId) => setSelectedNets((prev) => {
     const n = new Set(prev);
     if (n.has(id)) n.delete(id); else n.add(id);
     return n;
   });
 
-  const [slots, setSlots] = useState<Date[]>([]);
-  const [slotBusy, setSlotBusy] = useState(false);
-  const [busy, setBusy] = useState(false);
-  const [done, setDone] = useState(0);
-  const [errors, setErrors] = useState<string[]>([]);
-  const [startMode, setStartMode] = useState<"auto" | "manual">("auto");
-  const initial = useMemo(() => new Date(Date.now() + 60 * 60 * 1000), []);
-  const [startDate, setStartDate] = useState(initial.toISOString().slice(0, 10));
-  const [startTime, setStartTime] = useState(initial.toTimeString().slice(0, 5));
+  /** Resolve credenciais e cronograma para cada projeto envolvido no lote. */
+  const buildProjectBundles = async (videoRows: { id: string; project_id: string | null }[]): Promise<Map<string, ProjectBundle>> => {
+    const projectIds = Array.from(new Set(videoRows.map((v) => v.project_id).filter(Boolean))) as string[];
+    const map = new Map<string, ProjectBundle>();
+    if (projectIds.length === 0) return map;
 
-  const parseStart = (): Date | null => {
-    if (startMode !== "manual") return null;
-    if (!startDate || !startTime) return null;
-    const [y, m, d] = startDate.split("-").map(Number);
-    const [hh, mm] = startTime.split(":").map(Number);
-    const dt = new Date(y, (m ?? 1) - 1, d ?? 1, hh ?? 0, mm ?? 0, 0, 0);
-    if (isNaN(dt.getTime())) return null;
-    return dt;
-  };
-
-  const compute = async () => {
-    setSlotBusy(true);
+    // Instagram: usa a edge function segura para descobrir account por project_id.
+    let igByProject = new Map<string, string>();
     try {
-      const startFrom = parseStart();
-      if (startMode === "manual" && startFrom && startFrom.getTime() < Date.now() + 60_000) {
-        toast.error("Selecione uma data/hora futura para começar.");
-        setSlots([]);
-        return;
+      const { data } = await supabase.functions.invoke("instagram-credentials", { body: { action: "get" } });
+      const creds = (data?.credentials ?? {}) as Record<string, { account: string; project_id: string | null }>;
+      for (const c of Object.values(creds)) {
+        if (c.project_id) igByProject.set(c.project_id, c.account);
       }
-      // Cronograma é do PROJETO — busca uma única lista via IG (ou YT como fallback).
-      let list: Date[] = [];
-      if (igAccount) {
-        try { list = await findNextSlots("instagram", igAccount, videos.length, { startFrom }); } catch { /* ignore */ }
-      }
-      if (list.length === 0 && ytAccount) {
-        try { list = await findNextSlots("youtube", ytAccount, videos.length, { startFrom }); } catch { /* ignore */ }
-      }
-      setSlots(list);
-    } catch (e: any) {
-      toast.error(e?.message ?? "Falha ao calcular horários");
-    } finally {
-      setSlotBusy(false);
-    }
-  };
+    } catch { /* ignore */ }
 
-  useEffect(() => {
-    if (!open) return;
-    setDone(0); setErrors([]);
-    void compute();
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [open, igAccount, videos.length, startMode, startDate, startTime, selectedNets]);
+    // Projetos (nome/categoria)
+    const { data: projs } = await supabase
+      .from("projects")
+      .select("id, name, category")
+      .in("id", projectIds);
+    const projMeta = new Map<string, { name: string | null; category: string | null }>();
+    for (const p of ((projs ?? []) as any[])) projMeta.set(p.id, { name: p.name ?? null, category: p.category ?? null });
 
-  // Redes ativas: apenas as disponíveis com credenciais correspondentes.
-  const activeNets = Array.from(selectedNets).filter(
-    (n) => (NETWORKS.find((x) => x.id === n)?.available)
-      && (n === "youtube" || !!igAccount),
-  ) as NetworkId[];
-  const insufficient = slots.length < videos.length;
+    for (const pid of projectIds) {
+      const meta = projMeta.get(pid) ?? { name: null, category: null };
+      const igAccount = igByProject.get(pid) ?? null;
+      const [ytChannel, fbAccount] = await Promise.all([
+        getYoutubeChannelForProject(pid).catch(() => null),
+        getFacebookAccountForProject(pid).catch(() => null),
+      ]);
 
-  const genCaption = async (v: VideoMeta) => {
-    try {
-      let frames: string[] = [];
-      try {
-        const { data: row } = await supabase
-          .from("videos")
-          .select("processed_path")
-          .eq("id", v.id)
-          .maybeSingle();
-        const path = (row as any)?.processed_path as string | null;
-        if (path) {
-          const { data: s } = await supabase.storage.from("videos-processed").createSignedUrl(path, 60 * 30);
-          if (s?.signedUrl) frames = await extractVideoFrames(s.signedUrl, 3).catch(() => []);
-        }
-      } catch {}
-      const { data, error } = await supabase.functions.invoke("generate-caption", {
-        body: {
-          filename: v.filename,
-          templateName: v.templateName ?? null,
-          projectName: v.projectName ?? null,
-          projectCategory: v.projectCategory ?? null,
-          frames,
-        },
+      // Cronograma: prioriza IG → YT → default. Reutiliza a grade já configurada.
+      let times: string[] = [];
+      const tryNet = async (net: ScheduleNetwork, account: string | null) => {
+        if (!account || times.length) return;
+        const s = await getSchedule(net, account, null).catch(() => null);
+        if (s?.times?.length) times = s.times;
+      };
+      await tryNet("instagram", igAccount);
+      await tryNet("youtube", ytChannel?.account ?? null);
+      await tryNet("tiktok", igAccount);
+      if (times.length === 0) times = DEFAULT_TIMES;
+
+      map.set(pid, {
+        projectId: pid,
+        projectName: meta.name,
+        projectCategory: meta.category,
+        igAccount,
+        ytChannel: ytChannel ?? null,
+        fbAccount: fbAccount ?? null,
+        ttAccount: igAccount, // TikTok reutiliza o slug do projeto
+        times,
       });
-      if (error || (data as any)?.error) throw new Error((data as any)?.error ?? error?.message ?? "Falha ao gerar legenda");
-      const caption = String((data as any)?.caption ?? "").trim();
-      const hashtags = flattenHashtags((data as any)?.hashtags);
-      if (!caption) throw new Error("IA retornou legenda vazia");
-      return { caption, hashtags };
-    } catch (e: any) {
-      throw new Error(e?.message ?? "Falha ao gerar legenda");
     }
+    return map;
+  };
+
+  /** Gera legenda via IA (usa mesma edge function do agendamento individual). */
+  const genCaption = async (v: VideoMeta & { project_id: string | null }, projMeta: { name: string | null; category: string | null }) => {
+    let frames: string[] = [];
+    try {
+      const { data: row } = await supabase.from("videos").select("processed_path").eq("id", v.id).maybeSingle();
+      const path = (row as any)?.processed_path as string | null;
+      if (path) {
+        const { data: s } = await supabase.storage.from("videos-processed").createSignedUrl(path, 60 * 30);
+        if (s?.signedUrl) frames = await extractVideoFrames(s.signedUrl, 3).catch(() => []);
+      }
+    } catch { /* ignore */ }
+    const { data, error } = await supabase.functions.invoke("generate-caption", {
+      body: {
+        filename: v.filename,
+        templateName: v.templateName ?? null,
+        projectName: v.projectName ?? projMeta.name,
+        projectCategory: v.projectCategory ?? projMeta.category,
+        frames,
+      },
+    });
+    if (error || (data as any)?.error) throw new Error((data as any)?.error ?? error?.message ?? "Falha ao gerar legenda");
+    const caption = String((data as any)?.caption ?? "").trim();
+    const hashtags = flattenHashtags((data as any)?.hashtags);
+    if (!caption) throw new Error("IA retornou legenda vazia");
+    return { caption, hashtags };
   };
 
   const scheduleOne = async (
-    v: VideoMeta, slot: Date, caption: string, hashtags: string, nets: NetworkId[],
+    v: VideoMeta,
+    slot: Date,
+    caption: string,
+    hashtags: string,
+    nets: NetId[],
+    bundle: ProjectBundle,
   ): Promise<string[]> => {
     const errs: string[] = [];
     const iso = slot.toISOString();
-    let igPostId: string | null = null;
-    let ttPostId: string | null = null;
-    let ytPostId: string | null = null;
 
     if (nets.includes("instagram")) {
-      if (!igAccount) errs.push("Instagram: projeto ativo inválido");
+      if (!bundle.igAccount) errs.push("Instagram: conta não vinculada ao projeto");
       else {
         try {
           const res: any = await publishInstagram({
-            account: igAccount, videoId: v.id, caption, hashtags,
+            account: bundle.igAccount, videoId: v.id, caption, hashtags,
             publishNow: false, scheduledAt: iso,
           });
-          igPostId = res?.post?.id ?? null;
+          const igPostId = res?.post?.id ?? null;
           await supabase.from("publish_schedules_multi" as any).insert({
             video_id: v.id, networks: ["instagram"], scheduled_at: iso,
             instagram_post_id: igPostId, youtube_post_id: null, tiktok_post_id: null,
@@ -174,54 +213,65 @@ export default function InstagramBatchScheduleDialog({ open, onOpenChange, video
       }
     }
 
+    if (nets.includes("facebook")) {
+      if (!bundle.fbAccount) errs.push("Facebook: página não vinculada ao projeto");
+      else {
+        try {
+          const description = [caption, hashtags].filter(Boolean).join("\n\n");
+          await createFacebookPost({
+            project_id: bundle.projectId,
+            video_id: v.id,
+            description,
+            publish_now: false,
+            scheduled_at: iso,
+          });
+        } catch (e: any) { errs.push(`Facebook: ${e?.message ?? "erro"}`); }
+      }
+    }
+
     if (nets.includes("tiktok")) {
-      const ttAccount = igAccount;
-      if (!ttAccount) errs.push("TikTok: projeto ativo inválido");
+      if (!bundle.ttAccount) errs.push("TikTok: conta não vinculada ao projeto");
       else {
         try {
           const { buildTiktokCaptionFromBase } = await import("@/lib/tiktok-meta");
           const tt = await buildTiktokCaptionFromBase(caption, hashtags, {
-            projectName: v.projectName ?? null, projectCategory: v.projectCategory ?? null,
+            projectName: bundle.projectName, projectCategory: bundle.projectCategory,
           });
           const { data, error } = await supabase.from("tiktok_posts" as any).insert({
-            video_id: v.id, account: ttAccount,
+            video_id: v.id, account: bundle.ttAccount,
             caption: tt.caption,
             status: "AGENDADO", scheduled_at: iso,
           }).select("id").maybeSingle();
           if (error) throw error;
-          ttPostId = (data as any)?.id ?? null;
+          const ttId = (data as any)?.id ?? null;
           await supabase.from("publish_schedules_multi" as any).insert({
             video_id: v.id, networks: ["tiktok"], scheduled_at: iso,
-            instagram_post_id: null, youtube_post_id: null, tiktok_post_id: ttPostId,
+            instagram_post_id: null, youtube_post_id: null, tiktok_post_id: ttId,
           });
         } catch (e: any) { errs.push(`TikTok: ${e?.message ?? "erro"}`); }
       }
     }
 
     if (nets.includes("youtube")) {
-      if (!ytAccount) {
-        errs.push("YouTube: nenhum canal vinculado a este projeto.");
-      } else {
+      if (!bundle.ytChannel?.account) errs.push("YouTube: canal não vinculado ao projeto");
+      else {
         try {
           const { buildYoutubeMetaFromCaption } = await import("@/lib/youtube-meta");
-          const { title, description, tags } = await buildYoutubeMetaFromCaption(caption, hashtags);
-          try {
-            const { data, error } = await supabase.from("youtube_posts" as any).insert({
-              video_id: v.id, account: ytAccount,
-              title, description, tags,
-              category_id: "22", privacy_status: "public",
-              status: "AGENDADO", scheduled_at: iso,
-            }).select("id").maybeSingle();
-            if (error) throw error;
-            const ytId = (data as any)?.id ?? null;
-            ytPostId = ytId;
-            await supabase.from("publish_schedules_multi" as any).insert({
-              video_id: v.id, networks: ["youtube"], scheduled_at: iso,
-              instagram_post_id: null, youtube_post_id: ytId, tiktok_post_id: null,
-            });
-          } catch (e: any) {
-            errs.push(`YouTube: ${e?.message ?? "erro"}`);
-          }
+          const { title, description, tags } = await buildYoutubeMetaFromCaption(caption, hashtags, {
+            projectName: bundle.projectName, projectCategory: bundle.projectCategory, videoId: v.id,
+          });
+          const { data, error } = await supabase.from("youtube_posts" as any).insert({
+            video_id: v.id, account: bundle.ytChannel.account,
+            title, description, tags,
+            category_id: "22", privacy_status: "public",
+            status: "AGENDADO", scheduled_at: iso,
+          }).select("id").maybeSingle();
+          if (error) throw error;
+          const ytId = (data as any)?.id ?? null;
+          await supabase.from("publish_schedules_multi" as any).insert({
+            video_id: v.id, networks: ["youtube"], scheduled_at: iso,
+            instagram_post_id: null, youtube_post_id: ytId, tiktok_post_id: null,
+          });
         } catch (e: any) { errs.push(`YouTube: ${e?.message ?? "erro"}`); }
       }
     }
@@ -230,43 +280,74 @@ export default function InstagramBatchScheduleDialog({ open, onOpenChange, video
   };
 
   const run = async () => {
-    const nets = activeNets;
-    if (nets.length === 0) { toast.error("Selecione ao menos uma rede social."); return; }
-    if (nets.includes("instagram") && !igAccount) {
-      toast.error(igLoading ? "Carregando conta do projeto…" : "Este projeto não tem uma conta do Instagram vinculada. Cadastre em Configurações → Instagram."); return;
-    }
-    if (nets.includes("youtube") && !ytAccount) {
-      toast.error(ytLoading ? "Carregando canal do projeto…" : "Este projeto não tem um canal do YouTube vinculado. Configure em Configurações → YouTube."); return;
-    }
+    const nets = Array.from(selectedNets);
+    if (nets.length === 0) { toast.error("Selecione ao menos uma rede."); return; }
     if (videos.length === 0) return;
-    if (insufficient) {
-      toast.error(`Cronograma tem apenas ${slots.length} slot(s) para ${videos.length} vídeo(s). Ajuste em Configurações → Horários de publicação.`);
-      return;
-    }
-    if (!confirm(`Agendar ${videos.length} vídeo(s) em ${nets.length} rede(s): ${nets.join(", ")}?`)) return;
+    if (!confirm(`Agendar ${videos.length} vídeo(s) automaticamente em ${nets.length} rede(s)?`)) return;
+
     setBusy(true); setDone(0); setErrors([]);
     const allErrs: string[] = [];
-    for (let i = 0; i < videos.length; i++) {
-      const v = videos[i];
-      const slot = slots[i];
-      if (!slot) { allErrs.push(`Vídeo ${i + 1}: sem slot disponível`); setDone(i + 1); continue; }
-      try {
-        const { caption, hashtags } = await genCaption(v);
-        const errs = await scheduleOne(v, slot, caption, hashtags, nets);
-        errs.forEach((e) => allErrs.push(`Vídeo ${i + 1} (${v.filename ?? v.id}): ${e}`));
-      } catch (e: any) {
-        allErrs.push(`Vídeo ${i + 1} (${v.filename ?? v.id}): legenda não gerada — ${e?.message ?? "erro"}. Post não agendado.`);
+
+    try {
+      // Carrega project_id de cada vídeo (ordem mantida).
+      const ids = videos.map((v) => v.id);
+      const { data: rows } = await supabase.from("videos").select("id, project_id").in("id", ids);
+      const projectByVideo = new Map<string, string | null>();
+      for (const r of ((rows ?? []) as any[])) projectByVideo.set(r.id, r.project_id ?? null);
+
+      const videoRows = videos.map((v) => ({ id: v.id, project_id: projectByVideo.get(v.id) ?? null }));
+      const bundles = await buildProjectBundles(videoRows);
+
+      // Contador de vídeos já agendados por projeto → posição no cronograma.
+      const perProjectCount = new Map<string, number>();
+      // Cache de slots pré-calculados por projeto.
+      const slotCache = new Map<string, Date[]>();
+
+      for (let i = 0; i < videos.length; i++) {
+        const v = videos[i];
+        const pid = projectByVideo.get(v.id) ?? null;
+        if (!pid) { allErrs.push(`Vídeo ${i + 1} (${v.filename ?? v.id}): sem projeto vinculado`); setDone(i + 1); continue; }
+        const bundle = bundles.get(pid);
+        if (!bundle) { allErrs.push(`Vídeo ${i + 1} (${v.filename ?? v.id}): projeto sem configuração`); setDone(i + 1); continue; }
+
+        // Total de vídeos deste projeto no lote → dimensiona a lista de slots.
+        if (!slotCache.has(pid)) {
+          const total = videoRows.filter((r) => r.project_id === pid).length;
+          slotCache.set(pid, buildSlotsFromTimes(bundle.times, total));
+        }
+        const idx = perProjectCount.get(pid) ?? 0;
+        const slot = slotCache.get(pid)![idx];
+        perProjectCount.set(pid, idx + 1);
+
+        if (!slot) {
+          allErrs.push(`Vídeo ${i + 1} (${v.filename ?? v.id}): sem slot disponível no cronograma`);
+          setDone(i + 1); continue;
+        }
+
+        try {
+          const { caption, hashtags } = await genCaption(
+            { ...v, project_id: pid },
+            { name: bundle.projectName, category: bundle.projectCategory },
+          );
+          const errs = await scheduleOne(v, slot, caption, hashtags, nets, bundle);
+          errs.forEach((e) => allErrs.push(`Vídeo ${i + 1} (${v.filename ?? v.id}): ${e}`));
+        } catch (e: any) {
+          allErrs.push(`Vídeo ${i + 1} (${v.filename ?? v.id}): legenda não gerada — ${e?.message ?? "erro"}`);
+        }
+        setDone(i + 1);
       }
-      setDone(i + 1);
+    } catch (e: any) {
+      allErrs.push(e?.message ?? "Falha inesperada");
     }
+
     setErrors(allErrs);
     setBusy(false);
     if (allErrs.length === 0) {
-      toast.success(`${videos.length} vídeo(s) agendados em ${nets.length} rede(s)`);
+      toast.success(`${videos.length} vídeo(s) agendados em ${Array.from(selectedNets).length} rede(s)`);
       onOpenChange(false);
       onDone?.();
     } else {
-      toast.warning(`Concluído com ${allErrs.length} erro(s). Veja detalhes.`);
+      toast.warning(`Concluído com ${allErrs.length} erro(s).`);
       onDone?.();
     }
   };
@@ -275,137 +356,44 @@ export default function InstagramBatchScheduleDialog({ open, onOpenChange, video
 
   return (
     <Dialog open={open} onOpenChange={(o) => !busy && onOpenChange(o)}>
-      <DialogContent className="max-w-lg max-h-[90vh] overflow-y-auto">
+      <DialogContent className="max-w-lg">
         <DialogHeader>
           <DialogTitle className="flex items-center gap-2">
-            <CalendarClock size={16} className="text-gold" /> Agendar em múltiplas redes
+            <CalendarClock size={16} className="text-gold" /> Publicação em Lote
           </DialogTitle>
           <DialogDescription>
-            Distribui automaticamente os vídeos nos próximos horários livres da grade nas redes escolhidas.
+            {videos.length} vídeo(s) serão distribuídos automaticamente no cronograma de cada projeto.
           </DialogDescription>
         </DialogHeader>
 
         <div className="space-y-3">
-          {/* Redes sociais */}
           <div className="space-y-2 rounded-lg border border-border/50 bg-background/40 p-3">
-            <Label className="text-xs font-semibold">Redes sociais</Label>
+            <Label className="text-xs font-semibold">Publicar em</Label>
             <div className="grid grid-cols-2 gap-2">
-              {NETWORKS.map((n) => {
+              {NETS.map((n) => {
                 const Icon = n.icon;
                 const checked = selectedNets.has(n.id);
-                const disabled = !n.available || busy;
                 return (
                   <label
                     key={n.id}
                     className={`flex items-center gap-2 rounded-md border px-2.5 py-2 text-xs cursor-pointer transition-colors ${
-                      checked ? "border-gold/50 bg-gold/5" : "border-border/60 bg-background/30"
-                    } ${disabled ? "opacity-50 cursor-not-allowed" : "hover:bg-background/60"}`}
+                      checked ? "border-gold/50 bg-gold/5" : "border-border/60 bg-background/30 hover:bg-background/60"
+                    } ${busy ? "opacity-50 cursor-not-allowed" : ""}`}
                   >
                     <Checkbox
                       checked={checked}
-                      onCheckedChange={() => !disabled && toggleNet(n.id)}
-                      disabled={disabled}
+                      onCheckedChange={() => !busy && toggleNet(n.id)}
+                      disabled={busy}
                     />
                     <Icon size={14} className={n.color} />
                     <span className="flex-1">{n.label}</span>
-                    {!n.available && (
-                      <Badge variant="outline" className="text-[9px] px-1 py-0">{n.soonLabel}</Badge>
-                    )}
                   </label>
                 );
               })}
             </div>
-            {selectedNets.has("instagram") && (
-              <div className="flex items-center gap-2 rounded-md border border-border/60 bg-background/40 px-2.5 py-1.5 text-[11px]">
-                <Lock size={10} />
-                <span className="text-muted-foreground">Instagram usa o projeto ativo:</span>
-                <Badge variant="outline" className="text-[10px]">{platformLabel}</Badge>
-              </div>
-            )}
-            {selectedNets.has("youtube") && (
-              <div className="flex items-center gap-2 rounded-md border border-border/60 bg-background/40 px-2.5 py-1.5 text-[11px]">
-                <Lock size={10} />
-                <span className="text-muted-foreground">YouTube usa o canal do projeto:</span>
-                <Badge variant="outline" className="text-[10px]">
-                  ▶️ {ytChannelTitle ?? (ytLoading ? "carregando…" : ytAccount ?? "sem canal vinculado")}
-                </Badge>
-              </div>
-            )}
-          </div>
-
-          {/* Início */}
-          <div className="space-y-2 rounded-lg border border-border/50 bg-background/40 p-3">
-            <div className="flex items-center gap-1">
-              <Button
-                type="button" size="sm"
-                variant={startMode === "auto" ? "default" : "ghost"}
-                className={startMode === "auto" ? "bg-gold-gradient text-black h-8" : "h-8"}
-                onClick={() => setStartMode("auto")}
-                disabled={busy}
-              >
-                <Wand2 size={12} className="mr-1" /> Automático
-              </Button>
-              <Button
-                type="button" size="sm"
-                variant={startMode === "manual" ? "default" : "ghost"}
-                className={startMode === "manual" ? "bg-gold-gradient text-black h-8" : "h-8"}
-                onClick={() => setStartMode("manual")}
-                disabled={busy}
-              >
-                <Hand size={12} className="mr-1" /> Começar em…
-              </Button>
-            </div>
-            {startMode === "manual" && (
-              <div className="grid grid-cols-2 gap-2">
-                <div className="space-y-1.5">
-                  <Label className="text-xs">Data inicial</Label>
-                  <Input type="date" value={startDate} onChange={(e) => setStartDate(e.target.value)} disabled={busy} />
-                </div>
-                <div className="space-y-1.5">
-                  <Label className="text-xs">Hora inicial</Label>
-                  <Input type="time" value={startTime} onChange={(e) => setStartTime(e.target.value)} disabled={busy} />
-                </div>
-              </div>
-            )}
-          </div>
-
-          {/* Resumo por rede */}
-          <div className="rounded-lg border border-border/50 bg-background/40 p-3 space-y-3 text-xs">
-            <div className="flex items-center justify-between">
-              <span className="font-medium">Resumo do lote ({videos.length} vídeo(s))</span>
-              <Button type="button" size="sm" variant="ghost" className="h-7 text-[11px]"
-                onClick={compute} disabled={slotBusy || busy}>
-                {slotBusy ? <Loader2 size={12} className="mr-1 animate-spin" /> : <RefreshCw size={12} className="mr-1" />}
-                Recalcular
-              </Button>
-            </div>
-            {activeNets.length === 0 && (
-              <p className="text-[11px] text-muted-foreground">Selecione ao menos uma rede acima.</p>
-            )}
-            {activeNets.length > 0 && (
-              <div className="rounded-md border border-border/40 bg-background/30 p-2 space-y-1.5">
-                <div className="flex items-center gap-2">
-                  <span className="font-medium">Cronograma do projeto</span>
-                  <div className="flex items-center gap-1 ml-1">
-                    {activeNets.map((n) => {
-                      const meta = NETWORKS.find((x) => x.id === n)!;
-                      const Icon = meta.icon;
-                      return <Icon key={n} size={12} className={meta.color} />;
-                    })}
-                  </div>
-                  <Badge variant="outline" className={`ml-auto text-[10px] ${insufficient ? "border-destructive/60 text-destructive" : ""}`}>
-                    {slots.length}/{videos.length} slots
-                  </Badge>
-                </div>
-                <div className="grid grid-cols-2 gap-1 text-muted-foreground">
-                  <div>Primeiro: <span className="text-foreground font-medium">{slots[0] ? fmt(slots[0]) : "—"}</span></div>
-                  <div>Último: <span className="text-foreground font-medium">{slots[videos.length - 1] ? fmt(slots[videos.length - 1]) : "—"}</span></div>
-                </div>
-              </div>
-            )}
-            <div className="flex items-center gap-1.5 text-[11px] text-muted-foreground">
+            <div className="flex items-center gap-1.5 text-[11px] text-muted-foreground pt-1">
               <Sparkles size={11} className="text-gold" />
-              Legenda e hashtags são geradas automaticamente. Todas as redes usam o mesmo horário do cronograma.
+              Cronograma, contas e legendas são resolvidos automaticamente por projeto.
             </div>
           </div>
 
@@ -420,7 +408,7 @@ export default function InstagramBatchScheduleDialog({ open, onOpenChange, video
           )}
 
           {errors.length > 0 && (
-            <div className="max-h-32 overflow-auto rounded-md border border-destructive/40 bg-destructive/5 p-2 text-[11px] text-destructive">
+            <div className="max-h-40 overflow-auto rounded-md border border-destructive/40 bg-destructive/5 p-2 text-[11px] text-destructive space-y-0.5">
               {errors.map((e, i) => <div key={i}>{e}</div>)}
             </div>
           )}
@@ -430,11 +418,11 @@ export default function InstagramBatchScheduleDialog({ open, onOpenChange, video
           <Button variant="ghost" disabled={busy} onClick={() => onOpenChange(false)}>Fechar</Button>
           <Button
             onClick={run}
-            disabled={busy || slotBusy || videos.length === 0 || activeNets.length === 0 || insufficient}
+            disabled={busy || videos.length === 0 || selectedNets.size === 0}
             className="bg-gold-gradient text-black"
           >
             {busy ? <Loader2 size={14} className="mr-1.5 animate-spin" /> : <CalendarClock size={14} className="mr-1.5" />}
-            Confirmar agendamento
+            Agendar
           </Button>
         </DialogFooter>
       </DialogContent>
