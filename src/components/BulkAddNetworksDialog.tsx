@@ -1,5 +1,5 @@
-import { useState } from "react";
-import { Instagram, Youtube, Music2, Loader2, Share2 } from "lucide-react";
+import { useEffect, useMemo, useState } from "react";
+import { Instagram, Youtube, Music2, Facebook, Loader2, Share2 } from "lucide-react";
 import {
   Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter, DialogDescription,
 } from "@/components/ui/dialog";
@@ -11,10 +11,20 @@ import { toast } from "sonner";
 import { supabase } from "@/integrations/supabase/client";
 import { buildYoutubeMetaFromCaption } from "@/lib/youtube-meta";
 import { buildTiktokCaptionFromBase } from "@/lib/tiktok-meta";
+import { createFacebookPost } from "@/lib/facebook";
 import YoutubeChannelPicker from "./YoutubeChannelPicker";
 import type { InstagramPost } from "@/lib/instagram";
 
-type NetId = "instagram" | "youtube" | "tiktok";
+type NetId = "instagram" | "youtube" | "tiktok" | "facebook";
+
+type FbAccount = {
+  id: string;
+  project_id: string;
+  page_id: string;
+  page_name: string | null;
+  page_picture: string | null;
+  project_name?: string | null;
+};
 
 type Props = {
   posts: InstagramPost[];
@@ -26,13 +36,11 @@ type Props = {
 async function ensureYoutubeForChannel(post: InstagramPost, channelAcc: string) {
   if (!post.video_id || !post.scheduled_at) return { skipped: "sem vídeo/horário" };
 
-  // Verifica arquivo
   const { data: video } = await supabase
     .from("videos").select("original_path, processed_path")
     .eq("id", post.video_id).maybeSingle();
   if (!video?.original_path && !video?.processed_path) return { skipped: "sem arquivo" };
 
-  // Duplicata neste mesmo canal?
   const { data: existing } = await supabase
     .from("youtube_posts" as any)
     .select("id")
@@ -67,7 +75,6 @@ async function ensureTiktok(post: InstagramPost) {
     .maybeSingle();
   if (existing) return { skipped: "já vinculado" };
 
-  // Caption adaptada para TikTok (gancho + hashtags de descoberta).
   const tt = await buildTiktokCaptionFromBase(post.caption ?? "", post.hashtags ?? "");
 
   const { error } = await supabase.from("tiktok_posts" as any).insert({
@@ -81,27 +88,108 @@ async function ensureTiktok(post: InstagramPost) {
   return { added: true };
 }
 
+// Resolve project_id de um post via instagram_credentials.account (cache).
+async function resolveProjectId(
+  account: string,
+  cache: Map<string, string | null>,
+): Promise<string | null> {
+  if (cache.has(account)) return cache.get(account) ?? null;
+  const { data } = await supabase
+    .from("instagram_credentials" as any)
+    .select("credentials")
+    .maybeSingle();
+  const creds = (data as any)?.credentials ?? {};
+  for (const c of Object.values<any>(creds)) {
+    if (c?.account && c?.project_id) cache.set(c.account, c.project_id);
+  }
+  return cache.get(account) ?? null;
+}
+
+async function ensureFacebook(
+  post: InstagramPost,
+  allowedProjectIds: Set<string>,
+  projectCache: Map<string, string | null>,
+) {
+  if (!post.video_id || !post.scheduled_at) return { skipped: "sem vídeo/horário" };
+  const projectId = await resolveProjectId(post.account, projectCache);
+  if (!projectId) return { skipped: "sem projeto" };
+  if (!allowedProjectIds.has(projectId)) return { skipped: "página não selecionada" };
+
+  const { data: existing } = await supabase
+    .from("facebook_posts" as any)
+    .select("id")
+    .eq("video_id", post.video_id)
+    .eq("scheduled_at", post.scheduled_at)
+    .eq("project_id", projectId)
+    .maybeSingle();
+  if (existing) return { skipped: "já vinculado" };
+
+  await createFacebookPost({
+    project_id: projectId,
+    video_id: post.video_id,
+    description: [post.caption ?? "", post.hashtags ?? ""].filter(Boolean).join("\n\n"),
+    publish_now: false,
+    scheduled_at: post.scheduled_at,
+  });
+  return { added: true };
+}
+
 export default function BulkAddNetworksDialog({ posts, open, onOpenChange, onSaved }: Props) {
   const [busy, setBusy] = useState(false);
   const [nets, setNets] = useState<Record<NetId, boolean>>({
-    instagram: false, youtube: true, tiktok: false,
+    instagram: false, youtube: true, tiktok: false, facebook: false,
   });
   const [ytChannels, setYtChannels] = useState<string[]>([]);
+  const [fbAccounts, setFbAccounts] = useState<FbAccount[]>([]);
+  const [fbSelected, setFbSelected] = useState<Set<string>>(new Set()); // project_ids
 
   const toggle = (id: NetId) => setNets((s) => ({ ...s, [id]: !s[id] }));
+  const toggleFb = (pid: string) => setFbSelected((s) => {
+    const n = new Set(s); n.has(pid) ? n.delete(pid) : n.add(pid); return n;
+  });
+  const toggleFbAll = () => setFbSelected((s) =>
+    s.size === fbAccounts.length ? new Set() : new Set(fbAccounts.map((a) => a.project_id))
+  );
+
+  useEffect(() => {
+    if (!open) return;
+    (async () => {
+      const { data } = await supabase
+        .from("facebook_accounts" as any)
+        .select("id, project_id, page_id, page_name, page_picture, projects:project_id(name)")
+        .order("created_at", { ascending: true });
+      const list: FbAccount[] = ((data as any[]) ?? []).map((r) => ({
+        id: r.id, project_id: r.project_id, page_id: r.page_id,
+        page_name: r.page_name, page_picture: r.page_picture,
+        project_name: r.projects?.name ?? null,
+      }));
+      setFbAccounts(list);
+      setFbSelected(new Set(list.map((a) => a.project_id)));
+    })();
+  }, [open]);
+
+  const allFbSelected = useMemo(
+    () => fbAccounts.length > 0 && fbSelected.size === fbAccounts.length,
+    [fbAccounts, fbSelected],
+  );
 
   const run = async () => {
     const chosen = (Object.keys(nets) as NetId[]).filter((n) => nets[n] && n !== "instagram");
     if (chosen.length === 0) {
-      toast.error("Selecione ao menos uma rede (YouTube ou TikTok).");
+      toast.error("Selecione ao menos uma rede.");
       return;
     }
     if (chosen.includes("youtube") && ytChannels.length === 0) {
       toast.error("Selecione ao menos um canal do YouTube.");
       return;
     }
+    if (chosen.includes("facebook") && fbSelected.size === 0) {
+      toast.error("Selecione ao menos uma Página do Facebook.");
+      return;
+    }
     setBusy(true);
     let added = 0, skipped = 0, failed = 0;
+    const projectCache = new Map<string, string | null>();
     try {
       for (const post of posts) {
         for (const net of chosen) {
@@ -110,14 +198,15 @@ export default function BulkAddNetworksDialog({ posts, open, onOpenChange, onSav
               for (const ch of ytChannels) {
                 try {
                   const res = await ensureYoutubeForChannel(post, ch);
-                  if ((res as any).added) added++;
-                  else skipped++;
+                  if ((res as any).added) added++; else skipped++;
                 } catch { failed++; }
               }
-            } else {
+            } else if (net === "tiktok") {
               const res = await ensureTiktok(post);
-              if ((res as any).added) added++;
-              else skipped++;
+              if ((res as any).added) added++; else skipped++;
+            } else if (net === "facebook") {
+              const res = await ensureFacebook(post, fbSelected, projectCache);
+              if ((res as any).added) added++; else skipped++;
             }
           } catch { failed++; }
         }
@@ -169,6 +258,49 @@ export default function BulkAddNetworksDialog({ posts, open, onOpenChange, onSav
           )}
 
           <label className={`flex items-center gap-2 rounded-md border px-3 py-2 text-xs cursor-pointer transition-colors ${
+            nets.facebook ? "border-gold/50 bg-gold/5" : "border-border/60 bg-background/30 hover:bg-background/60"
+          }`}>
+            <Checkbox checked={nets.facebook} onCheckedChange={() => toggle("facebook")} disabled={busy} />
+            <Facebook size={14} className="text-blue-400" />
+            <span className="flex-1">Facebook</span>
+          </label>
+
+          {nets.facebook && (
+            <div className="rounded-md border border-border/40 bg-background/20 px-3 py-2 space-y-1.5">
+              <Label className="text-[11px] text-muted-foreground">Páginas do Facebook</Label>
+              {fbAccounts.length === 0 ? (
+                <p className="text-[11px] text-muted-foreground italic">
+                  Nenhuma Página conectada. Conecte em Configurações → Facebook.
+                </p>
+              ) : (
+                <>
+                  <label className="flex items-center gap-2 text-[11px] cursor-pointer">
+                    <Checkbox checked={allFbSelected} onCheckedChange={toggleFbAll} disabled={busy} />
+                    <span className="font-medium">Selecionar todas</span>
+                  </label>
+                  <div className="space-y-1 pt-1 border-t border-border/40">
+                    {fbAccounts.map((a) => (
+                      <label key={a.id} className="flex items-center gap-2 text-[11px] cursor-pointer">
+                        <Checkbox
+                          checked={fbSelected.has(a.project_id)}
+                          onCheckedChange={() => toggleFb(a.project_id)}
+                          disabled={busy}
+                        />
+                        {a.page_picture && (
+                          <img src={a.page_picture} alt="" className="h-4 w-4 rounded-full object-cover" />
+                        )}
+                        <span className="flex-1 truncate">
+                          {a.project_name ? `${a.project_name} · ` : ""}{a.page_name ?? a.page_id}
+                        </span>
+                      </label>
+                    ))}
+                  </div>
+                </>
+              )}
+            </div>
+          )}
+
+          <label className={`flex items-center gap-2 rounded-md border px-3 py-2 text-xs cursor-pointer transition-colors ${
             nets.tiktok ? "border-gold/50 bg-gold/5" : "border-border/60 bg-background/30 hover:bg-background/60"
           }`}>
             <Checkbox checked={nets.tiktok} onCheckedChange={() => toggle("tiktok")} disabled={busy} />
@@ -178,6 +310,7 @@ export default function BulkAddNetworksDialog({ posts, open, onOpenChange, onSav
 
           <p className="text-[11px] text-muted-foreground">
             Posts que já possuem a rede selecionada serão ignorados automaticamente.
+            Cada projeto usa apenas sua Página correspondente.
           </p>
         </div>
 
