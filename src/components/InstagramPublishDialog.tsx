@@ -148,12 +148,12 @@ export default function InstagramPublishDialog({
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [open, videoId]);
 
-  // Ao abrir em modo agendar (ou quando trocar redes/conta), calcula próximo slot POR REDE
+  // Ao abrir em modo agendar, calcula o próximo slot do cronograma do projeto (compartilhado por todas as redes).
   useEffect(() => {
     if (!open || mode !== "schedule" || scheduleMode !== "auto") return;
     void computeAutoSlot();
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [open, mode, scheduleMode, account, nets]);
+  }, [open, mode, scheduleMode, account, ytAccount]);
 
   const computeAutoSlot = async () => {
     setSlotBusy(true);
