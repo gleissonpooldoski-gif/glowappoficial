@@ -94,3 +94,42 @@ export async function listLibraryVideos(limit = 50) {
   if (error) throw error;
   return data ?? [];
 }
+
+/** Vincula (ou desvincula) um canal do YouTube a um projeto. */
+export async function setYoutubeChannelProject(account: YoutubeAccount, projectId: string | null) {
+  const { error } = await supabase
+    .from("youtube_credentials" as any)
+    .update({ project_id: projectId })
+    .eq("account", account);
+  if (error) throw error;
+}
+
+/** Retorna o canal do YouTube vinculado ao projeto informado. */
+export async function getYoutubeChannelForProject(projectId: string | null): Promise<YoutubeCredential | null> {
+  if (!projectId) return null;
+  const { data, error } = await supabase
+    .from("youtube_credentials" as any)
+    .select(
+      "account, channel_id, channel_title, thumbnail, expires_at, scope, status, label, project_id, last_validated_at, last_validation_status, last_validation_detail, updated_at",
+    )
+    .eq("project_id", projectId)
+    .maybeSingle();
+  if (error) return null;
+  return (data as any) ?? null;
+}
+
+/** Hook: canal do YouTube vinculado ao projeto ativo. */
+export function useYoutubeChannelForProject(projectId: string | null) {
+  const [channel, setChannel] = useState<YoutubeCredential | null>(null);
+  const [loading, setLoading] = useState<boolean>(!!projectId);
+  useEffect(() => {
+    let cancelled = false;
+    if (!projectId) { setChannel(null); setLoading(false); return; }
+    setLoading(true);
+    getYoutubeChannelForProject(projectId)
+      .then((c) => { if (!cancelled) setChannel(c); })
+      .finally(() => { if (!cancelled) setLoading(false); });
+    return () => { cancelled = true; };
+  }, [projectId]);
+  return { channel, account: channel?.account ?? null, channelTitle: channel?.channel_title ?? channel?.label ?? null, loading };
+}
