@@ -238,7 +238,8 @@ export default function InstagramPublishDialog({
     if (!videoId) { toast.error("Vídeo inválido."); return; }
     const wantIG = nets.has("instagram");
     const wantYT = nets.has("youtube");
-    if (!wantIG && !wantYT) { toast.error("Selecione ao menos uma rede."); return; }
+    const wantFB = nets.has("facebook");
+    if (!wantIG && !wantYT && !wantFB) { toast.error("Selecione ao menos uma rede."); return; }
     if (wantIG && !account) {
       toast.error("Este projeto não tem uma conta do Instagram vinculada. Cadastre em Configurações → Instagram.");
       return;
@@ -247,11 +248,19 @@ export default function InstagramPublishDialog({
       toast.error("Para publicar no YouTube, adicione um vídeo ao post.");
       return;
     }
+    if (wantFB && !fbAccount) {
+      toast.error("Este projeto não tem uma Página do Facebook vinculada. Conecte em Configurações → Facebook.");
+      return;
+    }
+    if (wantFB && hasVideoFile === false) {
+      toast.error("Para publicar no Facebook, adicione um vídeo ao post.");
+      return;
+    }
     if (!caption.trim()) {
       toast.error("Legenda vazia. Gere a legenda automaticamente ou escreva manualmente antes de publicar.");
       return;
     }
-    const netsLabel = [wantIG && "Instagram", wantYT && "YouTube"].filter(Boolean).join(" + ");
+    const netsLabel = [wantIG && "Instagram", wantFB && "Facebook", wantYT && "YouTube"].filter(Boolean).join(" + ");
     const confirmMsg =
       mode === "schedule"
         ? `Agendar em ${netsLabel}. Confirmar?`
@@ -267,6 +276,8 @@ export default function InstagramPublishDialog({
       const ytIso = mode === "schedule"
         ? (scheduleMode === "auto" ? (autoSlots.youtube?.toISOString() ?? null) : manualIso)
         : null;
+      // Facebook usa o slot do Instagram (mesma cadência da conta) ou fallback manual/YT.
+      const fbIso = mode === "schedule" ? (igIso ?? ytIso ?? manualIso) : null;
       if (mode === "schedule") {
         if (wantIG && (!igIso || new Date(igIso).getTime() < Date.now() + 60_000)) {
           throw new Error("Instagram: horário indisponível. Configure a grade em Configurações.");
@@ -274,9 +285,13 @@ export default function InstagramPublishDialog({
         if (wantYT && (!ytIso || new Date(ytIso).getTime() < Date.now() + 60_000)) {
           throw new Error("YouTube: horário indisponível. Configure a grade em Configurações.");
         }
+        if (wantFB && (!fbIso || new Date(fbIso).getTime() < Date.now() + 60_000)) {
+          throw new Error("Facebook: horário indisponível.");
+        }
       }
       let igPostId: string | null = null;
       let ytPostId: string | null = null;
+      let fbPostId: string | null = null;
       const errs: string[] = [];
 
       if (wantIG && account) {
