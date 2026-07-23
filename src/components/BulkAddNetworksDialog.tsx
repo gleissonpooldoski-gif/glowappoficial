@@ -179,15 +179,8 @@ export default function BulkAddNetworksDialog({ posts, open, onOpenChange, onSav
   });
   const [ytChannels, setYtChannels] = useState<string[]>([]);
   const [fbAccounts, setFbAccounts] = useState<FbAccount[]>([]);
-  const [fbSelected, setFbSelected] = useState<Set<string>>(new Set()); // project_ids
 
   const toggle = (id: NetId) => setNets((s) => ({ ...s, [id]: !s[id] }));
-  const toggleFb = (pid: string) => setFbSelected((s) => {
-    const n = new Set(s); n.has(pid) ? n.delete(pid) : n.add(pid); return n;
-  });
-  const toggleFbAll = () => setFbSelected((s) =>
-    s.size === fbAccounts.length ? new Set() : new Set(fbAccounts.map((a) => a.project_id))
-  );
 
   useEffect(() => {
     if (!open) return;
@@ -202,14 +195,8 @@ export default function BulkAddNetworksDialog({ posts, open, onOpenChange, onSav
         project_name: r.projects?.name ?? null,
       }));
       setFbAccounts(list);
-      setFbSelected(new Set(list.map((a) => a.project_id)));
     })();
   }, [open]);
-
-  const allFbSelected = useMemo(
-    () => fbAccounts.length > 0 && fbSelected.size === fbAccounts.length,
-    [fbAccounts, fbSelected],
-  );
 
   const run = async () => {
     const chosen = (Object.keys(nets) as NetId[]).filter((n) => nets[n] && n !== "instagram");
@@ -222,8 +209,8 @@ export default function BulkAddNetworksDialog({ posts, open, onOpenChange, onSav
       toast.error("Selecione ao menos um canal do YouTube.");
       return;
     }
-    if (chosen.includes("facebook") && fbSelected.size === 0) {
-      toast.error("Selecione ao menos uma Página do Facebook.");
+    if (chosen.includes("facebook") && fbAccounts.length === 0) {
+      toast.error("Nenhuma Página do Facebook conectada. Conecte em Configurações → Facebook.");
       return;
     }
     setBusy(true);
@@ -319,34 +306,30 @@ export default function BulkAddNetworksDialog({ posts, open, onOpenChange, onSav
 
           {nets.facebook && (
             <div className="rounded-md border border-border/40 bg-background/20 px-3 py-2 space-y-1.5">
-              <Label className="text-[11px] text-muted-foreground">Páginas do Facebook</Label>
+              <Label className="text-[11px] text-muted-foreground">
+                Página vinculada por projeto (somente leitura)
+              </Label>
               {fbAccounts.length === 0 ? (
                 <p className="text-[11px] text-muted-foreground italic">
                   Nenhuma Página conectada. Conecte em Configurações → Facebook.
                 </p>
               ) : (
                 <>
-                  <label className="flex items-center gap-2 text-[11px] cursor-pointer">
-                    <Checkbox checked={allFbSelected} onCheckedChange={toggleFbAll} disabled={busy} />
-                    <span className="font-medium">Selecionar todas</span>
-                  </label>
-                  <div className="space-y-1 pt-1 border-t border-border/40">
+                  <div className="space-y-1 pt-1">
                     {fbAccounts.map((a) => (
-                      <label key={a.id} className="flex items-center gap-2 text-[11px] cursor-pointer">
-                        <Checkbox
-                          checked={fbSelected.has(a.project_id)}
-                          onCheckedChange={() => toggleFb(a.project_id)}
-                          disabled={busy}
-                        />
+                      <div key={a.id} className="flex items-center gap-2 text-[11px]">
                         {a.page_picture && (
                           <img src={a.page_picture} alt="" className="h-4 w-4 rounded-full object-cover" />
                         )}
                         <span className="flex-1 truncate">
                           {a.project_name ? `${a.project_name} · ` : ""}{a.page_name ?? a.page_id}
                         </span>
-                      </label>
+                      </div>
                     ))}
                   </div>
+                  <p className="text-[10px] text-muted-foreground pt-1 border-t border-border/40">
+                    Cada post publicará automaticamente na Página vinculada ao seu projeto. Para trocar, vá em Configurações → Facebook.
+                  </p>
                 </>
               )}
             </div>
