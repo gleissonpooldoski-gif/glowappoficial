@@ -66,12 +66,45 @@ Deno.serve(async (req) => {
     } catch (_) { /* noop */ }
   };
 
+  const updateFacebookPost = async (postId: string, patch: Record<string, unknown>, event: string) => {
+    const { data, error } = await supabase
+      .from("facebook_posts")
+      .update(patch)
+      .eq("id", postId)
+      .select("id, status, fb_video_id, published_at, updated_at")
+      .maybeSingle();
+    if (error) {
+      console.error("[publish-facebook] facebook_posts update failed", {
+        event,
+        post_id: postId,
+        message: error.message,
+        code: error.code,
+        details: error.details,
+        hint: error.hint,
+      });
+      throw error;
+    }
+    if (!data) {
+      const message = `facebook_posts update returned no row (${event})`;
+      console.error("[publish-facebook] facebook_posts update missing row", { event, post_id: postId });
+      throw new Error(message);
+    }
+    console.log("[publish-facebook] facebook_posts update ok", {
+      event,
+      post_id: postId,
+      status: (data as any).status,
+      fb_video_id: (data as any).fb_video_id,
+      published_at: (data as any).published_at,
+    });
+    return data;
+  };
+
   const setError = async (postId: string, message: string, metaResponse?: any) => {
-    await supabase.from("facebook_posts").update({
+    await updateFacebookPost(postId, {
       status: "ERRO",
       error_message: message,
       meta_response: metaResponse ?? null,
-    }).eq("id", postId);
+    }, "facebook_publish_error");
     await appendLog(postId, "facebook_publish_error", { message, meta: metaResponse ?? null });
   };
 
@@ -207,9 +240,9 @@ Deno.serve(async (req) => {
       return json({ error: "URL do vídeo inválida." }, 400);
     }
 
-    await supabase.from("facebook_posts").update({
+    await updateFacebookPost(postId, {
       status: "PUBLICANDO", video_url: videoUrl, error_message: null,
-    }).eq("id", postId);
+    }, "facebook_publish_started");
     await appendLog(postId, "facebook_publish_started", { page_id: pageId, page_name: (acc as any).page_name });
 
     const description = String((post as any).description ?? "");
@@ -268,13 +301,20 @@ Deno.serve(async (req) => {
 
     const fbVideoId = String(lastResult.data?.id ?? "");
     const elapsedMs = Date.now() - startTs;
-    await supabase.from("facebook_posts").update({
+    console.log("[publish-facebook] meta publish success", {
+      post_id: postId,
+      page_id: pageId,
+      fb_video_id: fbVideoId,
+      elapsed_ms: elapsedMs,
+      meta_keys: Object.keys(lastResult.data ?? {}),
+    });
+    await updateFacebookPost(postId, {
       status: "PUBLICADO",
       fb_video_id: fbVideoId,
       meta_response: lastResult.data,
       published_at: new Date().toISOString(),
       error_message: null,
-    }).eq("id", postId);
+    }, "facebook_published");
     await appendLog(postId, "facebook_published", {
       fb_video_id: fbVideoId, elapsed_ms: elapsedMs, page_id: pageId,
     });

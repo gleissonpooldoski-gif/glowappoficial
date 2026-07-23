@@ -86,6 +86,47 @@ function networkLinkKey(videoId: string | null | undefined, scheduledAt: string 
   return `${videoId ?? ""}|${normalizedDate}`;
 }
 
+type LinkedNetworkStatus = {
+  status: string;
+  scheduled_at?: string | null;
+  published_at?: string | null;
+  updated_at?: string | null;
+};
+
+function isPublishedStatus(status: string | null | undefined) {
+  return String(status ?? "").toUpperCase() === "PUBLICADO";
+}
+
+function statusRank(status: string | null | undefined) {
+  switch (String(status ?? "").toUpperCase()) {
+    case "PUBLICADO": return 4;
+    case "PUBLICANDO": return 3;
+    case "AGENDADO": return 2;
+    case "ERRO": return 1;
+    default: return 0;
+  }
+}
+
+function linkTimestamp(link: LinkedNetworkStatus) {
+  const raw = link.published_at ?? link.updated_at ?? link.scheduled_at ?? null;
+  if (!raw) return 0;
+  const time = new Date(raw).getTime();
+  return Number.isNaN(time) ? 0 : time;
+}
+
+function setBestNetworkLink(map: Map<string, LinkedNetworkStatus>, key: string, next: LinkedNetworkStatus) {
+  const current = map.get(key);
+  if (!current) {
+    map.set(key, next);
+    return;
+  }
+  const nextRank = statusRank(next.status);
+  const currentRank = statusRank(current.status);
+  if (nextRank > currentRank || (nextRank === currentRank && linkTimestamp(next) > linkTimestamp(current))) {
+    map.set(key, next);
+  }
+}
+
 /* ---------- edit scheduled post dialog ---------- */
 
 function EditScheduledDialog({
@@ -192,7 +233,7 @@ function PostCard({
   kind: "scheduled" | "published";
   linkedYT?: { id: string; status: string; auto_comment_enabled: boolean } | null;
   linkedTT?: { status: string } | null;
-  linkedFB?: { status: string } | null;
+  linkedFB?: LinkedNetworkStatus | null;
   selectable?: boolean;
   selected?: boolean;
   onToggleSelect?: (p: InstagramPost) => void;
@@ -243,7 +284,7 @@ function PostCard({
                 <Instagram size={10} /> Instagram publicado
               </Badge>
             )}
-            {linkedFB?.status === "PUBLICADO" && (
+            {isPublishedStatus(linkedFB?.status) && (
               <Badge variant="outline" className="text-[10px] gap-1 border-blue-400/40 text-blue-300 bg-blue-500/10">
                 <Facebook size={10} /> Facebook publicado
               </Badge>
@@ -372,7 +413,7 @@ function PlatformSection({
   statusFilter: StatusFilter;
   ytByKey: Map<string, { id: string; status: string; auto_comment_enabled: boolean }>;
   ttByKey: Map<string, { status: string }>;
-  fbByKey: Map<string, { status: string }>;
+  fbByKey: Map<string, LinkedNetworkStatus>;
   selectedIds: Set<string>;
   onToggleSelect: (p: InstagramPost) => void;
   onToggleAll: (ids: string[], selectAll: boolean) => void;
@@ -498,7 +539,7 @@ export default function Publications() {
   const [posts, setPosts] = useState<InstagramPost[] | null>(null);
   const [ytByKey, setYtByKey] = useState<Map<string, { id: string; status: string; auto_comment_enabled: boolean }>>(new Map());
   const [ttByKey, setTtByKey] = useState<Map<string, { status: string }>>(new Map());
-  const [fbByKey, setFbByKey] = useState<Map<string, { status: string }>>(new Map());
+  const [fbByKey, setFbByKey] = useState<Map<string, LinkedNetworkStatus>>(new Map());
   const [selectedIds, setSelectedIds] = useState<Set<string>>(new Set());
   const [bulkOpen, setBulkOpen] = useState(false);
   const [migrateOpen, setMigrateOpen] = useState(false);
@@ -546,14 +587,18 @@ export default function Publications() {
   const loadFacebookLinks = async () => {
     const { data } = await supabase
       .from("facebook_posts" as any)
-      .select("video_id, scheduled_at, status")
-      .not("scheduled_at", "is", null)
-      .order("scheduled_at", { ascending: false })
-      .limit(500);
-    const map = new Map<string, { status: string }>();
+      .select("video_id, scheduled_at, published_at, updated_at, status")
+      .order("updated_at", { ascending: false })
+      .limit(1000);
+    const map = new Map<string, LinkedNetworkStatus>();
     for (const r of (data ?? []) as any[]) {
-      if (!r.video_id || !r.scheduled_at) continue;
-      map.set(networkLinkKey(r.video_id, r.scheduled_at), { status: r.status });
+      if (!r.video_id || !r.status) continue;
+      setBestNetworkLink(map, networkLinkKey(r.video_id, r.scheduled_at ?? null), {
+        status: String(r.status),
+        scheduled_at: r.scheduled_at ?? null,
+        published_at: r.published_at ?? null,
+        updated_at: r.updated_at ?? null,
+      });
     }
     setFbByKey(map);
   };
@@ -701,7 +746,7 @@ export default function Publications() {
     if (!posts) return [];
     return posts.filter((p) => {
       if (p.status !== "AGENDADO") return false;
-      const k = `${p.video_id ?? ""}|${p.scheduled_at ?? ""}`;
+      const k = networkLinkKey(p.video_id, p.scheduled_at);
       return !ytByKey.has(k) && !ttByKey.has(k) && !fbByKey.has(k);
     });
   }, [posts, ytByKey, ttByKey, fbByKey]);
