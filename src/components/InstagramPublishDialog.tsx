@@ -81,6 +81,7 @@ export default function InstagramPublishDialog({
   const [nets, setNets] = useState<Set<NetId>>(new Set(["instagram"]));
   const [ytChannels, setYtChannels] = useState<string[]>([]);
   const [hasVideoFile, setHasVideoFile] = useState<boolean | null>(null);
+  const [fbAccount, setFbAccount] = useState<{ id: string; page_id: string; page_name: string | null; page_picture: string | null } | null>(null);
   const toggleNet = (n: NetId) => setNets((prev) => {
     const s = new Set(prev);
     if (n === "youtube" && !s.has("youtube") && hasVideoFile === false) {
