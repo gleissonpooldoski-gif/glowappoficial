@@ -55,9 +55,7 @@ export default function InstagramBatchScheduleDialog({ open, onOpenChange, video
     return n;
   });
 
-  const [slotsByNet, setSlotsByNet] = useState<Record<NetworkId, Date[]>>({
-    instagram: [], youtube: [], tiktok: [], facebook: [], linkedin: [],
-  });
+  const [slots, setSlots] = useState<Date[]>([]);
   const [slotBusy, setSlotBusy] = useState(false);
   const [busy, setBusy] = useState(false);
   const [done, setDone] = useState(0);
@@ -83,25 +81,18 @@ export default function InstagramBatchScheduleDialog({ open, onOpenChange, video
       const startFrom = parseStart();
       if (startMode === "manual" && startFrom && startFrom.getTime() < Date.now() + 60_000) {
         toast.error("Selecione uma data/hora futura para começar.");
-        setSlotsByNet({ instagram: [], youtube: [], tiktok: [], facebook: [], linkedin: [] });
+        setSlots([]);
         return;
       }
-      const results: Record<NetworkId, Date[]> = {
-        instagram: [], youtube: [], tiktok: [], facebook: [], linkedin: [],
-      };
-      await Promise.all(
-        (["instagram", "youtube", "tiktok"] as const).map(async (net) => {
-          if (!selectedNets.has(net)) return;
-          const acc = scheduleAccountFor(net, igAccount);
-          if (!acc) return;
-          try {
-            results[net] = await findNextSlots(
-              net as ScheduleNetwork, acc, videos.length, { startFrom },
-            );
-          } catch { /* ignore */ }
-        }),
-      );
-      setSlotsByNet(results);
+      // Cronograma é do PROJETO — busca uma única lista via IG (ou YT como fallback).
+      let list: Date[] = [];
+      if (igAccount) {
+        try { list = await findNextSlots("instagram", igAccount, videos.length, { startFrom }); } catch { /* ignore */ }
+      }
+      if (list.length === 0 && ytAccount) {
+        try { list = await findNextSlots("youtube", ytAccount, videos.length, { startFrom }); } catch { /* ignore */ }
+      }
+      setSlots(list);
     } catch (e: any) {
       toast.error(e?.message ?? "Falha ao calcular horários");
     } finally {
