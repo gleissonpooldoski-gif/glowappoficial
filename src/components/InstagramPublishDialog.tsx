@@ -158,23 +158,19 @@ export default function InstagramPublishDialog({
   const computeAutoSlot = async () => {
     setSlotBusy(true);
     try {
-      const results: { instagram: Date | null; youtube: Date | null } = { instagram: null, youtube: null };
-      await Promise.all(
-        (["instagram", "youtube"] as const).map(async (net) => {
-          if (!nets.has(net)) return;
-          const acc = scheduleAccountFor(net, account);
-          if (!acc) return;
-          try {
-            results[net] = await findNextSlot(net as ScheduleNetwork, acc);
-          } catch { /* ignore */ }
-        }),
-      );
-      setAutoSlots(results);
-      // Preenche date/time visíveis com o primeiro slot disponível (para exibição/manual)
-      const first = results.instagram ?? results.youtube;
-      if (first) {
-        setDate(`${first.getFullYear()}-${String(first.getMonth() + 1).padStart(2, "0")}-${String(first.getDate()).padStart(2, "0")}`);
-        setTime(first.toTimeString().slice(0, 5));
+      // Cronograma é do PROJETO — usa a grade do Instagram do projeto ativo.
+      // Se o projeto não tem IG, cai para o canal do YouTube.
+      let slot: Date | null = null;
+      if (account) {
+        try { slot = await findNextSlot("instagram", account); } catch { /* ignore */ }
+      }
+      if (!slot && ytAccount) {
+        try { slot = await findNextSlot("youtube", ytAccount); } catch { /* ignore */ }
+      }
+      setAutoSlot(slot);
+      if (slot) {
+        setDate(`${slot.getFullYear()}-${String(slot.getMonth() + 1).padStart(2, "0")}-${String(slot.getDate()).padStart(2, "0")}`);
+        setTime(slot.toTimeString().slice(0, 5));
       }
     } catch (e: any) {
       console.error(e);
