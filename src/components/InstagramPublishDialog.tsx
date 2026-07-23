@@ -145,40 +145,7 @@ export default function InstagramPublishDialog({
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [open, videoId]);
 
-  // Ao abrir em modo agendar (ou quando trocar redes/conta), calcula próximo slot POR REDE
-  useEffect(() => {
-    if (!open || mode !== "schedule" || scheduleMode !== "auto") return;
-    void computeAutoSlot();
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [open, mode, scheduleMode, account, nets]);
-
-  const computeAutoSlot = async () => {
-    setSlotBusy(true);
-    try {
-      const results: { instagram: Date | null; youtube: Date | null } = { instagram: null, youtube: null };
-      await Promise.all(
-        (["instagram", "youtube"] as const).map(async (net) => {
-          if (!nets.has(net)) return;
-          const acc = scheduleAccountFor(net, account);
-          if (!acc) return;
-          try {
-            results[net] = await findNextSlot(net as ScheduleNetwork, acc);
-          } catch { /* ignore */ }
-        }),
-      );
-      setAutoSlots(results);
-      // Preenche date/time visíveis com o primeiro slot disponível (para exibição/manual)
-      const first = results.instagram ?? results.youtube;
-      if (first) {
-        setDate(`${first.getFullYear()}-${String(first.getMonth() + 1).padStart(2, "0")}-${String(first.getDate()).padStart(2, "0")}`);
-        setTime(first.toTimeString().slice(0, 5));
-      }
-    } catch (e: any) {
-      console.error(e);
-    } finally {
-      setSlotBusy(false);
-    }
-  };
+  // Horário único agora é sempre manual (date/time acima). Nenhum cálculo por rede.
 
   const generate = async (silent = false) => {
     if (!videoMeta) return;
