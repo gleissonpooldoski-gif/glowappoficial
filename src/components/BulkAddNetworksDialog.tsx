@@ -179,15 +179,8 @@ export default function BulkAddNetworksDialog({ posts, open, onOpenChange, onSav
   });
   const [ytChannels, setYtChannels] = useState<string[]>([]);
   const [fbAccounts, setFbAccounts] = useState<FbAccount[]>([]);
-  const [fbSelected, setFbSelected] = useState<Set<string>>(new Set()); // project_ids
 
   const toggle = (id: NetId) => setNets((s) => ({ ...s, [id]: !s[id] }));
-  const toggleFb = (pid: string) => setFbSelected((s) => {
-    const n = new Set(s); n.has(pid) ? n.delete(pid) : n.add(pid); return n;
-  });
-  const toggleFbAll = () => setFbSelected((s) =>
-    s.size === fbAccounts.length ? new Set() : new Set(fbAccounts.map((a) => a.project_id))
-  );
 
   useEffect(() => {
     if (!open) return;
@@ -202,14 +195,8 @@ export default function BulkAddNetworksDialog({ posts, open, onOpenChange, onSav
         project_name: r.projects?.name ?? null,
       }));
       setFbAccounts(list);
-      setFbSelected(new Set(list.map((a) => a.project_id)));
     })();
   }, [open]);
-
-  const allFbSelected = useMemo(
-    () => fbAccounts.length > 0 && fbSelected.size === fbAccounts.length,
-    [fbAccounts, fbSelected],
-  );
 
   const run = async () => {
     const chosen = (Object.keys(nets) as NetId[]).filter((n) => nets[n] && n !== "instagram");
