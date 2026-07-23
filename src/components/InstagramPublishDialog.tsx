@@ -11,7 +11,7 @@ import { toast } from "sonner";
 import { supabase } from "@/integrations/supabase/client";
 import { InstagramAccount, publishInstagram, friendlyError, useIgAccountForProject, platformLabelFor } from "@/lib/instagram";
 import { uploadToYoutube, useYoutubeChannelForProject } from "@/lib/youtube";
-import { findNextSlot, ScheduleNetwork, scheduleAccountFor } from "@/lib/schedules";
+import { ScheduleNetwork, scheduleAccountFor } from "@/lib/schedules";
 import { useActiveProject } from "@/context/ProjectContext";
 import { extractVideoFrames } from "@/lib/videoFrames";
 import { createFacebookPost, getFacebookAccountForProject, friendlyFacebookError } from "@/lib/facebook";
