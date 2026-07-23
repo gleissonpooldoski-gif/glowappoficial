@@ -78,7 +78,7 @@ export default function InstagramPublishDialog({
   const [slotBusy, setSlotBusy] = useState(false);
   const [autoSlots, setAutoSlots] = useState<{ instagram: Date | null; youtube: Date | null }>({ instagram: null, youtube: null });
   const [nets, setNets] = useState<Set<NetId>>(new Set(["instagram"]));
-  const [ytChannels, setYtChannels] = useState<string[]>([]);
+  const { account: ytAccount, channelTitle: ytChannelTitle, loading: ytLoading } = useYoutubeChannelForProject(activeProject?.id ?? null);
   const [hasVideoFile, setHasVideoFile] = useState<boolean | null>(null);
   const [fbAccount, setFbAccount] = useState<{ id: string; page_id: string; page_name: string | null; page_picture: string | null } | null>(null);
   const toggleNet = (n: NetId) => setNets((prev) => {
