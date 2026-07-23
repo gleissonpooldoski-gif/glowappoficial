@@ -94,12 +94,17 @@ async function resolveProjectId(
   cache: Map<string, string | null>,
 ): Promise<string | null> {
   if (cache.has(account)) return cache.get(account) ?? null;
-  const { data } = await supabase
-    .from("instagram_credentials" as any)
-    .select("project_id")
-    .eq("account", account)
-    .maybeSingle();
-  const pid = (data as any)?.project_id ?? null;
+  const { data, error } = await supabase.functions.invoke("instagram-credentials", {
+    body: { action: "get" },
+  });
+  if (error) {
+    console.warn("[bulk-networks] falha ao resolver projeto da conta Instagram", { account, error: error.message });
+    cache.set(account, null);
+    return null;
+  }
+  const credentials = (data?.credentials ?? {}) as Record<string, { account: string; project_id: string | null }>;
+  const match = Object.values(credentials).find((c) => c.account === account);
+  const pid = match?.project_id ?? null;
   cache.set(account, pid);
   return pid;
 }
@@ -123,12 +128,22 @@ async function ensureFacebook(
     .maybeSingle();
   if (existing) return { skipped: "já vinculado" };
 
-  await createFacebookPost({
+  console.info("[bulk-networks] Criando publicação Facebook", {
+    post_id: post.id,
+    video_id: post.video_id,
+    project_id: projectId,
+    scheduled_at: post.scheduled_at,
+  });
+  const created = await createFacebookPost({
     project_id: projectId,
     video_id: post.video_id,
     description: [post.caption ?? "", post.hashtags ?? ""].filter(Boolean).join("\n\n"),
     publish_now: false,
     scheduled_at: post.scheduled_at,
+  });
+  console.info("[bulk-networks] Registro Facebook criado", {
+    post_id: (created as any)?.post?.id,
+    status: "AGENDADO",
   });
   return { added: true };
 }
@@ -178,6 +193,7 @@ export default function BulkAddNetworksDialog({ posts, open, onOpenChange, onSav
       toast.error("Selecione ao menos uma rede.");
       return;
     }
+    console.info("[bulk-networks] Recebi redes", { networks: chosen, posts: posts.map((p) => p.id) });
     if (chosen.includes("youtube") && ytChannels.length === 0) {
       toast.error("Selecione ao menos um canal do YouTube.");
       return;
