@@ -236,31 +236,56 @@ function PostCard({
       </div>
       <CardContent className="space-y-2 p-3">
         {/* Histórico por rede */}
-        <div className="flex flex-wrap items-center gap-1">
-          <Badge variant="outline" className="text-[10px] gap-1 border-pink-400/40 text-pink-300 bg-pink-500/10">
-            <Instagram size={10} /> Instagram: {post.status.toLowerCase()}
-          </Badge>
-          {linkedYT && (
-            <Badge variant="outline" className="text-[10px] gap-1 border-red-400/40 text-red-300 bg-red-500/10">
-              <Youtube size={10} /> YouTube: {linkedYT.status.toLowerCase()}
+        {kind === "published" ? (
+          <div className="flex flex-wrap items-center gap-1">
+            {post.status === "PUBLICADO" && (
+              <Badge variant="outline" className="text-[10px] gap-1 border-pink-400/40 text-pink-300 bg-pink-500/10">
+                <Instagram size={10} /> Instagram publicado
+              </Badge>
+            )}
+            {linkedFB?.status === "PUBLICADO" && (
+              <Badge variant="outline" className="text-[10px] gap-1 border-blue-400/40 text-blue-300 bg-blue-500/10">
+                <Facebook size={10} /> Facebook publicado
+              </Badge>
+            )}
+            {linkedYT?.status === "PUBLICADO" && (
+              <Badge variant="outline" className="text-[10px] gap-1 border-red-400/40 text-red-300 bg-red-500/10">
+                <Youtube size={10} /> YouTube publicado
+              </Badge>
+            )}
+            {linkedTT?.status === "PUBLICADO" && (
+              <Badge variant="outline" className="text-[10px] gap-1 border-fuchsia-400/40 text-fuchsia-300 bg-fuchsia-500/10">
+                <Music2 size={10} /> TikTok publicado
+              </Badge>
+            )}
+          </div>
+        ) : (
+          <div className="flex flex-wrap items-center gap-1">
+            <Badge variant="outline" className="text-[10px] gap-1 border-pink-400/40 text-pink-300 bg-pink-500/10">
+              <Instagram size={10} /> Instagram: {post.status.toLowerCase()}
             </Badge>
-          )}
-          {linkedTT && (
-            <Badge variant="outline" className="text-[10px] gap-1 border-fuchsia-400/40 text-fuchsia-300 bg-fuchsia-500/10">
-              <Music2 size={10} /> TikTok: {linkedTT.status.toLowerCase()}
-            </Badge>
-          )}
-          {linkedFB && (
-            <Badge variant="outline" className="text-[10px] gap-1 border-blue-400/40 text-blue-300 bg-blue-500/10">
-              <Facebook size={10} /> Facebook: {linkedFB.status.toLowerCase()}
-            </Badge>
-          )}
-          {linkedYT?.auto_comment_enabled && (
-            <Badge variant="outline" className="text-[10px] gap-1 border-emerald-400/40 text-emerald-300 bg-emerald-500/10">
-              <MessageSquare size={10} /> Comentário auto
-            </Badge>
-          )}
-        </div>
+            {linkedYT && (
+              <Badge variant="outline" className="text-[10px] gap-1 border-red-400/40 text-red-300 bg-red-500/10">
+                <Youtube size={10} /> YouTube: {linkedYT.status.toLowerCase()}
+              </Badge>
+            )}
+            {linkedTT && (
+              <Badge variant="outline" className="text-[10px] gap-1 border-fuchsia-400/40 text-fuchsia-300 bg-fuchsia-500/10">
+                <Music2 size={10} /> TikTok: {linkedTT.status.toLowerCase()}
+              </Badge>
+            )}
+            {linkedFB && (
+              <Badge variant="outline" className="text-[10px] gap-1 border-blue-400/40 text-blue-300 bg-blue-500/10">
+                <Facebook size={10} /> Facebook: {linkedFB.status.toLowerCase()}
+              </Badge>
+            )}
+            {linkedYT?.auto_comment_enabled && (
+              <Badge variant="outline" className="text-[10px] gap-1 border-emerald-400/40 text-emerald-300 bg-emerald-500/10">
+                <MessageSquare size={10} /> Comentário auto
+              </Badge>
+            )}
+          </div>
+        )}
 
         <div className="flex items-center justify-between gap-2 text-[11px]">
           <div className="flex items-center gap-1.5 text-muted-foreground">
