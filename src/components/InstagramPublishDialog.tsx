@@ -466,10 +466,24 @@ export default function InstagramPublishDialog({
                 <Youtube size={14} className="text-red-400" />
                 <span className="flex-1">YouTube</span>
               </label>
+              <label
+                title={!fbAccount ? "Conecte uma Página do Facebook em Configurações → Facebook." : undefined}
+                className={`flex items-center gap-2 rounded-md border px-2.5 py-2 text-xs transition-colors ${
+                  nets.has("facebook") ? "border-gold/50 bg-gold/5" : "border-border/60 bg-background/30 hover:bg-background/60"
+                } ${!fbAccount || hasVideoFile === false ? "opacity-50 cursor-not-allowed" : "cursor-pointer"}`}
+              >
+                <Checkbox
+                  checked={nets.has("facebook")}
+                  onCheckedChange={() => toggleNet("facebook")}
+                  disabled={busy || !fbAccount || hasVideoFile === false}
+                />
+                <Facebook size={14} className="text-blue-400" />
+                <span className="flex-1">Facebook</span>
+              </label>
             </div>
             {hasVideoFile === false && (
               <p className="text-[11px] text-muted-foreground">
-                Para publicar no YouTube, adicione um vídeo ao post.
+                Para publicar no YouTube ou Facebook, adicione um vídeo ao post.
               </p>
             )}
           </div>
