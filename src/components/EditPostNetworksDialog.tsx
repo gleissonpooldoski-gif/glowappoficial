@@ -57,14 +57,18 @@ export default function EditPostNetworksDialog({ post, open, onOpenChange, onSav
         const [yt, videoRow] = await Promise.all([
           findLinkedYoutube(post),
           post.video_id
-            ? supabase.from("videos").select("original_path, processed_path").eq("id", post.video_id).maybeSingle()
+            ? supabase.from("videos").select("original_path, processed_path, project_id").eq("id", post.video_id).maybeSingle()
             : Promise.resolve({ data: null } as any),
         ]);
         if (cancelled) return;
         setLinkedYT(yt);
         setWantIG(true);
         setWantYT(yt.length > 0);
-        setYtChannels(yt.map((l) => l.account).filter((a): a is string => !!a));
+        const projectId = (videoRow as any)?.data?.project_id ?? null;
+        const linked = await getYoutubeChannelForProject(projectId);
+        if (cancelled) return;
+        setYtAccount(linked?.account ?? null);
+        setYtChannelTitle(linked?.channel_title ?? linked?.label ?? null);
         const existingTags = yt.flatMap((l) => Array.isArray(l.tags) ? l.tags : []);
         const dedup = Array.from(new Set(existingTags.map((t) => String(t).trim()).filter(Boolean)));
         setYtTags(dedup);
