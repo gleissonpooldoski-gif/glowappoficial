@@ -33,14 +33,23 @@ export type CreateFacebookPostParams = {
 
 async function invoke<T = any>(fn: string, body: Record<string, unknown>): Promise<T> {
   const { data, error } = await supabase.functions.invoke(fn, { body });
+  if (fn === "publish-facebook" && body.action === "create") {
+    console.log("FACEBOOK INSERT RESULT", { data, error });
+  }
   if (error) {
     const anyErr = error as any;
     const details = typeof anyErr?.context?.text === "function"
       ? await anyErr.context.text()
       : error.message;
+    if (fn === "publish-facebook" && body.action === "create") {
+      console.error("FACEBOOK ERROR", { error, details });
+    }
     throw new Error(details || "Falha ao chamar publish-facebook.");
   }
   if ((data as any)?.error && !(data as any)?.success) {
+    if (fn === "publish-facebook" && body.action === "create") {
+      console.error("FACEBOOK ERROR", data);
+    }
     throw new Error((data as any).error);
   }
   return data as T;

@@ -79,6 +79,13 @@ const statusIcon: Record<InstagramPost["status"], JSX.Element> = {
 type StatusFilter = "all" | "scheduled" | "published" | "failed";
 type PeriodFilter = "all" | "today" | "7d" | "30d" | "custom";
 
+function networkLinkKey(videoId: string | null | undefined, scheduledAt: string | null | undefined) {
+  const rawDate = scheduledAt ?? "";
+  const parsed = rawDate ? new Date(rawDate) : null;
+  const normalizedDate = parsed && !Number.isNaN(parsed.getTime()) ? parsed.toISOString() : rawDate;
+  return `${videoId ?? ""}|${normalizedDate}`;
+}
+
 /* ---------- edit scheduled post dialog ---------- */
 
 function EditScheduledDialog({
@@ -371,7 +378,7 @@ function PlatformSection({
   const showPublished = statusFilter === "all" || statusFilter === "published";
   const showFailed = statusFilter === "all" || statusFilter === "failed";
 
-  const linkKey = (p: InstagramPost) => `${p.video_id ?? ""}|${p.scheduled_at ?? ""}`;
+  const linkKey = (p: InstagramPost) => networkLinkKey(p.video_id, p.scheduled_at);
 
   const selectableIds = scheduled.filter((p) => p.status === "AGENDADO").map((p) => p.id);
   const allSelected = selectableIds.length > 0 && selectableIds.every((id) => selectedIds.has(id));
@@ -491,7 +498,7 @@ export default function Publications() {
     const map = new Map<string, { id: string; status: string; auto_comment_enabled: boolean }>();
     for (const r of (data ?? []) as any[]) {
       if (!r.video_id || !r.scheduled_at) continue;
-      map.set(`${r.video_id}|${r.scheduled_at}`, {
+      map.set(networkLinkKey(r.video_id, r.scheduled_at), {
         id: r.id, status: r.status, auto_comment_enabled: !!r.auto_comment_enabled,
       });
     }
@@ -507,7 +514,7 @@ export default function Publications() {
     const map = new Map<string, { status: string }>();
     for (const r of (data ?? []) as any[]) {
       if (!r.video_id || !r.scheduled_at) continue;
-      map.set(`${r.video_id}|${r.scheduled_at}`, { status: r.status });
+      map.set(networkLinkKey(r.video_id, r.scheduled_at), { status: r.status });
     }
     setTtByKey(map);
   };
@@ -521,7 +528,7 @@ export default function Publications() {
     const map = new Map<string, { status: string }>();
     for (const r of (data ?? []) as any[]) {
       if (!r.video_id || !r.scheduled_at) continue;
-      map.set(`${r.video_id}|${r.scheduled_at}`, { status: r.status });
+      map.set(networkLinkKey(r.video_id, r.scheduled_at), { status: r.status });
     }
     setFbByKey(map);
   };
@@ -639,7 +646,7 @@ export default function Publications() {
   const bulkEnableAutoComment = async () => {
     const ytIds: string[] = [];
     for (const p of (posts ?? []).filter((x) => selectedIds.has(x.id))) {
-      const linked = ytByKey.get(`${p.video_id ?? ""}|${p.scheduled_at ?? ""}`);
+      const linked = ytByKey.get(networkLinkKey(p.video_id, p.scheduled_at));
       if (linked && !linked.auto_comment_enabled) ytIds.push(linked.id);
     }
     if (ytIds.length === 0) {

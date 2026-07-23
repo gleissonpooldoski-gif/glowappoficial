@@ -111,13 +111,23 @@ async function resolveProjectId(
 
 async function ensureFacebook(
   post: InstagramPost,
-  allowedProjectIds: Set<string>,
+  fbAccountByProject: Map<string, FbAccount>,
   projectCache: Map<string, string | null>,
 ) {
-  if (!post.video_id || !post.scheduled_at) return { skipped: "sem vídeo/horário" };
+  if (!post.video_id || !post.scheduled_at) {
+    console.warn("[bulk-networks] Facebook ignorado", { post_id: post.id, reason: "sem vídeo/horário", video_id: post.video_id, scheduled_at: post.scheduled_at });
+    return { skipped: "sem vídeo/horário" };
+  }
   const projectId = await resolveProjectId(post.account, projectCache);
-  if (!projectId) return { skipped: "sem projeto" };
-  if (!allowedProjectIds.has(projectId)) return { skipped: "página não selecionada" };
+  if (!projectId) {
+    console.warn("[bulk-networks] Facebook ignorado", { post_id: post.id, account: post.account, reason: "sem projeto" });
+    return { skipped: "sem projeto" };
+  }
+  const fbAccount = fbAccountByProject.get(projectId);
+  if (!fbAccount) {
+    console.warn("[bulk-networks] Facebook ignorado", { post_id: post.id, project_id: projectId, reason: "página não selecionada" });
+    return { skipped: "página não selecionada" };
+  }
 
   const { data: existing } = await supabase
     .from("facebook_posts" as any)
@@ -126,8 +136,22 @@ async function ensureFacebook(
     .eq("scheduled_at", post.scheduled_at)
     .eq("project_id", projectId)
     .maybeSingle();
-  if (existing) return { skipped: "já vinculado" };
+  if (existing) {
+    console.warn("[bulk-networks] Facebook ignorado", { post_id: post.id, project_id: projectId, existing_facebook_post_id: (existing as any).id, reason: "já vinculado" });
+    return { skipped: "já vinculado" };
+  }
 
+  const description = [post.caption ?? "", post.hashtags ?? ""].filter(Boolean).join("\n\n");
+
+  console.log("FACEBOOK PAYLOAD", {
+    project_id: projectId,
+    page_id: fbAccount.page_id,
+    page_name: fbAccount.page_name,
+    page_access_token: "[redacted]",
+    video_id: post.video_id,
+    scheduled_at: post.scheduled_at,
+    description,
+  });
   console.info("[bulk-networks] Criando publicação Facebook", {
     post_id: post.id,
     video_id: post.video_id,
@@ -137,7 +161,7 @@ async function ensureFacebook(
   const created = await createFacebookPost({
     project_id: projectId,
     video_id: post.video_id,
-    description: [post.caption ?? "", post.hashtags ?? ""].filter(Boolean).join("\n\n"),
+    description,
     publish_now: false,
     scheduled_at: post.scheduled_at,
   });
@@ -204,6 +228,9 @@ export default function BulkAddNetworksDialog({ posts, open, onOpenChange, onSav
     }
     setBusy(true);
     let added = 0, skipped = 0, failed = 0;
+    const skipReasons: Array<{ network: NetId; post_id: string; reason: string }> = [];
+    const failureReasons: Array<{ network: NetId; post_id: string; error: unknown }> = [];
+    const fbAccountByProject = new Map(fbAccounts.map((a) => [a.project_id, a]));
     const projectCache = new Map<string, string | null>();
     try {
       for (const post of posts) {
@@ -213,19 +240,29 @@ export default function BulkAddNetworksDialog({ posts, open, onOpenChange, onSav
               for (const ch of ytChannels) {
                 try {
                   const res = await ensureYoutubeForChannel(post, ch);
-                  if ((res as any).added) added++; else skipped++;
-                } catch { failed++; }
+                  if ((res as any).added) added++; else { skipped++; skipReasons.push({ network: net, post_id: post.id, reason: (res as any).skipped ?? "ignorado" }); }
+                } catch (error) {
+                  console.error("[bulk-networks] YouTube falhou", { post_id: post.id, channel: ch, error });
+                  failureReasons.push({ network: net, post_id: post.id, error });
+                  failed++;
+                }
               }
             } else if (net === "tiktok") {
               const res = await ensureTiktok(post);
-              if ((res as any).added) added++; else skipped++;
+              if ((res as any).added) added++; else { skipped++; skipReasons.push({ network: net, post_id: post.id, reason: (res as any).skipped ?? "ignorado" }); }
             } else if (net === "facebook") {
-              const res = await ensureFacebook(post, fbSelected, projectCache);
-              if ((res as any).added) added++; else skipped++;
+              const res = await ensureFacebook(post, fbAccountByProject, projectCache);
+              if ((res as any).added) added++; else { skipped++; skipReasons.push({ network: net, post_id: post.id, reason: (res as any).skipped ?? "ignorado" }); }
             }
-          } catch { failed++; }
+          } catch (error) {
+            console.error("[bulk-networks] Rede falhou", { post_id: post.id, network: net, error });
+            if (net === "facebook") console.error("FACEBOOK ERROR", error);
+            failureReasons.push({ network: net, post_id: post.id, error });
+            failed++;
+          }
         }
       }
+      console.info("[bulk-networks] Resultado detalhado", { added, skipped, failed, skipReasons, failureReasons });
       toast.success(`Concluído — adicionados: ${added}, ignorados: ${skipped}${failed ? `, falhas: ${failed}` : ""}`);
       onOpenChange(false);
       onSaved?.();
