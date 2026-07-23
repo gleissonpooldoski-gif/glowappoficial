@@ -246,9 +246,12 @@ export default function EditPostNetworksDialog({ post, open, onOpenChange, onSav
                 </label>
                 {wantYT && (
                   <div className="space-y-2 rounded-md border border-border/40 bg-background/20 px-3 py-2">
-                    <div>
-                      <Label className="text-[11px] text-muted-foreground mb-1.5 block">Canais</Label>
-                      <YoutubeChannelPicker value={ytChannels} onChange={setYtChannels} disabled={busy} compact />
+                    <div className="flex items-center gap-2 rounded-md border border-border/60 bg-background/40 px-2.5 py-1.5 text-[11px]">
+                      <Lock size={10} />
+                      <span className="text-muted-foreground">Canal do projeto:</span>
+                      <Badge variant="outline" className="text-[10px]">
+                        ▶️ {ytChannelTitle ?? ytAccount ?? "sem canal vinculado"}
+                      </Badge>
                     </div>
                     <YoutubeTagsEditor
                       value={ytTags}
