@@ -87,6 +87,10 @@ export default function InstagramPublishDialog({
       toast.error("Para publicar no YouTube, adicione um vídeo ao post.");
       return prev;
     }
+    if (n === "youtube" && !s.has("youtube") && !ytAccount) {
+      toast.error("Este projeto não tem um canal do YouTube vinculado. Configure em Configurações → YouTube.");
+      return prev;
+    }
     if (n === "facebook" && !s.has("facebook") && !fbAccount) {
       toast.error("Este projeto não tem uma Página do Facebook conectada. Configure em Configurações → Facebook.");
       return prev;
