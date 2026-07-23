@@ -876,7 +876,7 @@ export type Database = {
           {
             foreignKeyName: "publish_targets_facebook_post_id_fkey"
             columns: ["facebook_post_id"]
-            isOneToOne: false
+            isOneToOne: true
             referencedRelation: "facebook_posts"
             referencedColumns: ["id"]
           },
