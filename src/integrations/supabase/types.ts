@@ -1250,6 +1250,7 @@ export type Database = {
           last_validated_at: string | null
           last_validation_detail: string | null
           last_validation_status: string | null
+          project_id: string | null
           refresh_token: string | null
           scope: string | null
           status: string
@@ -1269,6 +1270,7 @@ export type Database = {
           last_validated_at?: string | null
           last_validation_detail?: string | null
           last_validation_status?: string | null
+          project_id?: string | null
           refresh_token?: string | null
           scope?: string | null
           status?: string
@@ -1288,6 +1290,7 @@ export type Database = {
           last_validated_at?: string | null
           last_validation_detail?: string | null
           last_validation_status?: string | null
+          project_id?: string | null
           refresh_token?: string | null
           scope?: string | null
           status?: string
@@ -1295,7 +1298,15 @@ export type Database = {
           updated_at?: string
           user_id?: string | null
         }
-        Relationships: []
+        Relationships: [
+          {
+            foreignKeyName: "youtube_credentials_project_id_fkey"
+            columns: ["project_id"]
+            isOneToOne: false
+            referencedRelation: "projects"
+            referencedColumns: ["id"]
+          },
+        ]
       }
       youtube_oauth_states: {
         Row: {
