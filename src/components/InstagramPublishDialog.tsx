@@ -499,12 +499,14 @@ export default function InstagramPublishDialog({
                 </div>
               )}
               {nets.has("youtube") && (
-                <div className="space-y-1.5">
-                  <div className="flex items-center gap-2">
-                    <Youtube size={14} className="text-red-400" />
-                    <span className="text-[11px] font-semibold text-red-300">▶️ YouTube · canais</span>
-                  </div>
-                  <YoutubeChannelPicker value={ytChannels} onChange={setYtChannels} disabled={busy} compact />
+                <div className="flex items-center gap-2">
+                  <Youtube size={14} className="text-red-400" />
+                  <Badge variant="outline" className="text-[10px] font-semibold bg-red-500/15 text-red-300 border-red-400/40">
+                    ▶️ YouTube · {ytChannelTitle ?? (ytLoading ? "carregando…" : ytAccount ?? "sem canal vinculado")}
+                  </Badge>
+                  {!ytAccount && !ytLoading && (
+                    <span className="text-[11px] text-destructive">Vincule um canal em Configurações → YouTube.</span>
+                  )}
                 </div>
               )}
               {nets.has("facebook") && (
