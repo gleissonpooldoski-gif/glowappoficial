@@ -1,5 +1,5 @@
 import { useEffect, useMemo, useState } from "react";
-import { Loader2, CalendarClock, Sparkles, Instagram, Youtube, Facebook, Music2 } from "lucide-react";
+import { Loader2, CalendarClock, Sparkles, Instagram, Youtube, Facebook, Music2, ArrowLeft, Clock } from "lucide-react";
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter, DialogDescription } from "@/components/ui/dialog";
 import { Button } from "@/components/ui/button";
 import { Label } from "@/components/ui/label";
@@ -42,11 +42,20 @@ type ProjectBundle = {
   projectId: string;
   projectName: string | null;
   projectCategory: string | null;
-  igAccount: string | null;      // slug em instagram_credentials.account
+  igAccount: string | null;
   ytChannel: YoutubeCredential | null;
   fbAccount: { id: string; page_id: string; page_name: string | null } | null;
-  ttAccount: string | null;      // usa mesmo slug do IG (frame/resenha)
-  times: string[];               // horários da grade do projeto
+  ttAccount: string | null;
+  times: string[];
+  lastScheduled: Date | null;
+};
+
+type PlanItem = {
+  video: VideoMeta;
+  projectId: string | null;
+  bundle: ProjectBundle | null;
+  slot: Date | null;
+  reason?: string;
 };
 
 function flattenHashtags(h: any): string {
@@ -56,42 +65,78 @@ function flattenHashtags(h: any): string {
   return groups.flat().join(" ");
 }
 
-/** Constrói lista de N slots futuros a partir da grade do projeto, avançando
- *  automaticamente para o próximo dia quando esgotar os horários do dia. */
-function buildSlotsFromTimes(times: string[], count: number, offsetToday: Set<number> = new Set()): Date[] {
+/** Constrói N slots futuros a partir de `times`, sempre STRICT após `afterDate`
+ *  (ou após "agora" quando não há âncora). Avança de dia ao esgotar. */
+function buildSlotsFromTimes(times: string[], count: number, afterDate: Date | null): Date[] {
   if (times.length === 0 || count <= 0) return [];
   const parsed = times
     .map((t) => t.split(":").map(Number))
     .filter(([h, m]) => Number.isFinite(h) && Number.isFinite(m))
     .sort((a, b) => a[0] * 60 + a[1] - (b[0] * 60 + b[1]));
   const out: Date[] = [];
-  const minStart = Date.now() + 60_000;
-  const day = new Date();
-  day.setHours(0, 0, 0, 0);
+  const minTs = Math.max(Date.now() + 60_000, afterDate ? afterDate.getTime() + 1 : 0);
+  const startDay = new Date(afterDate ?? new Date());
+  startDay.setHours(0, 0, 0, 0);
   for (let d = 0; d < 365 && out.length < count; d++) {
     for (const [h, m] of parsed) {
       if (out.length >= count) break;
-      const slot = new Date(day);
-      slot.setDate(day.getDate() + d);
+      const slot = new Date(startDay);
+      slot.setDate(startDay.getDate() + d);
       slot.setHours(h, m, 0, 0);
-      if (slot.getTime() < minStart) continue;
-      if (offsetToday.has(slot.getTime())) continue;
+      if (slot.getTime() < minTs) continue;
       out.push(slot);
     }
   }
   return out;
 }
 
+/** Busca o último agendamento (mais futuro) do projeto entre as 4 redes. */
+async function fetchLastScheduledForProject(pid: string): Promise<Date | null> {
+  const { data: vids } = await supabase.from("videos").select("id").eq("project_id", pid);
+  const ids = ((vids ?? []) as any[]).map((r) => r.id);
+  if (ids.length === 0) return null;
+  const tables = ["instagram_posts", "youtube_posts", "tiktok_posts", "facebook_posts"] as const;
+  const results = await Promise.all(
+    tables.map((t) =>
+      supabase
+        .from(t as any)
+        .select("scheduled_at")
+        .in("video_id", ids)
+        .in("status", ["AGENDADO", "PUBLICANDO"])
+        .not("scheduled_at", "is", null)
+        .order("scheduled_at", { ascending: false })
+        .limit(1)
+        .maybeSingle(),
+    ),
+  );
+  let max = 0;
+  for (const r of results) {
+    const iso = (r?.data as any)?.scheduled_at as string | undefined;
+    if (iso) max = Math.max(max, new Date(iso).getTime());
+  }
+  return max > 0 ? new Date(max) : null;
+}
+
+const fmtDate = (d: Date) =>
+  d.toLocaleDateString("pt-BR", { day: "2-digit", month: "2-digit", year: "numeric" });
+const fmtTime = (d: Date) =>
+  d.toLocaleTimeString("pt-BR", { hour: "2-digit", minute: "2-digit" });
+
 export default function InstagramBatchScheduleDialog({ open, onOpenChange, videos, onDone }: Props) {
   const [selectedNets, setSelectedNets] = useState<Set<NetId>>(
     new Set(["instagram", "facebook", "youtube", "tiktok"]),
   );
+  const [phase, setPhase] = useState<"config" | "preview" | "running">("config");
+  const [computing, setComputing] = useState(false);
+  const [plan, setPlan] = useState<PlanItem[]>([]);
   const [busy, setBusy] = useState(false);
   const [done, setDone] = useState(0);
   const [errors, setErrors] = useState<string[]>([]);
 
   useEffect(() => {
-    if (!open) { setDone(0); setErrors([]); }
+    if (!open) {
+      setDone(0); setErrors([]); setPlan([]); setPhase("config"); setBusy(false); setComputing(false);
+    }
   }, [open]);
 
   const toggleNet = (id: NetId) => setSelectedNets((prev) => {
@@ -100,13 +145,13 @@ export default function InstagramBatchScheduleDialog({ open, onOpenChange, video
     return n;
   });
 
-  /** Resolve credenciais e cronograma para cada projeto envolvido no lote. */
-  const buildProjectBundles = async (videoRows: { id: string; project_id: string | null }[]): Promise<Map<string, ProjectBundle>> => {
+  const buildProjectBundles = async (
+    videoRows: { id: string; project_id: string | null }[],
+  ): Promise<Map<string, ProjectBundle>> => {
     const projectIds = Array.from(new Set(videoRows.map((v) => v.project_id).filter(Boolean))) as string[];
     const map = new Map<string, ProjectBundle>();
     if (projectIds.length === 0) return map;
 
-    // Instagram: usa a edge function segura para descobrir account por project_id.
     let igByProject = new Map<string, string>();
     try {
       const { data } = await supabase.functions.invoke("instagram-credentials", { body: { action: "get" } });
@@ -116,7 +161,6 @@ export default function InstagramBatchScheduleDialog({ open, onOpenChange, video
       }
     } catch { /* ignore */ }
 
-    // Projetos (nome/categoria)
     const { data: projs } = await supabase
       .from("projects")
       .select("id, name, category")
@@ -127,12 +171,12 @@ export default function InstagramBatchScheduleDialog({ open, onOpenChange, video
     for (const pid of projectIds) {
       const meta = projMeta.get(pid) ?? { name: null, category: null };
       const igAccount = igByProject.get(pid) ?? null;
-      const [ytChannel, fbAccount] = await Promise.all([
+      const [ytChannel, fbAccount, lastScheduled] = await Promise.all([
         getYoutubeChannelForProject(pid).catch(() => null),
         getFacebookAccountForProject(pid).catch(() => null),
+        fetchLastScheduledForProject(pid).catch(() => null),
       ]);
 
-      // Cronograma: prioriza IG → YT → default. Reutiliza a grade já configurada.
       let times: string[] = [];
       const tryNet = async (net: ScheduleNetwork, account: string | null) => {
         if (!account || times.length) return;
@@ -151,14 +195,14 @@ export default function InstagramBatchScheduleDialog({ open, onOpenChange, video
         igAccount,
         ytChannel: ytChannel ?? null,
         fbAccount: fbAccount ?? null,
-        ttAccount: igAccount, // TikTok reutiliza o slug do projeto
+        ttAccount: igAccount,
         times,
+        lastScheduled,
       });
     }
     return map;
   };
 
-  /** Gera legenda via IA (usa mesma edge function do agendamento individual). */
   const genCaption = async (v: VideoMeta & { project_id: string | null }, projMeta: { name: string | null; category: string | null }) => {
     let frames: string[] = [];
     try {
@@ -186,12 +230,7 @@ export default function InstagramBatchScheduleDialog({ open, onOpenChange, video
   };
 
   const scheduleOne = async (
-    v: VideoMeta,
-    slot: Date,
-    caption: string,
-    hashtags: string,
-    nets: NetId[],
-    bundle: ProjectBundle,
+    v: VideoMeta, slot: Date, caption: string, hashtags: string, nets: NetId[], bundle: ProjectBundle,
   ): Promise<string[]> => {
     const errs: string[] = [];
     const iso = slot.toISOString();
@@ -219,11 +258,8 @@ export default function InstagramBatchScheduleDialog({ open, onOpenChange, video
         try {
           const description = [caption, hashtags].filter(Boolean).join("\n\n");
           await createFacebookPost({
-            project_id: bundle.projectId,
-            video_id: v.id,
-            description,
-            publish_now: false,
-            scheduled_at: iso,
+            project_id: bundle.projectId, video_id: v.id, description,
+            publish_now: false, scheduled_at: iso,
           });
         } catch (e: any) { errs.push(`Facebook: ${e?.message ?? "erro"}`); }
       }
@@ -239,8 +275,7 @@ export default function InstagramBatchScheduleDialog({ open, onOpenChange, video
           });
           const { data, error } = await supabase.from("tiktok_posts" as any).insert({
             video_id: v.id, account: bundle.ttAccount,
-            caption: tt.caption,
-            status: "AGENDADO", scheduled_at: iso,
+            caption: tt.caption, status: "AGENDADO", scheduled_at: iso,
           }).select("id").maybeSingle();
           if (error) throw error;
           const ttId = (data as any)?.id ?? null;
@@ -279,17 +314,12 @@ export default function InstagramBatchScheduleDialog({ open, onOpenChange, video
     return errs;
   };
 
-  const run = async () => {
-    const nets = Array.from(selectedNets);
-    if (nets.length === 0) { toast.error("Selecione ao menos uma rede."); return; }
+  /** Etapa 1: monta a pré-visualização (distribuição de slots) sem criar nada. */
+  const buildPreview = async () => {
+    if (selectedNets.size === 0) { toast.error("Selecione ao menos uma rede."); return; }
     if (videos.length === 0) return;
-    if (!confirm(`Agendar ${videos.length} vídeo(s) automaticamente em ${nets.length} rede(s)?`)) return;
-
-    setBusy(true); setDone(0); setErrors([]);
-    const allErrs: string[] = [];
-
+    setComputing(true);
     try {
-      // Carrega project_id de cada vídeo (ordem mantida).
       const ids = videos.map((v) => v.id);
       const { data: rows } = await supabase.from("videos").select("id, project_id").in("id", ids);
       const projectByVideo = new Map<string, string | null>();
@@ -298,52 +328,62 @@ export default function InstagramBatchScheduleDialog({ open, onOpenChange, video
       const videoRows = videos.map((v) => ({ id: v.id, project_id: projectByVideo.get(v.id) ?? null }));
       const bundles = await buildProjectBundles(videoRows);
 
-      // Contador de vídeos já agendados por projeto → posição no cronograma.
       const perProjectCount = new Map<string, number>();
-      // Cache de slots pré-calculados por projeto.
       const slotCache = new Map<string, Date[]>();
 
-      for (let i = 0; i < videos.length; i++) {
-        const v = videos[i];
+      const items: PlanItem[] = videos.map((v) => {
         const pid = projectByVideo.get(v.id) ?? null;
-        if (!pid) { allErrs.push(`Vídeo ${i + 1} (${v.filename ?? v.id}): sem projeto vinculado`); setDone(i + 1); continue; }
-        const bundle = bundles.get(pid);
-        if (!bundle) { allErrs.push(`Vídeo ${i + 1} (${v.filename ?? v.id}): projeto sem configuração`); setDone(i + 1); continue; }
-
-        // Total de vídeos deste projeto no lote → dimensiona a lista de slots.
+        if (!pid) return { video: v, projectId: null, bundle: null, slot: null, reason: "Sem projeto vinculado" };
+        const bundle = bundles.get(pid) ?? null;
+        if (!bundle) return { video: v, projectId: pid, bundle: null, slot: null, reason: "Projeto sem configuração" };
         if (!slotCache.has(pid)) {
           const total = videoRows.filter((r) => r.project_id === pid).length;
-          slotCache.set(pid, buildSlotsFromTimes(bundle.times, total));
+          slotCache.set(pid, buildSlotsFromTimes(bundle.times, total, bundle.lastScheduled));
         }
         const idx = perProjectCount.get(pid) ?? 0;
-        const slot = slotCache.get(pid)![idx];
+        const slot = slotCache.get(pid)![idx] ?? null;
         perProjectCount.set(pid, idx + 1);
-
-        if (!slot) {
-          allErrs.push(`Vídeo ${i + 1} (${v.filename ?? v.id}): sem slot disponível no cronograma`);
-          setDone(i + 1); continue;
-        }
-
-        try {
-          const { caption, hashtags } = await genCaption(
-            { ...v, project_id: pid },
-            { name: bundle.projectName, category: bundle.projectCategory },
-          );
-          const errs = await scheduleOne(v, slot, caption, hashtags, nets, bundle);
-          errs.forEach((e) => allErrs.push(`Vídeo ${i + 1} (${v.filename ?? v.id}): ${e}`));
-        } catch (e: any) {
-          allErrs.push(`Vídeo ${i + 1} (${v.filename ?? v.id}): legenda não gerada — ${e?.message ?? "erro"}`);
-        }
-        setDone(i + 1);
-      }
+        return { video: v, projectId: pid, bundle, slot, reason: slot ? undefined : "Sem slot disponível" };
+      });
+      setPlan(items);
+      setPhase("preview");
     } catch (e: any) {
-      allErrs.push(e?.message ?? "Falha inesperada");
+      toast.error(e?.message ?? "Falha ao calcular agendamentos");
+    } finally {
+      setComputing(false);
+    }
+  };
+
+  const run = async () => {
+    const nets = Array.from(selectedNets);
+    if (nets.length === 0) return;
+    setPhase("running"); setBusy(true); setDone(0); setErrors([]);
+    const allErrs: string[] = [];
+
+    for (let i = 0; i < plan.length; i++) {
+      const item = plan[i];
+      const label = `Vídeo ${i + 1} (${item.video.filename ?? item.video.id})`;
+      if (!item.slot || !item.bundle) {
+        allErrs.push(`${label}: ${item.reason ?? "sem slot"}`);
+        setDone(i + 1); continue;
+      }
+      try {
+        const { caption, hashtags } = await genCaption(
+          { ...item.video, project_id: item.projectId },
+          { name: item.bundle.projectName, category: item.bundle.projectCategory },
+        );
+        const errs = await scheduleOne(item.video, item.slot, caption, hashtags, nets, item.bundle);
+        errs.forEach((e) => allErrs.push(`${label}: ${e}`));
+      } catch (e: any) {
+        allErrs.push(`${label}: legenda não gerada — ${e?.message ?? "erro"}`);
+      }
+      setDone(i + 1);
     }
 
     setErrors(allErrs);
     setBusy(false);
     if (allErrs.length === 0) {
-      toast.success(`${videos.length} vídeo(s) agendados em ${Array.from(selectedNets).length} rede(s)`);
+      toast.success(`${plan.length} vídeo(s) agendados`);
       onOpenChange(false);
       onDone?.();
     } else {
@@ -352,78 +392,174 @@ export default function InstagramBatchScheduleDialog({ open, onOpenChange, video
     }
   };
 
-  const progress = videos.length ? Math.round((done / videos.length) * 100) : 0;
+  const progress = plan.length ? Math.round((done / plan.length) * 100) : 0;
+
+  // Agrupa "último agendamento" por projeto para o cabeçalho da preview.
+  const lastByProject = useMemo(() => {
+    const m = new Map<string, { name: string | null; last: Date | null }>();
+    for (const it of plan) {
+      if (!it.bundle) continue;
+      if (!m.has(it.bundle.projectId))
+        m.set(it.bundle.projectId, { name: it.bundle.projectName, last: it.bundle.lastScheduled });
+    }
+    return Array.from(m.values());
+  }, [plan]);
+
+  const selectedNetList = Array.from(selectedNets);
 
   return (
     <Dialog open={open} onOpenChange={(o) => !busy && onOpenChange(o)}>
-      <DialogContent className="max-w-lg">
+      <DialogContent className="max-w-xl">
         <DialogHeader>
           <DialogTitle className="flex items-center gap-2">
             <CalendarClock size={16} className="text-gold" /> Publicação em Lote
           </DialogTitle>
           <DialogDescription>
-            {videos.length} vídeo(s) serão distribuídos automaticamente no cronograma de cada projeto.
+            {videos.length} vídeo(s) serão distribuídos no cronograma de cada projeto, continuando do último agendamento existente.
           </DialogDescription>
         </DialogHeader>
 
-        <div className="space-y-3">
-          <div className="space-y-2 rounded-lg border border-border/50 bg-background/40 p-3">
-            <Label className="text-xs font-semibold">Publicar em</Label>
-            <div className="grid grid-cols-2 gap-2">
-              {NETS.map((n) => {
-                const Icon = n.icon;
-                const checked = selectedNets.has(n.id);
-                return (
-                  <label
-                    key={n.id}
-                    className={`flex items-center gap-2 rounded-md border px-2.5 py-2 text-xs cursor-pointer transition-colors ${
-                      checked ? "border-gold/50 bg-gold/5" : "border-border/60 bg-background/30 hover:bg-background/60"
-                    } ${busy ? "opacity-50 cursor-not-allowed" : ""}`}
-                  >
-                    <Checkbox
-                      checked={checked}
-                      onCheckedChange={() => !busy && toggleNet(n.id)}
-                      disabled={busy}
-                    />
-                    <Icon size={14} className={n.color} />
-                    <span className="flex-1">{n.label}</span>
-                  </label>
-                );
-              })}
-            </div>
-            <div className="flex items-center gap-1.5 text-[11px] text-muted-foreground pt-1">
-              <Sparkles size={11} className="text-gold" />
-              Cronograma, contas e legendas são resolvidos automaticamente por projeto.
+        {phase === "config" && (
+          <div className="space-y-3">
+            <div className="space-y-2 rounded-lg border border-border/50 bg-background/40 p-3">
+              <Label className="text-xs font-semibold">Publicar em</Label>
+              <div className="grid grid-cols-2 gap-2">
+                {NETS.map((n) => {
+                  const Icon = n.icon;
+                  const checked = selectedNets.has(n.id);
+                  return (
+                    <label
+                      key={n.id}
+                      className={`flex items-center gap-2 rounded-md border px-2.5 py-2 text-xs cursor-pointer transition-colors ${
+                        checked ? "border-gold/50 bg-gold/5" : "border-border/60 bg-background/30 hover:bg-background/60"
+                      }`}
+                    >
+                      <Checkbox checked={checked} onCheckedChange={() => toggleNet(n.id)} />
+                      <Icon size={14} className={n.color} />
+                      <span className="flex-1">{n.label}</span>
+                    </label>
+                  );
+                })}
+              </div>
+              <div className="flex items-center gap-1.5 text-[11px] text-muted-foreground pt-1">
+                <Sparkles size={11} className="text-gold" />
+                Cronograma, contas e legendas são resolvidos automaticamente por projeto.
+              </div>
             </div>
           </div>
+        )}
 
-          {(busy || done > 0) && (
-            <div className="space-y-1.5">
-              <div className="flex items-center justify-between text-xs">
-                <span>Agendando…</span>
-                <span className="text-muted-foreground">{done}/{videos.length}</span>
+        {phase !== "config" && (
+          <div className="space-y-3">
+            {lastByProject.length > 0 && (
+              <div className="rounded-lg border border-border/50 bg-background/40 p-3 space-y-1.5">
+                <Label className="text-xs font-semibold flex items-center gap-1.5">
+                  <Clock size={12} className="text-gold" /> Último agendamento encontrado
+                </Label>
+                {lastByProject.map((p, i) => (
+                  <div key={i} className="flex items-center justify-between text-[11px]">
+                    <span className="text-muted-foreground truncate">{p.name ?? "Projeto"}</span>
+                    <span className="font-medium">
+                      {p.last ? `${fmtDate(p.last)} • ${fmtTime(p.last)}` : "— (usará o próximo horário do cronograma)"}
+                    </span>
+                  </div>
+                ))}
               </div>
-              <Progress value={progress} className="h-1.5" />
-            </div>
-          )}
+            )}
 
-          {errors.length > 0 && (
-            <div className="max-h-40 overflow-auto rounded-md border border-destructive/40 bg-destructive/5 p-2 text-[11px] text-destructive space-y-0.5">
-              {errors.map((e, i) => <div key={i}>{e}</div>)}
+            <div className="rounded-lg border border-border/50 bg-background/40 p-3">
+              <div className="flex items-center justify-between mb-2">
+                <Label className="text-xs font-semibold">Próximos agendamentos</Label>
+                <span className="text-[11px] text-muted-foreground">
+                  Serão criados {plan.filter((p) => p.slot).length} agendamento(s)
+                </span>
+              </div>
+              <div className="max-h-72 overflow-auto divide-y divide-border/40">
+                {plan.map((it, i) => (
+                  <div key={i} className="py-2 flex items-center justify-between gap-3 text-[11px]">
+                    <div className="min-w-0 flex-1">
+                      <div className="font-medium truncate">
+                        Vídeo {String(i + 1).padStart(2, "0")} — {it.video.filename ?? it.video.id}
+                      </div>
+                      <div className="text-muted-foreground truncate">
+                        {it.bundle?.projectName ?? "Sem projeto"}
+                      </div>
+                    </div>
+                    <div className="text-right">
+                      {it.slot ? (
+                        <>
+                          <div className="font-medium">{fmtDate(it.slot)} • {fmtTime(it.slot)}</div>
+                          <div className="flex items-center gap-1 justify-end mt-0.5">
+                            {selectedNetList.map((nid) => {
+                              const N = NETS.find((n) => n.id === nid)!;
+                              const Icon = N.icon;
+                              return <Icon key={nid} size={11} className={N.color} />;
+                            })}
+                          </div>
+                        </>
+                      ) : (
+                        <Badge variant="outline" className="text-[10px] border-destructive/40 text-destructive">
+                          {it.reason ?? "sem slot"}
+                        </Badge>
+                      )}
+                    </div>
+                  </div>
+                ))}
+              </div>
             </div>
-          )}
-        </div>
+
+            {(busy || done > 0) && (
+              <div className="space-y-1.5">
+                <div className="flex items-center justify-between text-xs">
+                  <span>Agendando…</span>
+                  <span className="text-muted-foreground">{done}/{plan.length}</span>
+                </div>
+                <Progress value={progress} className="h-1.5" />
+              </div>
+            )}
+
+            {errors.length > 0 && (
+              <div className="max-h-40 overflow-auto rounded-md border border-destructive/40 bg-destructive/5 p-2 text-[11px] text-destructive space-y-0.5">
+                {errors.map((e, i) => <div key={i}>{e}</div>)}
+              </div>
+            )}
+          </div>
+        )}
 
         <DialogFooter>
-          <Button variant="ghost" disabled={busy} onClick={() => onOpenChange(false)}>Fechar</Button>
-          <Button
-            onClick={run}
-            disabled={busy || videos.length === 0 || selectedNets.size === 0}
-            className="bg-gold-gradient text-black"
-          >
-            {busy ? <Loader2 size={14} className="mr-1.5 animate-spin" /> : <CalendarClock size={14} className="mr-1.5" />}
-            Agendar
-          </Button>
+          {phase === "config" && (
+            <>
+              <Button variant="ghost" onClick={() => onOpenChange(false)}>Fechar</Button>
+              <Button
+                onClick={buildPreview}
+                disabled={computing || videos.length === 0 || selectedNets.size === 0}
+                className="bg-gold-gradient text-black"
+              >
+                {computing ? <Loader2 size={14} className="mr-1.5 animate-spin" /> : <CalendarClock size={14} className="mr-1.5" />}
+                Ver pré-visualização
+              </Button>
+            </>
+          )}
+          {phase === "preview" && (
+            <>
+              <Button variant="ghost" onClick={() => setPhase("config")}>
+                <ArrowLeft size={14} className="mr-1.5" /> Voltar
+              </Button>
+              <Button
+                onClick={run}
+                disabled={plan.filter((p) => p.slot).length === 0}
+                className="bg-gold-gradient text-black"
+              >
+                <CalendarClock size={14} className="mr-1.5" />
+                Confirmar agendamento
+              </Button>
+            </>
+          )}
+          {phase === "running" && (
+            <Button variant="ghost" disabled={busy} onClick={() => onOpenChange(false)}>
+              {busy ? "Aguarde…" : "Fechar"}
+            </Button>
+          )}
         </DialogFooter>
       </DialogContent>
     </Dialog>
