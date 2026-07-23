@@ -212,30 +212,32 @@ export default function InstagramBatchScheduleDialog({ open, onOpenChange, video
 
     if (nets.includes("youtube") && slotFor.youtube) {
       const iso = slotFor.youtube.toISOString();
-      try {
-        // Título NUNCA usa nome do arquivo — sempre gerado a partir da legenda.
-        const { buildYoutubeMetaFromCaption } = await import("@/lib/youtube-meta");
-        const { title, description, tags } = await buildYoutubeMetaFromCaption(caption, hashtags);
-        for (const channelAcc of ytChannels) {
+      if (!ytAccount) {
+        errs.push("YouTube: nenhum canal vinculado a este projeto.");
+      } else {
+        try {
+          // Título NUNCA usa nome do arquivo — sempre gerado a partir da legenda.
+          const { buildYoutubeMetaFromCaption } = await import("@/lib/youtube-meta");
+          const { title, description, tags } = await buildYoutubeMetaFromCaption(caption, hashtags);
           try {
             const { data, error } = await supabase.from("youtube_posts" as any).insert({
-              video_id: v.id, account: channelAcc,
+              video_id: v.id, account: ytAccount,
               title, description, tags,
               category_id: "22", privacy_status: "public",
               status: "AGENDADO", scheduled_at: iso,
             }).select("id").maybeSingle();
             if (error) throw error;
             const ytId = (data as any)?.id ?? null;
-            if (!ytPostId) ytPostId = ytId;
+            ytPostId = ytId;
             await supabase.from("publish_schedules_multi" as any).insert({
               video_id: v.id, networks: ["youtube"], scheduled_at: iso,
               instagram_post_id: null, youtube_post_id: ytId, tiktok_post_id: null,
             });
           } catch (e: any) {
-            errs.push(`YouTube (${channelAcc.slice(0, 8)}…): ${e?.message ?? "erro"}`);
+            errs.push(`YouTube: ${e?.message ?? "erro"}`);
           }
-        }
-      } catch (e: any) { errs.push(`YouTube: ${e?.message ?? "erro"}`); }
+        } catch (e: any) { errs.push(`YouTube: ${e?.message ?? "erro"}`); }
+      }
     }
 
     return errs;
