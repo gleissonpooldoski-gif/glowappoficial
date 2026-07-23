@@ -12,7 +12,7 @@ import { supabase } from "@/integrations/supabase/client";
 import { buildYoutubeMetaFromCaption } from "@/lib/youtube-meta";
 import { buildTiktokCaptionFromBase } from "@/lib/tiktok-meta";
 import { createFacebookPost } from "@/lib/facebook";
-import YoutubeChannelPicker from "./YoutubeChannelPicker";
+import { listYoutubeChannels, type YoutubeCredential } from "@/lib/youtube";
 import type { InstagramPost } from "@/lib/instagram";
 
 type NetId = "instagram" | "youtube" | "tiktok" | "facebook";
