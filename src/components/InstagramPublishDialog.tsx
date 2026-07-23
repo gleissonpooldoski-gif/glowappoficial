@@ -267,25 +267,17 @@ export default function InstagramPublishDialog({
     if (!confirm(confirmMsg)) return;
     setBusy(true);
     try {
-      // Modo schedule: cada rede pode ter seu próprio horário (modo auto) ou o mesmo (modo manual).
+      // Modo schedule: TODAS as redes compartilham o MESMO horário do cronograma do projeto.
       const manualIso = mode === "schedule" ? localDateTimeToIso(date, time) : null;
-      const igIso = mode === "schedule"
-        ? (scheduleMode === "auto" ? (autoSlots.instagram?.toISOString() ?? null) : manualIso)
+      const sharedIso = mode === "schedule"
+        ? (scheduleMode === "auto" ? (autoSlot?.toISOString() ?? null) : manualIso)
         : null;
-      const ytIso = mode === "schedule"
-        ? (scheduleMode === "auto" ? (autoSlots.youtube?.toISOString() ?? null) : manualIso)
-        : null;
-      // Facebook usa o slot do Instagram (mesma cadência da conta) ou fallback manual/YT.
-      const fbIso = mode === "schedule" ? (igIso ?? ytIso ?? manualIso) : null;
+      const igIso = sharedIso;
+      const ytIso = sharedIso;
+      const fbIso = sharedIso;
       if (mode === "schedule") {
-        if (wantIG && (!igIso || new Date(igIso).getTime() < Date.now() + 60_000)) {
-          throw new Error("Instagram: horário indisponível. Configure a grade em Configurações.");
-        }
-        if (wantYT && (!ytIso || new Date(ytIso).getTime() < Date.now() + 60_000)) {
-          throw new Error("YouTube: horário indisponível. Configure a grade em Configurações.");
-        }
-        if (wantFB && (!fbIso || new Date(fbIso).getTime() < Date.now() + 60_000)) {
-          throw new Error("Facebook: horário indisponível.");
+        if (!sharedIso || new Date(sharedIso).getTime() < Date.now() + 60_000) {
+          throw new Error("Horário indisponível. Configure a grade em Configurações → Horários de publicação.");
         }
       }
       let igPostId: string | null = null;
