@@ -76,7 +76,7 @@ export default function InstagramPublishDialog({
   const [genBusy, setGenBusy] = useState(false);
   const [scheduleMode, setScheduleMode] = useState<"auto" | "manual">("auto");
   const [slotBusy, setSlotBusy] = useState(false);
-  const [autoSlots, setAutoSlots] = useState<{ instagram: Date | null; youtube: Date | null }>({ instagram: null, youtube: null });
+  const [autoSlot, setAutoSlot] = useState<Date | null>(null);
   const [nets, setNets] = useState<Set<NetId>>(new Set(["instagram"]));
   const { account: ytAccount, channelTitle: ytChannelTitle, loading: ytLoading } = useYoutubeChannelForProject(activeProject?.id ?? null);
   const [hasVideoFile, setHasVideoFile] = useState<boolean | null>(null);
@@ -148,33 +148,29 @@ export default function InstagramPublishDialog({
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [open, videoId]);
 
-  // Ao abrir em modo agendar (ou quando trocar redes/conta), calcula próximo slot POR REDE
+  // Ao abrir em modo agendar, calcula o próximo slot do cronograma do projeto (compartilhado por todas as redes).
   useEffect(() => {
     if (!open || mode !== "schedule" || scheduleMode !== "auto") return;
     void computeAutoSlot();
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [open, mode, scheduleMode, account, nets]);
+  }, [open, mode, scheduleMode, account, ytAccount]);
 
   const computeAutoSlot = async () => {
     setSlotBusy(true);
     try {
-      const results: { instagram: Date | null; youtube: Date | null } = { instagram: null, youtube: null };
-      await Promise.all(
-        (["instagram", "youtube"] as const).map(async (net) => {
-          if (!nets.has(net)) return;
-          const acc = scheduleAccountFor(net, account);
-          if (!acc) return;
-          try {
-            results[net] = await findNextSlot(net as ScheduleNetwork, acc);
-          } catch { /* ignore */ }
-        }),
-      );
-      setAutoSlots(results);
-      // Preenche date/time visíveis com o primeiro slot disponível (para exibição/manual)
-      const first = results.instagram ?? results.youtube;
-      if (first) {
-        setDate(`${first.getFullYear()}-${String(first.getMonth() + 1).padStart(2, "0")}-${String(first.getDate()).padStart(2, "0")}`);
-        setTime(first.toTimeString().slice(0, 5));
+      // Cronograma é do PROJETO — usa a grade do Instagram do projeto ativo.
+      // Se o projeto não tem IG, cai para o canal do YouTube.
+      let slot: Date | null = null;
+      if (account) {
+        try { slot = await findNextSlot("instagram", account); } catch { /* ignore */ }
+      }
+      if (!slot && ytAccount) {
+        try { slot = await findNextSlot("youtube", ytAccount); } catch { /* ignore */ }
+      }
+      setAutoSlot(slot);
+      if (slot) {
+        setDate(`${slot.getFullYear()}-${String(slot.getMonth() + 1).padStart(2, "0")}-${String(slot.getDate()).padStart(2, "0")}`);
+        setTime(slot.toTimeString().slice(0, 5));
       }
     } catch (e: any) {
       console.error(e);
@@ -271,25 +267,17 @@ export default function InstagramPublishDialog({
     if (!confirm(confirmMsg)) return;
     setBusy(true);
     try {
-      // Modo schedule: cada rede pode ter seu próprio horário (modo auto) ou o mesmo (modo manual).
+      // Modo schedule: TODAS as redes compartilham o MESMO horário do cronograma do projeto.
       const manualIso = mode === "schedule" ? localDateTimeToIso(date, time) : null;
-      const igIso = mode === "schedule"
-        ? (scheduleMode === "auto" ? (autoSlots.instagram?.toISOString() ?? null) : manualIso)
+      const sharedIso = mode === "schedule"
+        ? (scheduleMode === "auto" ? (autoSlot?.toISOString() ?? null) : manualIso)
         : null;
-      const ytIso = mode === "schedule"
-        ? (scheduleMode === "auto" ? (autoSlots.youtube?.toISOString() ?? null) : manualIso)
-        : null;
-      // Facebook usa o slot do Instagram (mesma cadência da conta) ou fallback manual/YT.
-      const fbIso = mode === "schedule" ? (igIso ?? ytIso ?? manualIso) : null;
+      const igIso = sharedIso;
+      const ytIso = sharedIso;
+      const fbIso = sharedIso;
       if (mode === "schedule") {
-        if (wantIG && (!igIso || new Date(igIso).getTime() < Date.now() + 60_000)) {
-          throw new Error("Instagram: horário indisponível. Configure a grade em Configurações.");
-        }
-        if (wantYT && (!ytIso || new Date(ytIso).getTime() < Date.now() + 60_000)) {
-          throw new Error("YouTube: horário indisponível. Configure a grade em Configurações.");
-        }
-        if (wantFB && (!fbIso || new Date(fbIso).getTime() < Date.now() + 60_000)) {
-          throw new Error("Facebook: horário indisponível.");
+        if (!sharedIso || new Date(sharedIso).getTime() < Date.now() + 60_000) {
+          throw new Error("Horário indisponível. Configure a grade em Configurações → Horários de publicação.");
         }
       }
       let igPostId: string | null = null;
@@ -641,32 +629,22 @@ export default function InstagramPublishDialog({
 
               {scheduleMode === "auto" ? (
                 <div className="space-y-1 text-xs text-muted-foreground">
-                  {slotBusy && <div>Buscando próximos slots por rede…</div>}
+                  {slotBusy && <div>Buscando próximo horário do cronograma…</div>}
                   {!slotBusy && (
                     <>
-                      {nets.has("instagram") && (
-                        <div className="flex items-center gap-2">
-                          <Instagram size={11} className="text-pink-400" />
-                          <span>Instagram:</span>
+                      {autoSlot ? (
+                        <div className="flex items-center gap-2 flex-wrap">
+                          <div className="flex items-center gap-1">
+                            {nets.has("instagram") && <Instagram size={12} className="text-pink-400" />}
+                            {nets.has("facebook") && <Facebook size={12} className="text-blue-400" />}
+                            {nets.has("youtube") && <Youtube size={12} className="text-red-400" />}
+                          </div>
                           <span className="text-foreground font-medium">
-                            {autoSlots.instagram
-                              ? autoSlots.instagram.toLocaleString("pt-BR", { dateStyle: "short", timeStyle: "short" })
-                              : "grade não configurada"}
+                            {autoSlot.toLocaleString("pt-BR", { dateStyle: "short", timeStyle: "short" })}
                           </span>
+                          <span className="text-[10px] text-muted-foreground">· cronograma do projeto</span>
                         </div>
-                      )}
-                      {nets.has("youtube") && (
-                        <div className="flex items-center gap-2">
-                          <Youtube size={11} className="text-red-400" />
-                          <span>YouTube:</span>
-                          <span className="text-foreground font-medium">
-                            {autoSlots.youtube
-                              ? autoSlots.youtube.toLocaleString("pt-BR", { dateStyle: "short", timeStyle: "short" })
-                              : "grade não configurada"}
-                          </span>
-                        </div>
-                      )}
-                      {!autoSlots.instagram && !autoSlots.youtube && (
+                      ) : (
                         <div className="text-destructive">
                           Nenhum horário configurado. Vá em Configurações → Horários de publicação.
                         </div>
