@@ -511,6 +511,17 @@ export default function InstagramPublishDialog({
                   <YoutubeChannelPicker value={ytChannels} onChange={setYtChannels} disabled={busy} compact />
                 </div>
               )}
+              {nets.has("facebook") && (
+                <div className="flex items-center gap-2">
+                  <Facebook size={14} className="text-blue-400" />
+                  {fbAccount?.page_picture && (
+                    <img src={fbAccount.page_picture} alt="" className="h-4 w-4 rounded-full object-cover" />
+                  )}
+                  <Badge variant="outline" className="text-[10px] font-semibold bg-blue-500/15 text-blue-300 border-blue-400/40">
+                    📘 Facebook · {fbAccount?.page_name ?? "Página"}
+                  </Badge>
+                </div>
+              )}
               {nets.size === 0 && (
                 <span className="text-[11px] text-muted-foreground">Selecione ao menos uma rede acima.</span>
               )}
