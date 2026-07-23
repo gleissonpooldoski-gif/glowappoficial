@@ -408,7 +408,6 @@ export default function InstagramBatchScheduleDialog({ open, onOpenChange, video
               Legenda e hashtags são geradas automaticamente. Todas as redes usam o mesmo horário do cronograma.
             </div>
           </div>
-          </div>
 
           {(busy || done > 0) && (
             <div className="space-y-1.5">
