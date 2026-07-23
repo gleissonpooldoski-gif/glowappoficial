@@ -122,6 +122,18 @@ export default function InstagramPublishDialog({
     return () => { cancelled = true; };
   }, [open, videoId]);
 
+  // Carrega Página do Facebook vinculada ao projeto ativo.
+  useEffect(() => {
+    if (!open || !activeProject?.id) { setFbAccount(null); return; }
+    let cancelled = false;
+    (async () => {
+      const acc = await getFacebookAccountForProject(activeProject.id);
+      if (!cancelled) setFbAccount(acc);
+    })();
+    return () => { cancelled = true; };
+  }, [open, activeProject?.id]);
+
+
   // Auto-gera legenda/hashtags ao abrir se não vieram prontos
   useEffect(() => {
     if (!open || !videoId) return;
