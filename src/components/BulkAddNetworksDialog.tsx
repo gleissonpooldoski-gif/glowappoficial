@@ -96,13 +96,12 @@ async function resolveProjectId(
   if (cache.has(account)) return cache.get(account) ?? null;
   const { data } = await supabase
     .from("instagram_credentials" as any)
-    .select("credentials")
+    .select("project_id")
+    .eq("account", account)
     .maybeSingle();
-  const creds = (data as any)?.credentials ?? {};
-  for (const c of Object.values<any>(creds)) {
-    if (c?.account && c?.project_id) cache.set(c.account, c.project_id);
-  }
-  return cache.get(account) ?? null;
+  const pid = (data as any)?.project_id ?? null;
+  cache.set(account, pid);
+  return pid;
 }
 
 async function ensureFacebook(
