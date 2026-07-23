@@ -86,16 +86,37 @@ Deno.serve(async (req) => {
       const description: string = String(body.description ?? "").slice(0, CAPTION_MAX_LENGTH);
       const scheduled_at: string | null = body.scheduled_at ?? null;
       const publish_now: boolean = !!body.publish_now;
+      console.log("FACEBOOK PAYLOAD", {
+        project_id,
+        page_id: null,
+        page_name: null,
+        page_access_token: "[redacted-before-account-lookup]",
+        video_id,
+        scheduled_at,
+        description,
+      });
       if (!project_id) return json({ error: "project_id é obrigatório." }, 400);
       if (!video_id) return json({ error: "video_id é obrigatório." }, 400);
 
       const { data: acc, error: accErr } = await supabase
         .from("facebook_accounts")
-        .select("id, page_id, page_name")
+        .select("id, page_id, page_name, page_access_token")
         .eq("project_id", project_id)
         .maybeSingle();
-      if (accErr) throw accErr;
+      if (accErr) {
+        console.error("FACEBOOK ERROR", { step: "lookup_facebook_account", error: accErr });
+        throw accErr;
+      }
       if (!acc) return json({ error: "Nenhuma Página do Facebook vinculada a este projeto. Conecte em Configurações." }, 400);
+      console.log("FACEBOOK PAYLOAD", {
+        project_id,
+        page_id: (acc as any).page_id,
+        page_name: (acc as any).page_name,
+        page_access_token: { present: !!(acc as any).page_access_token, length: String((acc as any).page_access_token ?? "").length },
+        video_id,
+        scheduled_at,
+        description,
+      });
 
       const { data: post, error: insErr } = await supabase.from("facebook_posts").insert({
         project_id,
@@ -108,7 +129,19 @@ Deno.serve(async (req) => {
         scheduled_at,
         logs: [{ at: new Date().toISOString(), event: "facebook_created", scheduled_at, publish_now }],
       }).select("id").maybeSingle();
-      if (insErr) throw insErr;
+      console.log("FACEBOOK INSERT RESULT", { data: post, error: insErr });
+      if (insErr) {
+        console.error("FACEBOOK ERROR", { step: "insert_facebook_posts", error: insErr });
+        throw insErr;
+      }
+
+      const { data: target, error: targetErr } = await supabase
+        .from("publish_targets")
+        .select("id, platform, status, facebook_post_id")
+        .eq("facebook_post_id", (post as any)?.id)
+        .maybeSingle();
+      console.log("FACEBOOK TRIGGER CHECK", { facebook_post_id: (post as any)?.id, data: target, error: targetErr });
+      if (targetErr) console.error("FACEBOOK ERROR", { step: "trigger_check_publish_targets", error: targetErr });
 
       if (publish_now) {
         // dispara publicação assíncrona
@@ -248,6 +281,7 @@ Deno.serve(async (req) => {
 
     return json({ success: true, fb_video_id: fbVideoId, meta: lastResult.data });
   } catch (e: any) {
+    console.error("FACEBOOK ERROR", { message: e?.message, stack: e?.stack, error: e });
     return json({ error: e?.message ?? "Erro inesperado." }, 500);
   }
 });
