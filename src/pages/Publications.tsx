@@ -1,7 +1,7 @@
 import { useEffect, useMemo, useState } from "react";
 import {
   Instagram, Youtube, Loader2, CheckCircle2, AlertCircle, Clock, Trash2, Calendar,
-  ScrollText, RotateCcw, Pencil, ExternalLink, Filter, Share2, Music2, Plus, MessageSquare,
+  ScrollText, RotateCcw, Pencil, ExternalLink, Filter, Share2, Music2, Plus, MessageSquare, Facebook,
 } from "lucide-react";
 import EditPostNetworksDialog from "@/components/EditPostNetworksDialog";
 import BulkAddNetworksDialog from "@/components/BulkAddNetworksDialog";
@@ -177,7 +177,7 @@ function EditScheduledDialog({
 /* ---------- post card ---------- */
 
 function PostCard({
-  post, meta, kind, linkedYT, linkedTT, selectable, selected, onToggleSelect,
+  post, meta, kind, linkedYT, linkedTT, linkedFB, selectable, selected, onToggleSelect,
   onEdit, onCancel, onDelete, onRetry, onLogs, onEditNetworks, onToggleAutoComment,
 }: {
   post: InstagramPost;
@@ -185,6 +185,7 @@ function PostCard({
   kind: "scheduled" | "published";
   linkedYT?: { id: string; status: string; auto_comment_enabled: boolean } | null;
   linkedTT?: { status: string } | null;
+  linkedFB?: { status: string } | null;
   selectable?: boolean;
   selected?: boolean;
   onToggleSelect?: (p: InstagramPost) => void;
@@ -240,6 +241,11 @@ function PostCard({
           {linkedTT && (
             <Badge variant="outline" className="text-[10px] gap-1 border-fuchsia-400/40 text-fuchsia-300 bg-fuchsia-500/10">
               <Music2 size={10} /> TikTok: {linkedTT.status.toLowerCase()}
+            </Badge>
+          )}
+          {linkedFB && (
+            <Badge variant="outline" className="text-[10px] gap-1 border-blue-400/40 text-blue-300 bg-blue-500/10">
+              <Facebook size={10} /> Facebook: {linkedFB.status.toLowerCase()}
             </Badge>
           )}
           {linkedYT?.auto_comment_enabled && (
@@ -325,7 +331,7 @@ function PostCard({
 /* ---------- platform section (Agendados + Publicados) ---------- */
 
 function PlatformSection({
-  account, meta, posts, statusFilter, ytByKey, ttByKey, selectedIds, onToggleSelect, onToggleAll,
+  account, meta, posts, statusFilter, ytByKey, ttByKey, fbByKey, selectedIds, onToggleSelect, onToggleAll,
   ...handlers
 }: {
   account: InstagramAccount;
@@ -334,6 +340,7 @@ function PlatformSection({
   statusFilter: StatusFilter;
   ytByKey: Map<string, { id: string; status: string; auto_comment_enabled: boolean }>;
   ttByKey: Map<string, { status: string }>;
+  fbByKey: Map<string, { status: string }>;
   selectedIds: Set<string>;
   onToggleSelect: (p: InstagramPost) => void;
   onToggleAll: (ids: string[], selectAll: boolean) => void;
@@ -384,6 +391,7 @@ function PlatformSection({
             key={p.id} post={p} meta={meta} kind={kind}
             linkedYT={ytByKey.get(linkKey(p))}
             linkedTT={ttByKey.get(linkKey(p))}
+            linkedFB={fbByKey.get(linkKey(p))}
             selectable={kind === "scheduled" && p.status === "AGENDADO"}
             selected={selectedIds.has(p.id)}
             onToggleSelect={onToggleSelect}
@@ -458,6 +466,7 @@ export default function Publications() {
   const [posts, setPosts] = useState<InstagramPost[] | null>(null);
   const [ytByKey, setYtByKey] = useState<Map<string, { id: string; status: string; auto_comment_enabled: boolean }>>(new Map());
   const [ttByKey, setTtByKey] = useState<Map<string, { status: string }>>(new Map());
+  const [fbByKey, setFbByKey] = useState<Map<string, { status: string }>>(new Map());
   const [selectedIds, setSelectedIds] = useState<Set<string>>(new Set());
   const [bulkOpen, setBulkOpen] = useState(false);
   const [migrateOpen, setMigrateOpen] = useState(false);
@@ -502,6 +511,20 @@ export default function Publications() {
     }
     setTtByKey(map);
   };
+  const loadFacebookLinks = async () => {
+    const { data } = await supabase
+      .from("facebook_posts" as any)
+      .select("video_id, scheduled_at, status")
+      .not("scheduled_at", "is", null)
+      .order("scheduled_at", { ascending: false })
+      .limit(500);
+    const map = new Map<string, { status: string }>();
+    for (const r of (data ?? []) as any[]) {
+      if (!r.video_id || !r.scheduled_at) continue;
+      map.set(`${r.video_id}|${r.scheduled_at}`, { status: r.status });
+    }
+    setFbByKey(map);
+  };
 
   const toggleSelect = (p: InstagramPost) => {
     setSelectedIds((prev) => {
@@ -522,7 +545,7 @@ export default function Publications() {
 
   const load = async () => {
     try {
-      const [nextPosts] = await Promise.all([listInstagramPosts(), loadYoutubeLinks(), loadTiktokLinks()]);
+      const [nextPosts] = await Promise.all([listInstagramPosts(), loadYoutubeLinks(), loadTiktokLinks(), loadFacebookLinks()]);
       setPosts(nextPosts);
       const publishing = nextPosts.filter((p) => p.status === "PUBLICANDO" && p.container_id);
       if (publishing.length > 0) {
@@ -641,15 +664,15 @@ export default function Publications() {
     onToggleAutoComment: toggleAutoComment,
   };
 
-  // Posts agendados apenas com Instagram (sem YouTube nem TikTok) — candidatos à migração.
+  // Posts agendados apenas com Instagram (sem YouTube, TikTok nem Facebook) — candidatos à migração.
   const legacyOnlyIg = useMemo(() => {
     if (!posts) return [];
     return posts.filter((p) => {
       if (p.status !== "AGENDADO") return false;
       const k = `${p.video_id ?? ""}|${p.scheduled_at ?? ""}`;
-      return !ytByKey.has(k) && !ttByKey.has(k);
+      return !ytByKey.has(k) && !ttByKey.has(k) && !fbByKey.has(k);
     });
-  }, [posts, ytByKey, ttByKey]);
+  }, [posts, ytByKey, ttByKey, fbByKey]);
 
   // Lista de "pastas" (contas IG) a exibir. Cada projeto vira uma pasta.
   // Prioriza contas vinculadas a projetos; adiciona contas legadas encontradas em posts.
@@ -815,6 +838,7 @@ export default function Publications() {
                 statusFilter={statusFilter}
                 ytByKey={ytByKey}
                 ttByKey={ttByKey}
+                fbByKey={fbByKey}
                 selectedIds={selectedIds}
                 onToggleSelect={toggleSelect}
                 onToggleAll={toggleAll}
@@ -829,7 +853,7 @@ export default function Publications() {
                 meta={themeForAccount(a.slug, i)}
                 posts={filteredPosts}
                 statusFilter={statusFilter}
-                ytByKey={ytByKey} ttByKey={ttByKey} selectedIds={selectedIds}
+                ytByKey={ytByKey} ttByKey={ttByKey} fbByKey={fbByKey} selectedIds={selectedIds}
                 onToggleSelect={toggleSelect} onToggleAll={toggleAll} {...handlers}
               />
             </TabsContent>
