@@ -1,5 +1,5 @@
 import { useEffect, useState } from "react";
-import { Calendar, CheckCircle2, Clock, Loader2, AlertCircle, Instagram, Youtube, Music2 } from "lucide-react";
+import { Calendar, CheckCircle2, Clock, Loader2, AlertCircle, Instagram, Youtube, Music2, Facebook } from "lucide-react";
 import { Card, CardContent } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
 import { supabase } from "@/integrations/supabase/client";
@@ -10,7 +10,7 @@ type Target = {
   id: string;
   video_id: string | null;
   scheduled_at: string;
-  platform: "instagram" | "youtube" | "tiktok";
+  platform: "instagram" | "youtube" | "tiktok" | "facebook";
   status: "AGENDADO" | "PUBLICANDO" | "PUBLICADO" | "ERRO" | "CANCELADO";
 };
 
@@ -25,6 +25,7 @@ const PLATFORM_META = {
   instagram: { label: "Instagram", icon: Instagram, color: "text-pink-300", ring: "border-pink-400/40 bg-pink-500/10" },
   youtube:   { label: "YouTube",   icon: Youtube,   color: "text-red-300",  ring: "border-red-400/40 bg-red-500/10" },
   tiktok:    { label: "TikTok",    icon: Music2,    color: "text-fuchsia-300", ring: "border-fuchsia-400/40 bg-fuchsia-500/10" },
+  facebook:  { label: "Facebook",  icon: Facebook, color: "text-blue-300", ring: "border-blue-400/40 bg-blue-500/10" },
 } as const;
 
 function statusVisual(s: Target["status"]) {
