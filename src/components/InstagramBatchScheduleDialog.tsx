@@ -10,7 +10,7 @@ import { toast } from "sonner";
 import { supabase } from "@/integrations/supabase/client";
 import { publishInstagram, friendlyError } from "@/lib/instagram";
 import { getYoutubeChannelForProject, type YoutubeCredential } from "@/lib/youtube";
-import { getFacebookAccountForProject, createFacebookPost } from "@/lib/facebook";
+import { getFacebookAccountForProject, createFacebookPost, isFacebookAccountReady, type FacebookAccount } from "@/lib/facebook";
 import { getSchedule, DEFAULT_TIMES, type ScheduleNetwork } from "@/lib/schedules";
 import { extractVideoFrames } from "@/lib/videoFrames";
 
@@ -44,7 +44,7 @@ type ProjectBundle = {
   projectCategory: string | null;
   igAccount: string | null;
   ytChannel: YoutubeCredential | null;
-  fbAccount: { id: string; page_id: string; page_name: string | null } | null;
+  fbAccount: FacebookAccount | null;
   ttAccount: string | null;
   times: string[];
   lastScheduled: Date | null;
@@ -256,11 +256,15 @@ export default function InstagramBatchScheduleDialog({ open, onOpenChange, video
       if (!bundle.fbAccount) errs.push("Facebook: página não vinculada ao projeto");
       else {
         try {
+          if (!isFacebookAccountReady(bundle.fbAccount)) {
+            errs.push("Facebook: token expirado. Reconecte a Página antes de agendar");
+          } else {
           const description = [caption, hashtags].filter(Boolean).join("\n\n");
           await createFacebookPost({
             project_id: bundle.projectId, video_id: v.id, description,
             publish_now: false, scheduled_at: iso,
           });
+          }
         } catch (e: any) { errs.push(`Facebook: ${e?.message ?? "erro"}`); }
       }
     }

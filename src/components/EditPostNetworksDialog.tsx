@@ -13,11 +13,11 @@ import { ptBR } from "date-fns/locale";
 import { supabase } from "@/integrations/supabase/client";
 import { buildYoutubeMetaFromCaption } from "@/lib/youtube-meta";
 import { getYoutubeChannelForProject } from "@/lib/youtube";
-import { getFacebookAccountForProject, createFacebookPost, friendlyFacebookError } from "@/lib/facebook";
+import { getFacebookAccountForProject, createFacebookPost, friendlyFacebookError, isFacebookAccountReady, type FacebookAccount } from "@/lib/facebook";
 import YoutubeTagsEditor from "./YoutubeTagsEditor";
 import type { InstagramPost } from "@/lib/instagram";
 
-type FbAccount = { id: string; page_id: string; page_name: string | null; page_picture: string | null };
+type FbAccount = FacebookAccount;
 type LinkedFB = { id: string; status: string; scheduled_at: string | null };
 
 type Props = {
@@ -152,6 +152,10 @@ export default function EditPostNetworksDialog({ post, open, onOpenChange, onSav
     }
     if (wantFB && !fbAccount) {
       toast.error("Este projeto não tem uma Página do Facebook vinculada. Configure em Configurações → Facebook.");
+      return;
+    }
+    if (wantFB && !isFacebookAccountReady(fbAccount)) {
+      toast.error("Facebook não conectado ou token expirado. Reconecte sua Página antes de agendar.");
       return;
     }
     setBusy(true);
@@ -332,15 +336,15 @@ export default function EditPostNetworksDialog({ post, open, onOpenChange, onSav
                 )}
 
                 <label
-                  title={!fbAccount ? "Conecte uma Página do Facebook em Configurações → Facebook." : undefined}
+                  title={!fbAccount ? "Conecte uma Página do Facebook em Configurações → Facebook." : fbAccount.connection_status === "expired" ? "Token expirado. Reconecte em Configurações → Facebook." : undefined}
                   className={`flex items-center gap-2 rounded-md border px-3 py-2 text-xs transition-colors ${
                     wantFB ? "border-gold/50 bg-gold/5" : "border-border/60 bg-background/30 hover:bg-background/60"
-                  } ${!fbAccount ? "opacity-50 cursor-not-allowed" : "cursor-pointer"}`}
+                  } ${!fbAccount || fbAccount.connection_status === "expired" ? "opacity-50 cursor-not-allowed" : "cursor-pointer"}`}
                 >
                   <Checkbox
                     checked={wantFB}
                     onCheckedChange={(v) => setWantFB(!!v)}
-                    disabled={busy || !fbAccount}
+                    disabled={busy || !fbAccount || fbAccount.connection_status === "expired"}
                   />
                   <Facebook size={14} className="text-blue-400" />
                   <span className="flex-1">Facebook</span>
@@ -362,6 +366,11 @@ export default function EditPostNetworksDialog({ post, open, onOpenChange, onSav
                       <Badge variant="outline" className="text-[10px]">
                         📘 {fbAccount.page_name ?? fbAccount.page_id}
                       </Badge>
+                      {fbAccount.connection_status === "expired" && (
+                        <Badge variant="outline" className="text-[10px] border-destructive/40 text-destructive bg-destructive/10">
+                          token expirado
+                        </Badge>
+                      )}
                     </div>
                   </div>
                 )}

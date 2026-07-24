@@ -14,7 +14,7 @@ import { uploadToYoutube, useYoutubeChannelForProject } from "@/lib/youtube";
 import { findNextSlot, ScheduleNetwork, scheduleAccountFor } from "@/lib/schedules";
 import { useActiveProject } from "@/context/ProjectContext";
 import { extractVideoFrames } from "@/lib/videoFrames";
-import { createFacebookPost, getFacebookAccountForProject, friendlyFacebookError } from "@/lib/facebook";
+import { createFacebookPost, getFacebookAccountForProject, friendlyFacebookError, isFacebookAccountReady, type FacebookAccount } from "@/lib/facebook";
 
 type NetId = "instagram" | "youtube" | "facebook";
 
@@ -80,7 +80,8 @@ export default function InstagramPublishDialog({
   const [nets, setNets] = useState<Set<NetId>>(new Set(["instagram"]));
   const { account: ytAccount, channelTitle: ytChannelTitle, loading: ytLoading } = useYoutubeChannelForProject(activeProject?.id ?? null);
   const [hasVideoFile, setHasVideoFile] = useState<boolean | null>(null);
-  const [fbAccount, setFbAccount] = useState<{ id: string; page_id: string; page_name: string | null; page_picture: string | null } | null>(null);
+  const [fbAccount, setFbAccount] = useState<FacebookAccount | null>(null);
+  const fbExpired = fbAccount?.connection_status === "expired";
   const toggleNet = (n: NetId) => setNets((prev) => {
     const s = new Set(prev);
     if (n === "youtube" && !s.has("youtube") && hasVideoFile === false) {
@@ -93,6 +94,10 @@ export default function InstagramPublishDialog({
     }
     if (n === "facebook" && !s.has("facebook") && !fbAccount) {
       toast.error("Este projeto não tem uma Página do Facebook conectada. Configure em Configurações → Facebook.");
+      return prev;
+    }
+    if (mode === "schedule" && n === "facebook" && !s.has("facebook") && !isFacebookAccountReady(fbAccount)) {
+      toast.error("Facebook não conectado ou token expirado. Reconecte sua Página antes de agendar.");
       return prev;
     }
     if (s.has(n)) s.delete(n); else s.add(n);
@@ -249,6 +254,10 @@ export default function InstagramPublishDialog({
     }
     if (wantFB && !fbAccount) {
       toast.error("Este projeto não tem uma Página do Facebook vinculada. Conecte em Configurações → Facebook.");
+      return;
+    }
+    if (mode === "schedule" && wantFB && !isFacebookAccountReady(fbAccount)) {
+      toast.error("Facebook não conectado ou token expirado. Reconecte sua Página antes de agendar.");
       return;
     }
     if (wantFB && hasVideoFile === false) {
@@ -455,15 +464,15 @@ export default function InstagramPublishDialog({
                 <span className="flex-1">YouTube</span>
               </label>
               <label
-                title={!fbAccount ? "Conecte uma Página do Facebook em Configurações → Facebook." : undefined}
+                title={!fbAccount ? "Conecte uma Página do Facebook em Configurações → Facebook." : fbExpired ? "Token expirado. Reconecte em Configurações → Facebook." : undefined}
                 className={`flex items-center gap-2 rounded-md border px-2.5 py-2 text-xs transition-colors ${
                   nets.has("facebook") ? "border-gold/50 bg-gold/5" : "border-border/60 bg-background/30 hover:bg-background/60"
-                } ${!fbAccount || hasVideoFile === false ? "opacity-50 cursor-not-allowed" : "cursor-pointer"}`}
+                } ${!fbAccount || hasVideoFile === false || (mode === "schedule" && fbExpired) ? "opacity-50 cursor-not-allowed" : "cursor-pointer"}`}
               >
                 <Checkbox
                   checked={nets.has("facebook")}
                   onCheckedChange={() => toggleNet("facebook")}
-                  disabled={busy || !fbAccount || hasVideoFile === false}
+                  disabled={busy || !fbAccount || hasVideoFile === false || (mode === "schedule" && fbExpired)}
                 />
                 <Facebook size={14} className="text-blue-400" />
                 <span className="flex-1">Facebook</span>
@@ -507,9 +516,10 @@ export default function InstagramPublishDialog({
                   {fbAccount?.page_picture && (
                     <img src={fbAccount.page_picture} alt="" className="h-4 w-4 rounded-full object-cover" />
                   )}
-                  <Badge variant="outline" className="text-[10px] font-semibold bg-blue-500/15 text-blue-300 border-blue-400/40">
+                  <Badge variant="outline" className={`text-[10px] font-semibold ${fbExpired ? "bg-destructive/10 text-destructive border-destructive/40" : "bg-blue-500/15 text-blue-300 border-blue-400/40"}`}>
                     📘 Facebook · {fbAccount?.page_name ?? "Página"}
                   </Badge>
+                  {fbExpired && <span className="text-[11px] text-destructive">Token expirado</span>}
                 </div>
               )}
               {nets.size === 0 && (
