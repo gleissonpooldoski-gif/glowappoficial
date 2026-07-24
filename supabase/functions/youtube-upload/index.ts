@@ -140,27 +140,46 @@ Deno.serve(async (req) => {
     if (!uploadUrl) throw new Error("YouTube não retornou URL de upload resumable.");
 
     // === 2) Envia bytes via stream (sem carregar em memória) ===
-    const uploadRes = await fetch(uploadUrl, {
-      method: "PUT",
-      headers: {
-        "Content-Type": mime,
-        "Content-Length": String(totalSize),
-      },
-      // Blob nativo: fetch envia como stream, sem duplicar em Uint8Array.
-      body: blobData,
-    });
-    const uploadText = await uploadRes.text().catch(() => "");
+    // Retry automático em 5xx (503, 502, 500) — YouTube recomenda backoff exponencial.
+    let uploadRes: Response | null = null;
+    let uploadText = "";
     let uploadJson: any = null;
-    try { uploadJson = uploadText ? JSON.parse(uploadText) : null; } catch { /* noop */ }
-    if (!uploadRes.ok) {
-      const msg = uploadJson?.error?.message ?? uploadText ?? `Falha no upload (${uploadRes.status}).`;
+    const MAX_TRIES = 3;
+    for (let attempt = 1; attempt <= MAX_TRIES; attempt++) {
+      try {
+        uploadRes = await fetch(uploadUrl, {
+          method: "PUT",
+          headers: { "Content-Type": mime, "Content-Length": String(totalSize) },
+          body: blobData, // Blob nativo — fetch envia streamado.
+        });
+        uploadText = await uploadRes.text().catch(() => "");
+        try { uploadJson = uploadText ? JSON.parse(uploadText) : null; } catch { /* noop */ }
+        // 5xx → backoff e tenta de novo até MAX_TRIES.
+        if (uploadRes.status >= 500 && uploadRes.status < 600 && attempt < MAX_TRIES) {
+          await new Promise((r) => setTimeout(r, attempt * 2000));
+          continue;
+        }
+        break;
+      } catch (err: any) {
+        if (attempt >= MAX_TRIES) throw err;
+        await new Promise((r) => setTimeout(r, attempt * 2000));
+      }
+    }
+    if (!uploadRes || !uploadRes.ok) {
+      const status = uploadRes?.status ?? 500;
+      let msg = uploadJson?.error?.message ?? uploadText ?? `Falha no upload (${status}).`;
+      // Mensagens específicas para casos comuns.
+      if (status === 503) msg = "YouTube temporariamente indisponível após 3 tentativas. Reenfileire em alguns minutos.";
+      if (status === 413 || /too large/i.test(msg)) {
+        msg = "Vídeo muito grande para upload em uma única requisição. Reduza a duração/tamanho ou re-renderize com bitrate menor.";
+      }
       await supabase.from("youtube_credentials").update({
         last_validated_at: new Date().toISOString(),
         last_validation_status: "UPLOAD_FAILED",
-        last_validation_detail: msg.slice(0, 400),
+        last_validation_detail: String(msg).slice(0, 400),
       }).eq("account", account);
-      return new Response(JSON.stringify({ error: msg, status: uploadRes.status }), {
-        status: uploadRes.status,
+      return new Response(JSON.stringify({ error: msg, status }), {
+        status,
         headers: { ...corsHeaders, "Content-Type": "application/json" },
       });
     }
