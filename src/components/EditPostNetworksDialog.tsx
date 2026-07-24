@@ -1,5 +1,5 @@
 import { useEffect, useState } from "react";
-import { Instagram, Youtube, Loader2, Share2, Lock } from "lucide-react";
+import { Instagram, Youtube, Facebook, Loader2, Share2, Lock } from "lucide-react";
 import {
   Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter, DialogDescription,
 } from "@/components/ui/dialog";
@@ -13,8 +13,12 @@ import { ptBR } from "date-fns/locale";
 import { supabase } from "@/integrations/supabase/client";
 import { buildYoutubeMetaFromCaption } from "@/lib/youtube-meta";
 import { getYoutubeChannelForProject } from "@/lib/youtube";
+import { getFacebookAccountForProject, createFacebookPost, friendlyFacebookError } from "@/lib/facebook";
 import YoutubeTagsEditor from "./YoutubeTagsEditor";
 import type { InstagramPost } from "@/lib/instagram";
+
+type FbAccount = { id: string; page_id: string; page_name: string | null; page_picture: string | null };
+type LinkedFB = { id: string; status: string; scheduled_at: string | null };
 
 type Props = {
   post: InstagramPost | null;
