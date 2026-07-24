@@ -56,10 +56,14 @@ export default function EditPostNetworksDialog({ post, open, onOpenChange, onSav
   const [loading, setLoading] = useState(false);
   const [busy, setBusy] = useState(false);
   const [linkedYT, setLinkedYT] = useState<LinkedYT[]>([]);
+  const [linkedFB, setLinkedFB] = useState<LinkedFB | null>(null);
   const [wantIG, setWantIG] = useState(true);
   const [wantYT, setWantYT] = useState(false);
+  const [wantFB, setWantFB] = useState(false);
   const [ytAccount, setYtAccount] = useState<string | null>(null);
   const [ytChannelTitle, setYtChannelTitle] = useState<string | null>(null);
+  const [fbAccount, setFbAccount] = useState<FbAccount | null>(null);
+  const [projectId, setProjectId] = useState<string | null>(null);
   const [ytTags, setYtTags] = useState<string[]>([]);
   const [tagsInitialized, setTagsInitialized] = useState(false);
   const [hasVideoFile, setHasVideoFile] = useState<boolean>(false);
@@ -70,21 +74,29 @@ export default function EditPostNetworksDialog({ post, open, onOpenChange, onSav
     (async () => {
       setLoading(true);
       try {
-        const [yt, videoRow] = await Promise.all([
+        const [yt, fb, videoRow] = await Promise.all([
           findLinkedYoutube(post),
+          findLinkedFacebook(post),
           post.video_id
             ? supabase.from("videos").select("original_path, processed_path, project_id").eq("id", post.video_id).maybeSingle()
             : Promise.resolve({ data: null } as any),
         ]);
         if (cancelled) return;
         setLinkedYT(yt);
+        setLinkedFB(fb);
         setWantIG(true);
         setWantYT(yt.length > 0);
-        const projectId = (videoRow as any)?.data?.project_id ?? null;
-        const linked = await getYoutubeChannelForProject(projectId);
+        setWantFB(!!fb);
+        const pid = (videoRow as any)?.data?.project_id ?? null;
+        setProjectId(pid);
+        const [ytLinked, fbAcc] = await Promise.all([
+          getYoutubeChannelForProject(pid),
+          pid ? getFacebookAccountForProject(pid) : Promise.resolve(null),
+        ]);
         if (cancelled) return;
-        setYtAccount(linked?.account ?? null);
-        setYtChannelTitle(linked?.channel_title ?? linked?.label ?? null);
+        setYtAccount(ytLinked?.account ?? null);
+        setYtChannelTitle(ytLinked?.channel_title ?? ytLinked?.label ?? null);
+        setFbAccount(fbAcc ?? null);
         const existingTags = yt.flatMap((l) => Array.isArray(l.tags) ? l.tags : []);
         const dedup = Array.from(new Set(existingTags.map((t) => String(t).trim()).filter(Boolean)));
         setYtTags(dedup);
