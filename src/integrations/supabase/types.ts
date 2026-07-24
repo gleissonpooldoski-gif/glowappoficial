@@ -186,6 +186,7 @@ export type Database = {
         Row: {
           connected_at: string
           connection_logs: Json
+          connection_status: string
           created_at: string
           id: string
           page_access_token: string
@@ -193,12 +194,15 @@ export type Database = {
           page_name: string
           page_picture: string | null
           project_id: string | null
+          token_checked_at: string | null
+          token_error: string | null
           updated_at: string
           user_access_token: string | null
         }
         Insert: {
           connected_at?: string
           connection_logs?: Json
+          connection_status?: string
           created_at?: string
           id?: string
           page_access_token: string
@@ -206,12 +210,15 @@ export type Database = {
           page_name: string
           page_picture?: string | null
           project_id?: string | null
+          token_checked_at?: string | null
+          token_error?: string | null
           updated_at?: string
           user_access_token?: string | null
         }
         Update: {
           connected_at?: string
           connection_logs?: Json
+          connection_status?: string
           created_at?: string
           id?: string
           page_access_token?: string
@@ -219,6 +226,8 @@ export type Database = {
           page_name?: string
           page_picture?: string | null
           project_id?: string | null
+          token_checked_at?: string | null
+          token_error?: string | null
           updated_at?: string
           user_access_token?: string | null
         }

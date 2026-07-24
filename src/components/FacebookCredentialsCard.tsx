@@ -1,5 +1,5 @@
 import { useEffect, useState } from "react";
-import { Facebook, Plus, Trash2, RefreshCw, Loader2, CheckCircle2, Eye, EyeOff, Link as LinkIcon } from "lucide-react";
+import { Facebook, Plus, Trash2, RefreshCw, Loader2, CheckCircle2, AlertCircle, Eye, EyeOff, Link as LinkIcon } from "lucide-react";
 import { supabase } from "@/integrations/supabase/client";
 import { toast } from "sonner";
 import { Card, CardContent } from "@/components/ui/card";
@@ -25,6 +25,9 @@ type FbAccount = {
   page_picture: string | null;
   connected_at: string;
   connection_logs?: any[];
+  connection_status?: "connected" | "expired";
+  token_checked_at?: string | null;
+  token_error?: string | null;
 };
 
 type Project = { id: string; name: string };
@@ -55,7 +58,7 @@ export default function FacebookCredentialsCard() {
   const load = async () => {
     setLoading(true);
     const [accRes, projRes] = await Promise.all([
-      supabase.functions.invoke("facebook-credentials", { body: { action: "list" } }),
+      supabase.functions.invoke("facebook-credentials", { body: { action: "list", validate: true } }),
       supabase.from("projects").select("id, name").order("name", { ascending: true }),
     ]);
     setLoading(false);
@@ -112,7 +115,8 @@ export default function FacebookCredentialsCard() {
       return toast.error(msg);
     }
     if (data?.error) return toast.error(data.error);
-    toast.success("Página conectada.");
+    const recovered = Number(data?.recovered_count ?? 0);
+    toast.success(recovered > 0 ? `Página conectada. ${recovered} agendamento(s) recuperado(s).` : "Página conectada.");
     setDialogOpen(false);
     load();
   };
@@ -160,7 +164,9 @@ export default function FacebookCredentialsCard() {
               Nenhuma Página conectada. Clique em "Conectar Facebook".
             </div>
           )}
-          {accounts.map((a) => (
+          {accounts.map((a) => {
+            const expired = a.connection_status === "expired";
+            return (
             <div key={a.id} className="space-y-3 rounded-lg border border-border/50 bg-card/40 p-4">
               <div className="flex items-start gap-3">
                 {a.page_picture ? (
@@ -174,14 +180,18 @@ export default function FacebookCredentialsCard() {
                   <p className="text-sm font-semibold truncate">{a.page_name}</p>
                   <p className="text-[11px] text-muted-foreground truncate">Projeto: {projectName(a.project_id)}</p>
                   <p className="text-[11px] text-muted-foreground">Page ID: {a.page_id}</p>
-                  <div className="mt-1 flex items-center gap-1 text-xs text-emerald-500">
-                    <CheckCircle2 size={12} /> Conectado
+                  <div className={`mt-1 flex items-center gap-1 text-xs ${expired ? "text-destructive" : "text-emerald-500"}`}>
+                    {expired ? <AlertCircle size={12} /> : <CheckCircle2 size={12} />}
+                    {expired ? "Token expirado" : "Página conectada"}
                   </div>
+                  {expired && a.token_error && (
+                    <p className="mt-1 text-[10px] text-destructive">{a.token_error}</p>
+                  )}
                 </div>
               </div>
               <div className="flex flex-wrap items-center justify-between gap-2">
                 <Button variant="ghost" size="sm" onClick={() => openConnect(a)}>
-                  <RefreshCw size={13} className="mr-1" /> Trocar Página
+                  <RefreshCw size={13} className="mr-1" /> {expired ? "Reconectar Facebook" : "Trocar Página"}
                 </Button>
                 <Button variant="ghost" size="sm" className="text-red-500 hover:text-red-600" onClick={() => setToDelete(a)}>
                   <Trash2 size={13} className="mr-1" /> Desconectar
@@ -191,7 +201,8 @@ export default function FacebookCredentialsCard() {
                 Conectado em {new Date(a.connected_at).toLocaleString()}
               </p>
             </div>
-          ))}
+            );
+          })}
         </div>
 
         {/* Connect dialog */}

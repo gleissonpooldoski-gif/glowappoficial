@@ -23,6 +23,18 @@ export type FacebookPost = {
   meta_response: any;
 };
 
+export type FacebookAccountStatus = "connected" | "expired";
+
+export type FacebookAccount = {
+  id: string;
+  page_id: string;
+  page_name: string | null;
+  page_picture: string | null;
+  connection_status?: FacebookAccountStatus;
+  token_error?: string | null;
+  token_checked_at?: string | null;
+};
+
 export type CreateFacebookPostParams = {
   project_id: string;
   video_id: string;
@@ -33,23 +45,14 @@ export type CreateFacebookPostParams = {
 
 async function invoke<T = any>(fn: string, body: Record<string, unknown>): Promise<T> {
   const { data, error } = await supabase.functions.invoke(fn, { body });
-  if (fn === "publish-facebook" && body.action === "create") {
-    console.log("FACEBOOK INSERT RESULT", { data, error });
-  }
   if (error) {
     const anyErr = error as any;
     const details = typeof anyErr?.context?.text === "function"
       ? await anyErr.context.text()
       : error.message;
-    if (fn === "publish-facebook" && body.action === "create") {
-      console.error("FACEBOOK ERROR", { error, details });
-    }
     throw new Error(details || "Falha ao chamar publish-facebook.");
   }
   if ((data as any)?.error && !(data as any)?.success) {
-    if (fn === "publish-facebook" && body.action === "create") {
-      console.error("FACEBOOK ERROR", data);
-    }
     throw new Error((data as any).error);
   }
   return data as T;
@@ -63,10 +66,14 @@ export function createFacebookPost(params: CreateFacebookPostParams) {
 export async function getFacebookAccountForProject(projectId: string) {
   const { data } = await supabase
     .from("facebook_accounts" as any)
-    .select("id, page_id, page_name, page_picture")
+    .select("id, page_id, page_name, page_picture, connection_status, token_error, token_checked_at")
     .eq("project_id", projectId)
     .maybeSingle();
-  return (data ?? null) as any;
+  return (data ?? null) as unknown as FacebookAccount | null;
+}
+
+export function isFacebookAccountReady(account: FacebookAccount | null | undefined) {
+  return Boolean(account?.page_id) && account?.connection_status !== "expired";
 }
 
 export async function listFacebookPosts(): Promise<FacebookPost[]> {
@@ -82,6 +89,7 @@ export async function listFacebookPosts(): Promise<FacebookPost[]> {
 export function friendlyFacebookError(e: any): string {
   const msg = (e?.message ?? String(e ?? "")).toLowerCase();
   if (msg.includes("page not published") || msg.includes("página não")) return "A Página do Facebook não está publicada. Publique-a antes de agendar vídeos.";
+  if (msg.includes("facebook não conectado") || msg.includes("reconecte sua página")) return "Facebook não conectado ou token expirado. Reconecte sua Página antes de agendar.";
   if (msg.includes("token")) return "Token da Página do Facebook expirado. Reconecte a Página em Configurações.";
   if (msg.includes("permission") || msg.includes("scope")) return "Permissão insuficiente. O Page Access Token precisa dos escopos pages_manage_posts e pages_read_engagement.";
   if (msg.includes("file_url") || msg.includes("video")) return "Erro ao processar o vídeo no Facebook. Verifique formato e tamanho.";

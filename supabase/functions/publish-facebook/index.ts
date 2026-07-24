@@ -8,6 +8,8 @@ const GRAPH = `https://graph.facebook.com/${GRAPH_VERSION}`;
 const GRAPH_VIDEO = `https://graph-video.facebook.com/${GRAPH_VERSION}`;
 const BUCKET = "videos-processed";
 const CAPTION_MAX_LENGTH = 63206;
+const TOKEN_EXPIRED_MESSAGE = "Token Facebook expirado. Reconecte a Página.";
+const INVALID_FACEBOOK_CONNECTION_MESSAGE = "Facebook não conectado ou token expirado. Reconecte sua Página antes de agendar.";
 
 function sanitizeToken(raw: string | undefined | null): string {
   if (!raw) return "";
@@ -42,6 +44,102 @@ function isTransient(data: any): boolean {
   if ([1, 2, 4, 17, 32, 341, 613].includes(code)) return true;
   const msg = String(err.message ?? "").toLowerCase();
   return msg.includes("try again") || msg.includes("temporarily") || msg.includes("rate limit");
+}
+
+function isTokenExpired(data: any): boolean {
+  const err = data?.error;
+  const msg = String(err?.message ?? "").toLowerCase();
+  return Number(err?.code) === 190 || (msg.includes("token") && msg.includes("expir"));
+}
+
+async function markFacebookConnectionExpired(supabase: any, accountId: string | null, message = TOKEN_EXPIRED_MESSAGE) {
+  if (!accountId) return;
+  const { error } = await supabase
+    .from("facebook_accounts")
+    .update({
+      connection_status: "expired",
+      token_checked_at: new Date().toISOString(),
+      token_error: message,
+    })
+    .eq("id", accountId);
+  if (error) console.error("[FACEBOOK PUBLISH] failed to mark connection expired", { account_id: accountId, error: error.message });
+}
+
+async function markFacebookConnectionConnected(supabase: any, accountId: string | null) {
+  if (!accountId) return;
+  const { error } = await supabase
+    .from("facebook_accounts")
+    .update({
+      connection_status: "connected",
+      token_checked_at: new Date().toISOString(),
+      token_error: null,
+    })
+    .eq("id", accountId);
+  if (error) console.error("[FACEBOOK PUBLISH] failed to mark connection connected", { account_id: accountId, error: error.message });
+}
+
+async function validateFacebookAccount(
+  supabase: any,
+  args: { projectId: string | null; scheduledAt?: string | null },
+): Promise<{ ok: boolean; account: any | null; token: string; tokenFound: boolean; tokenValid: boolean; message?: string; meta?: any }> {
+  if (!args.projectId) {
+    return { ok: false, account: null, token: "", tokenFound: false, tokenValid: false, message: "Projeto do Facebook não encontrado." };
+  }
+
+  const { data: acc, error } = await supabase
+    .from("facebook_accounts")
+    .select("id, project_id, page_id, page_name, page_access_token, connection_status")
+    .eq("project_id", args.projectId)
+    .maybeSingle();
+  if (error) throw error;
+
+  const pageId = String((acc as any)?.page_id ?? "").trim();
+  const pageToken = sanitizeToken((acc as any)?.page_access_token);
+  const tokenFound = Boolean(pageToken);
+
+  if (!acc || !pageId || !pageToken) {
+    if ((acc as any)?.id) await markFacebookConnectionExpired(supabase, (acc as any).id, TOKEN_EXPIRED_MESSAGE);
+    console.info("[FACEBOOK PUBLISH]", {
+      Projeto: args.projectId,
+      Página: pageId || null,
+      "Token encontrado": tokenFound ? "SIM" : "NÃO",
+      "Token válido": "NÃO",
+      Horário: args.scheduledAt ?? null,
+      Resultado: `ERRO: ${INVALID_FACEBOOK_CONNECTION_MESSAGE}`,
+    });
+    return { ok: false, account: acc ?? null, token: "", tokenFound, tokenValid: false, message: INVALID_FACEBOOK_CONNECTION_MESSAGE };
+  }
+
+  const validationUrl = `${GRAPH}/${encodeURIComponent(pageId)}?fields=id,name&access_token=${encodeURIComponent(pageToken)}`;
+  const res = await fetch(validationUrl);
+  const { data, status } = await readMeta(res);
+  const tokenExpired = isTokenExpired(data);
+  const tokenValid = res.ok && !data?.error && String(data?.id ?? "") === pageId;
+  if (!tokenValid) {
+    const message = tokenExpired ? TOKEN_EXPIRED_MESSAGE : metaErrorMessage(data, INVALID_FACEBOOK_CONNECTION_MESSAGE);
+    if (tokenExpired) await markFacebookConnectionExpired(supabase, (acc as any).id, message);
+    console.info("[FACEBOOK PUBLISH]", {
+      Projeto: args.projectId,
+      Página: pageId,
+      "Token encontrado": "SIM",
+      "Token válido": "NÃO",
+      Horário: args.scheduledAt ?? null,
+      Resultado: `ERRO: ${message}`,
+      http_status: status,
+    });
+    return { ok: false, account: acc, token: pageToken, tokenFound: true, tokenValid: false, message, meta: data };
+  }
+
+  await markFacebookConnectionConnected(supabase, (acc as any).id);
+  console.info("[FACEBOOK PUBLISH]", {
+    Projeto: args.projectId,
+    Página: pageId,
+    "Token encontrado": "SIM",
+    "Token válido": "SIM",
+    Horário: args.scheduledAt ?? null,
+    Resultado: "VALIDADO",
+  });
+  return { ok: true, account: acc, token: pageToken, tokenFound: true, tokenValid: true };
 }
 
 const RETRY_DELAYS_MS = [30_000, 120_000];
@@ -119,36 +217,32 @@ Deno.serve(async (req) => {
       const description: string = String(body.description ?? "").slice(0, CAPTION_MAX_LENGTH);
       const scheduled_at: string | null = body.scheduled_at ?? null;
       const publish_now: boolean = !!body.publish_now;
-      console.log("FACEBOOK PAYLOAD", {
-        project_id,
-        page_id: null,
-        page_name: null,
-        page_access_token: "[redacted-before-account-lookup]",
-        video_id,
-        scheduled_at,
-        description,
-      });
       if (!project_id) return json({ error: "project_id é obrigatório." }, 400);
       if (!video_id) return json({ error: "video_id é obrigatório." }, 400);
 
-      const { data: acc, error: accErr } = await supabase
-        .from("facebook_accounts")
-        .select("id, page_id, page_name, page_access_token")
-        .eq("project_id", project_id)
-        .maybeSingle();
-      if (accErr) {
-        console.error("FACEBOOK ERROR", { step: "lookup_facebook_account", error: accErr });
-        throw accErr;
+      let acc: any = null;
+      if (!publish_now) {
+        const tokenCheck = await validateFacebookAccount(supabase, { projectId: project_id, scheduledAt: scheduled_at });
+        if (!tokenCheck.ok) return json({ error: INVALID_FACEBOOK_CONNECTION_MESSAGE, detail: tokenCheck.message, meta: tokenCheck.meta ?? null }, 400);
+        acc = tokenCheck.account;
+      } else {
+        const { data: currentAcc, error: accErr } = await supabase
+          .from("facebook_accounts")
+          .select("id, page_id, page_name, page_access_token")
+          .eq("project_id", project_id)
+          .maybeSingle();
+        if (accErr) throw accErr;
+        if (!currentAcc) return json({ error: "Nenhuma Página do Facebook vinculada a este projeto. Conecte em Configurações." }, 400);
+        acc = currentAcc;
       }
-      if (!acc) return json({ error: "Nenhuma Página do Facebook vinculada a este projeto. Conecte em Configurações." }, 400);
-      console.log("FACEBOOK PAYLOAD", {
-        project_id,
-        page_id: (acc as any).page_id,
-        page_name: (acc as any).page_name,
-        page_access_token: { present: !!(acc as any).page_access_token, length: String((acc as any).page_access_token ?? "").length },
-        video_id,
-        scheduled_at,
-        description,
+
+      console.info("[FACEBOOK PUBLISH] create", {
+        Projeto: project_id,
+        Página: (acc as any).page_id,
+        "Token encontrado": sanitizeToken((acc as any).page_access_token) ? "SIM" : "NÃO",
+        "Token válido": publish_now ? "NÃO VALIDADO NO CREATE IMEDIATO" : "SIM",
+        Horário: scheduled_at,
+        Resultado: "AGENDAMENTO_VALIDADO",
       });
 
       const { data: post, error: insErr } = await supabase.from("facebook_posts").insert({
@@ -162,7 +256,6 @@ Deno.serve(async (req) => {
         scheduled_at,
         logs: [{ at: new Date().toISOString(), event: "facebook_created", scheduled_at, publish_now }],
       }).select("id").maybeSingle();
-      console.log("FACEBOOK INSERT RESULT", { data: post, error: insErr });
       if (insErr) {
         console.error("FACEBOOK ERROR", { step: "insert_facebook_posts", error: insErr });
         throw insErr;
@@ -173,7 +266,6 @@ Deno.serve(async (req) => {
         .select("id, platform, status, facebook_post_id")
         .eq("facebook_post_id", (post as any)?.id)
         .maybeSingle();
-      console.log("FACEBOOK TRIGGER CHECK", { facebook_post_id: (post as any)?.id, data: target, error: targetErr });
       if (targetErr) console.error("FACEBOOK ERROR", { step: "trigger_check_publish_targets", error: targetErr });
 
       if (publish_now) {
@@ -201,27 +293,25 @@ Deno.serve(async (req) => {
     if (pErr) throw pErr;
     if (!post) return json({ error: "Publicação não encontrada." }, 404);
 
-    // Validação 1: página conectada e token
-    const { data: acc } = await supabase
-      .from("facebook_accounts")
-      .select("id, page_id, page_name, page_access_token")
-      .eq("id", (post as any).facebook_account_id)
-      .maybeSingle();
-    if (!acc || !(acc as any).page_access_token) {
-      await setError(postId, "Página do Facebook não conectada ou sem token válido.");
-      return json({ error: "Página não conectada." }, 400);
+    // Validação 1: vídeo existente e URL assinada
+    const { data: video } = await supabase
+      .from("videos").select("id, project_id, processed_path, original_path")
+      .eq("id", (post as any).video_id).maybeSingle();
+    const projectId = (post as any).project_id ?? (video as any)?.project_id ?? null;
+
+    // Validação 2: sempre busca a conexão ATUAL do projeto, nunca um token antigo do post.
+    const accountCheck = await validateFacebookAccount(supabase, {
+      projectId,
+      scheduledAt: (post as any).scheduled_at ?? null,
+    });
+    if (!accountCheck.ok) {
+      await setError(postId, accountCheck.message ?? TOKEN_EXPIRED_MESSAGE, accountCheck.meta ?? null);
+      return json({ success: false, error: accountCheck.message ?? TOKEN_EXPIRED_MESSAGE, meta: accountCheck.meta ?? null }, 200);
     }
-    const pageToken = sanitizeToken((acc as any).page_access_token);
-    if (!pageToken) {
-      await setError(postId, "Page Access Token inválido para esta Página.");
-      return json({ error: "Token inválido." }, 400);
-    }
+    const acc = accountCheck.account;
+    const pageToken = accountCheck.token;
     const pageId = String((acc as any).page_id).trim();
 
-    // Validação 2: vídeo existente e URL assinada
-    const { data: video } = await supabase
-      .from("videos").select("id, processed_path, original_path")
-      .eq("id", (post as any).video_id).maybeSingle();
     const path = (video as any)?.processed_path || (video as any)?.original_path;
     if (!video || !path) {
       await setError(postId, "Arquivo do vídeo não encontrado no Storage.");
@@ -295,12 +385,41 @@ Deno.serve(async (req) => {
 
     if (!lastResult || !lastResult.ok) {
       const msg = metaErrorMessage(lastResult?.data, `HTTP ${lastResult?.status ?? "?"}: ${lastResult?.text?.slice(0, 400) ?? ""}`);
+      if (isTokenExpired(lastResult?.data)) {
+        await markFacebookConnectionExpired(supabase, (acc as any).id, TOKEN_EXPIRED_MESSAGE);
+        await setError(postId, TOKEN_EXPIRED_MESSAGE, lastResult?.data ?? null);
+        console.info("[FACEBOOK PUBLISH]", {
+          Projeto: projectId,
+          Página: pageId,
+          "Token encontrado": "SIM",
+          "Token válido": "NÃO",
+          Horário: (post as any).scheduled_at ?? null,
+          Resultado: `ERRO: ${TOKEN_EXPIRED_MESSAGE}`,
+        });
+        return json({ success: false, error: TOKEN_EXPIRED_MESSAGE, meta: lastResult?.data ?? null }, 200);
+      }
       await setError(postId, msg, lastResult?.data ?? null);
+      console.info("[FACEBOOK PUBLISH]", {
+        Projeto: projectId,
+        Página: pageId,
+        "Token encontrado": "SIM",
+        "Token válido": "SIM",
+        Horário: (post as any).scheduled_at ?? null,
+        Resultado: `ERRO: ${msg}`,
+      });
       return json({ success: false, error: msg, meta: lastResult?.data ?? null }, 200);
     }
 
     const fbVideoId = String(lastResult.data?.id ?? "");
     const elapsedMs = Date.now() - startTs;
+    console.info("[FACEBOOK PUBLISH]", {
+      Projeto: projectId,
+      Página: pageId,
+      "Token encontrado": "SIM",
+      "Token válido": "SIM",
+      Horário: (post as any).scheduled_at ?? null,
+      Resultado: "PUBLICADO",
+    });
     console.log("[publish-facebook] meta publish success", {
       post_id: postId,
       page_id: pageId,
