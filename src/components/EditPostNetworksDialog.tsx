@@ -129,7 +129,12 @@ export default function EditPostNetworksDialog({ post, open, onOpenChange, onSav
 
   const save = async () => {
     if (!post) return;
-    if (!wantIG && !wantYT) {
+    console.info("[edit-networks] AGENDAMENTO - Plataformas recebidas", {
+      instagram: wantIG, facebook: wantFB, youtube: wantYT,
+      post_id: post.id, video_id: post.video_id, scheduled_at: post.scheduled_at,
+      project_id: projectId,
+    });
+    if (!wantIG && !wantYT && !wantFB) {
       toast.error("Selecione ao menos uma rede.");
       return;
     }
@@ -137,12 +142,16 @@ export default function EditPostNetworksDialog({ post, open, onOpenChange, onSav
       toast.error("Este vídeo não possui arquivo original/processado — YouTube indisponível.");
       return;
     }
-    if (wantYT && !post.scheduled_at) {
+    if ((wantYT || wantFB) && !post.scheduled_at) {
       toast.error("Post sem horário agendado.");
       return;
     }
     if (wantYT && !ytAccount) {
       toast.error("Este projeto não tem um canal do YouTube vinculado. Configure em Configurações → YouTube.");
+      return;
+    }
+    if (wantFB && !fbAccount) {
+      toast.error("Este projeto não tem uma Página do Facebook vinculada. Configure em Configurações → Facebook.");
       return;
     }
     setBusy(true);
@@ -152,6 +161,7 @@ export default function EditPostNetworksDialog({ post, open, onOpenChange, onSav
       const selectedSet = new Set<string>(wantYT && ytAccount ? [ytAccount] : []);
 
       if (wantYT && ytAccount) {
+        console.info("[edit-networks] Criando agendamento YouTube", { account: ytAccount });
         const meta = await buildYoutubeMetaFromCaption(
           post.caption ?? "", post.hashtags ?? "", { videoId: post.video_id ?? null },
         );
@@ -192,7 +202,36 @@ export default function EditPostNetworksDialog({ post, open, onOpenChange, onSav
         }
       }
 
-      // 3) Instagram: remover (o post IG atual é excluído)
+      // 3) Facebook: adicionar/remover mantendo o mesmo horário.
+      if (wantFB && fbAccount && projectId) {
+        if (!linkedFB) {
+          console.info("[edit-networks] Criando agendamento Facebook", {
+            project_id: projectId, page_id: fbAccount.page_id, video_id: post.video_id,
+            scheduled_at: post.scheduled_at,
+          });
+          try {
+            const description = [post.caption ?? "", post.hashtags ?? ""].filter(Boolean).join("\n\n");
+            const res: any = await createFacebookPost({
+              project_id: projectId,
+              video_id: post.video_id!,
+              description,
+              publish_now: false,
+              scheduled_at: post.scheduled_at!,
+            });
+            console.info("[edit-networks] Facebook agendado", { id: res?.post?.id });
+            actions.push("Facebook adicionado");
+          } catch (e: any) {
+            console.error("[edit-networks] Facebook falhou", e);
+            throw new Error(`Facebook: ${friendlyFacebookError(e)}`);
+          }
+        }
+      } else if (!wantFB && linkedFB) {
+        const { error } = await supabase.from("facebook_posts" as any).delete().eq("id", linkedFB.id);
+        if (error) throw error;
+        actions.push("Facebook removido");
+      }
+
+      // 4) Instagram: remover (o post IG atual é excluído)
       if (!wantIG) {
         const { error } = await supabase.from("instagram_posts" as any).delete().eq("id", post.id);
         if (error) throw error;
