@@ -330,6 +330,41 @@ export default function EditPostNetworksDialog({ post, open, onOpenChange, onSav
                     />
                   </div>
                 )}
+
+                <label
+                  title={!fbAccount ? "Conecte uma Página do Facebook em Configurações → Facebook." : undefined}
+                  className={`flex items-center gap-2 rounded-md border px-3 py-2 text-xs transition-colors ${
+                    wantFB ? "border-gold/50 bg-gold/5" : "border-border/60 bg-background/30 hover:bg-background/60"
+                  } ${!fbAccount ? "opacity-50 cursor-not-allowed" : "cursor-pointer"}`}
+                >
+                  <Checkbox
+                    checked={wantFB}
+                    onCheckedChange={(v) => setWantFB(!!v)}
+                    disabled={busy || !fbAccount}
+                  />
+                  <Facebook size={14} className="text-blue-400" />
+                  <span className="flex-1">Facebook</span>
+                  {linkedFB ? (
+                    <Badge variant="outline" className="text-[10px] border-blue-400/40 text-blue-300 bg-blue-500/10">
+                      {linkedFB.status.toLowerCase()}
+                    </Badge>
+                  ) : (
+                    <Badge variant="outline" className="text-[10px] border-border text-muted-foreground">
+                      não vinculado
+                    </Badge>
+                  )}
+                </label>
+                {wantFB && fbAccount && (
+                  <div className="rounded-md border border-border/40 bg-background/20 px-3 py-2">
+                    <div className="flex items-center gap-2 rounded-md border border-border/60 bg-background/40 px-2.5 py-1.5 text-[11px]">
+                      <Lock size={10} />
+                      <span className="text-muted-foreground">Página do projeto:</span>
+                      <Badge variant="outline" className="text-[10px]">
+                        📘 {fbAccount.page_name ?? fbAccount.page_id}
+                      </Badge>
+                    </div>
+                  </div>
+                )}
               </div>
               <p className="text-[11px] text-muted-foreground">
                 Ao adicionar o YouTube, geramos automaticamente o título a partir da legenda usando o
