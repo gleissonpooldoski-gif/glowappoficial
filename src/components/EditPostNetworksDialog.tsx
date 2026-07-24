@@ -40,6 +40,18 @@ async function findLinkedYoutube(post: InstagramPost): Promise<LinkedYT[]> {
   return ((data ?? []) as any[]) as LinkedYT[];
 }
 
+/** Encontra o Facebook post vinculado (mesmo video_id + horário). */
+async function findLinkedFacebook(post: InstagramPost): Promise<LinkedFB | null> {
+  if (!post.video_id || !post.scheduled_at) return null;
+  const { data } = await supabase
+    .from("facebook_posts" as any)
+    .select("id, status, scheduled_at")
+    .eq("video_id", post.video_id)
+    .eq("scheduled_at", post.scheduled_at)
+    .maybeSingle();
+  return (data as any) ?? null;
+}
+
 export default function EditPostNetworksDialog({ post, open, onOpenChange, onSaved }: Props) {
   const [loading, setLoading] = useState(false);
   const [busy, setBusy] = useState(false);
