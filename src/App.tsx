@@ -17,6 +17,8 @@ import Publications from "./pages/Publications";
 import Privacy from "./pages/Privacy";
 import Terms from "./pages/Terms";
 import CommentsConfig from "./pages/CommentsConfig";
+import Health from "./pages/Health";
+import PublicationIssues from "./pages/PublicationIssues";
 
 import { ProjectProvider } from "@/context/ProjectContext";
 import { RenderQueueProvider } from "@/context/RenderQueueContext";
@@ -44,6 +46,8 @@ const App = () => (
                 <Route path="/edits" element={<MyEdits />} />
                 <Route path="/publications" element={<Publications />} />
                 <Route path="/comments-config" element={<CommentsConfig />} />
+                <Route path="/saude" element={<Health />} />
+                <Route path="/publications-issues" element={<PublicationIssues />} />
                 <Route path="/editor/:id" element={<Editor />} />
                 <Route path="/brand" element={<Navigate to="/videos" replace />} />
                 <Route path="/processing" element={<Navigate to="/finished" replace />} />
