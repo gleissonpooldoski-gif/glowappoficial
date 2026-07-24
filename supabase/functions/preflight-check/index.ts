@@ -1,5 +1,5 @@
 // Valida se um projeto pode agendar em uma lista de plataformas.
-// Chamado pelo frontend antes de criar agendamentos.
+// Também confirma que o arquivo de vídeo existe no Storage antes de agendar.
 import { createClient } from "https://esm.sh/@supabase/supabase-js@2.45.4";
 import { corsHeaders } from "npm:@supabase/supabase-js@2/cors";
 
@@ -7,6 +7,8 @@ const supabase = createClient(
   Deno.env.get("SUPABASE_URL")!,
   Deno.env.get("SUPABASE_SERVICE_ROLE_KEY")!,
 );
+
+const VIDEO_BUCKET = "videos-processed";
 
 type Platform = "instagram" | "facebook" | "youtube" | "tiktok";
 
@@ -59,11 +61,34 @@ async function checkTikTok(projectName: string | null): Promise<Blocker | null> 
   return null;
 }
 
-async function checkVideo(videoId: string | null): Promise<Blocker | null> {
+// Guard: confere arquivo no Storage antes de agendar. Se ausente/ilegível, bloqueia.
+export async function checkVideoAsset(videoId: string | null): Promise<Blocker | null> {
   if (!videoId) return null;
-  const { data } = await supabase.from("videos").select("id, storage_path, url, status").eq("id", videoId).maybeSingle();
-  if (!data) return { platform: "instagram", reason: "Vídeo não encontrado", action: "check_video" };
-  if (!data.storage_path && !data.url) return { platform: "instagram", reason: "Vídeo sem arquivo", action: "check_video" };
+  const { data: v } = await supabase
+    .from("videos")
+    .select("id, processed_path, processed_url, original_path, original_url, mime_type, size_bytes")
+    .eq("id", videoId).maybeSingle();
+  if (!v) return { platform: "instagram", reason: "Vídeo não encontrado no banco", action: "check_video" };
+
+  const path = v.processed_path ?? v.original_path ?? null;
+  const url = v.processed_url ?? v.original_url ?? null;
+  if (!path && !url) return { platform: "instagram", reason: "Vídeo sem arquivo processado", action: "check_video" };
+
+  // Se temos path do storage, verifica existência real
+  if (path) {
+    try {
+      const folder = path.split("/").slice(0, -1).join("/");
+      const filename = path.split("/").pop()!;
+      const { data: list, error } = await supabase.storage.from(VIDEO_BUCKET).list(folder, { search: filename, limit: 1 });
+      if (error) return { platform: "instagram", reason: `Storage inacessível: ${error.message}`, action: "check_video" };
+      const found = (list ?? []).find((f) => f.name === filename);
+      if (!found) return { platform: "instagram", reason: "Arquivo de vídeo não encontrado no Storage", action: "check_video" };
+      const size = (found.metadata as any)?.size ?? 0;
+      if (size === 0) return { platform: "instagram", reason: "Arquivo de vídeo vazio no Storage", action: "check_video" };
+    } catch (e) {
+      return { platform: "instagram", reason: `Falha ao validar arquivo: ${String(e)}`, action: "check_video" };
+    }
+  }
   return null;
 }
 
@@ -80,7 +105,7 @@ Deno.serve(async (req) => {
       if (p === "tiktok") return await checkTikTok(project_name ?? null);
       return null;
     }));
-    const videoBlocker = await checkVideo(video_id ?? null);
+    const videoBlocker = await checkVideoAsset(video_id ?? null);
     const blockers = [...checks, videoBlocker].filter(Boolean) as Blocker[];
 
     return new Response(JSON.stringify({ ok: blockers.length === 0, blockers }), {
