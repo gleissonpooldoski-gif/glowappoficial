@@ -735,6 +735,66 @@ export type Database = {
         }
         Relationships: []
       }
+      publication_archive: {
+        Row: {
+          account_ref: string | null
+          archived_at: string
+          attempt_count: number | null
+          caption: string | null
+          id: string
+          last_error: string | null
+          last_error_code: string | null
+          metadata: Json | null
+          original_created_at: string | null
+          original_id: string
+          platform: string
+          platform_post_id: string | null
+          project_id: string | null
+          published_at: string | null
+          scheduled_at: string | null
+          status: string
+          video_id: string | null
+        }
+        Insert: {
+          account_ref?: string | null
+          archived_at?: string
+          attempt_count?: number | null
+          caption?: string | null
+          id?: string
+          last_error?: string | null
+          last_error_code?: string | null
+          metadata?: Json | null
+          original_created_at?: string | null
+          original_id: string
+          platform: string
+          platform_post_id?: string | null
+          project_id?: string | null
+          published_at?: string | null
+          scheduled_at?: string | null
+          status: string
+          video_id?: string | null
+        }
+        Update: {
+          account_ref?: string | null
+          archived_at?: string
+          attempt_count?: number | null
+          caption?: string | null
+          id?: string
+          last_error?: string | null
+          last_error_code?: string | null
+          metadata?: Json | null
+          original_created_at?: string | null
+          original_id?: string
+          platform?: string
+          platform_post_id?: string | null
+          project_id?: string | null
+          published_at?: string | null
+          scheduled_at?: string | null
+          status?: string
+          video_id?: string | null
+        }
+        Relationships: []
+      }
       publish_events: {
         Row: {
           created_at: string
@@ -783,6 +843,7 @@ export type Database = {
           caption: string | null
           created_at: string
           id: string
+          last_attempt_at: string | null
           last_error: string | null
           last_error_code: string | null
           locked_at: string | null
@@ -805,6 +866,7 @@ export type Database = {
           caption?: string | null
           created_at?: string
           id?: string
+          last_attempt_at?: string | null
           last_error?: string | null
           last_error_code?: string | null
           locked_at?: string | null
@@ -827,6 +889,7 @@ export type Database = {
           caption?: string | null
           created_at?: string
           id?: string
+          last_attempt_at?: string | null
           last_error?: string | null
           last_error_code?: string | null
           locked_at?: string | null
@@ -1540,6 +1603,7 @@ export type Database = {
       [_ in never]: never
     }
     Functions: {
+      archive_old_publish_queue: { Args: never; Returns: number }
       map_platform_status_to_queue: {
         Args: { _status: string }
         Returns: Database["public"]["Enums"]["publish_queue_status"]

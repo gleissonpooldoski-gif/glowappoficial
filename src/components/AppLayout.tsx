@@ -6,6 +6,7 @@ import {
   MessageSquareText, Activity, AlertTriangle,
 } from "lucide-react";
 import { useHealthBadge } from "@/hooks/useHealthBadge";
+import HeaderAlertBell from "@/components/HeaderAlertBell";
 import { cn } from "@/lib/utils";
 import { useActiveProject } from "@/context/ProjectContext";
 import {
@@ -194,6 +195,7 @@ export default function AppLayout() {
             <h1 className="text-sm font-medium">{current}</h1>
           </div>
           <div className="ml-auto flex items-center gap-2">
+            <HeaderAlertBell />
             <div className="hidden items-center gap-2 rounded-full border border-border/60 bg-card/60 px-3 py-1.5 text-xs text-muted-foreground sm:flex">
               <span className="h-1.5 w-1.5 rounded-full bg-gold animate-pulse" />
               Studio online
