@@ -83,6 +83,51 @@ export type Database = {
         }
         Relationships: []
       }
+      connection_health: {
+        Row: {
+          account_ref: string
+          created_at: string
+          error_code: string | null
+          error_reason: string | null
+          expires_at: string | null
+          id: string
+          last_check: string | null
+          metadata: Json
+          platform: Database["public"]["Enums"]["publish_platform"]
+          project_id: string | null
+          status: Database["public"]["Enums"]["connection_health_status"]
+          updated_at: string
+        }
+        Insert: {
+          account_ref: string
+          created_at?: string
+          error_code?: string | null
+          error_reason?: string | null
+          expires_at?: string | null
+          id?: string
+          last_check?: string | null
+          metadata?: Json
+          platform: Database["public"]["Enums"]["publish_platform"]
+          project_id?: string | null
+          status?: Database["public"]["Enums"]["connection_health_status"]
+          updated_at?: string
+        }
+        Update: {
+          account_ref?: string
+          created_at?: string
+          error_code?: string | null
+          error_reason?: string | null
+          expires_at?: string | null
+          id?: string
+          last_check?: string | null
+          metadata?: Json
+          platform?: Database["public"]["Enums"]["publish_platform"]
+          project_id?: string | null
+          status?: Database["public"]["Enums"]["connection_health_status"]
+          updated_at?: string
+        }
+        Relationships: []
+      }
       edits: {
         Row: {
           aspect_ratio: string
@@ -730,6 +775,75 @@ export type Database = {
             referencedColumns: ["id"]
           },
         ]
+      }
+      publish_queue: {
+        Row: {
+          account_ref: string | null
+          attempt_count: number
+          caption: string | null
+          created_at: string
+          id: string
+          last_error: string | null
+          last_error_code: string | null
+          locked_at: string | null
+          locked_by: string | null
+          max_attempts: number
+          metadata: Json
+          next_attempt_at: string | null
+          platform: Database["public"]["Enums"]["publish_platform"]
+          platform_post_id: string | null
+          project_id: string | null
+          published_at: string | null
+          scheduled_at: string
+          status: Database["public"]["Enums"]["publish_queue_status"]
+          updated_at: string
+          video_id: string | null
+        }
+        Insert: {
+          account_ref?: string | null
+          attempt_count?: number
+          caption?: string | null
+          created_at?: string
+          id?: string
+          last_error?: string | null
+          last_error_code?: string | null
+          locked_at?: string | null
+          locked_by?: string | null
+          max_attempts?: number
+          metadata?: Json
+          next_attempt_at?: string | null
+          platform: Database["public"]["Enums"]["publish_platform"]
+          platform_post_id?: string | null
+          project_id?: string | null
+          published_at?: string | null
+          scheduled_at: string
+          status?: Database["public"]["Enums"]["publish_queue_status"]
+          updated_at?: string
+          video_id?: string | null
+        }
+        Update: {
+          account_ref?: string | null
+          attempt_count?: number
+          caption?: string | null
+          created_at?: string
+          id?: string
+          last_error?: string | null
+          last_error_code?: string | null
+          locked_at?: string | null
+          locked_by?: string | null
+          max_attempts?: number
+          metadata?: Json
+          next_attempt_at?: string | null
+          platform?: Database["public"]["Enums"]["publish_platform"]
+          platform_post_id?: string | null
+          project_id?: string | null
+          published_at?: string | null
+          scheduled_at?: string
+          status?: Database["public"]["Enums"]["publish_queue_status"]
+          updated_at?: string
+          video_id?: string | null
+        }
+        Relationships: []
       }
       publish_schedules: {
         Row: {
@@ -1426,9 +1540,18 @@ export type Database = {
       [_ in never]: never
     }
     Functions: {
+      map_platform_status_to_queue: {
+        Args: { _status: string }
+        Returns: Database["public"]["Enums"]["publish_queue_status"]
+      }
       normalize_platform_status: { Args: { _status: string }; Returns: string }
     }
     Enums: {
+      connection_health_status:
+        | "connected"
+        | "expiring_soon"
+        | "expired"
+        | "unknown"
       edit_status: "draft" | "editing" | "processing" | "completed" | "failed"
       instagram_connection_status: "CONNECTED" | "PENDING" | "ERROR"
       project_category:
@@ -1441,6 +1564,14 @@ export type Database = {
         | "noticias"
         | "celebridades"
         | "outro"
+      publish_platform: "instagram" | "facebook" | "youtube" | "tiktok"
+      publish_queue_status:
+        | "PENDING"
+        | "PROCESSING"
+        | "PUBLISHED"
+        | "RETRYING"
+        | "FAILED"
+        | "NEEDS_ATTENTION"
       queue_status: "pending" | "processing" | "done" | "error"
       render_job_status: "QUEUED" | "PROCESSING" | "COMPLETED" | "FAILED"
       video_status:
@@ -1588,6 +1719,12 @@ export type CompositeTypes<
 export const Constants = {
   public: {
     Enums: {
+      connection_health_status: [
+        "connected",
+        "expiring_soon",
+        "expired",
+        "unknown",
+      ],
       edit_status: ["draft", "editing", "processing", "completed", "failed"],
       instagram_connection_status: ["CONNECTED", "PENDING", "ERROR"],
       project_category: [
@@ -1600,6 +1737,15 @@ export const Constants = {
         "noticias",
         "celebridades",
         "outro",
+      ],
+      publish_platform: ["instagram", "facebook", "youtube", "tiktok"],
+      publish_queue_status: [
+        "PENDING",
+        "PROCESSING",
+        "PUBLISHED",
+        "RETRYING",
+        "FAILED",
+        "NEEDS_ATTENTION",
       ],
       queue_status: ["pending", "processing", "done", "error"],
       render_job_status: ["QUEUED", "PROCESSING", "COMPLETED", "FAILED"],

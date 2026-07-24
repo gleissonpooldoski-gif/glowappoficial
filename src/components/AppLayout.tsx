@@ -3,8 +3,9 @@ import { NavLink, Outlet, useLocation, useNavigate } from "react-router-dom";
 import {
   Film, LayoutTemplate, Sparkles, CheckCircle2, Pencil, Menu, X,
   FolderKanban, ChevronsUpDown, Plus, Check, Instagram, Settings as SettingsIcon,
-  MessageSquareText,
+  MessageSquareText, Activity, AlertTriangle,
 } from "lucide-react";
+import { useHealthBadge } from "@/hooks/useHealthBadge";
 import { cn } from "@/lib/utils";
 import { useActiveProject } from "@/context/ProjectContext";
 import {
@@ -19,6 +20,8 @@ const nav = [
   { to: "/finished", label: "Vídeos Prontos", icon: CheckCircle2 },
   { to: "/publications", label: "Publicações", icon: Instagram },
   { to: "/comments-config", label: "Config. de Comentários", icon: MessageSquareText },
+  { to: "/saude", label: "Saúde do Sistema", icon: Activity },
+  { to: "/publications-issues", label: "Publicações com Problema", icon: AlertTriangle },
   { to: "/settings", label: "Configurações", icon: SettingsIcon },
 ];
 
