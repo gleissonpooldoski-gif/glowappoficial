@@ -1,5 +1,5 @@
 import { useEffect, useState } from "react";
-import { Instagram, Youtube, Loader2, Share2, Lock } from "lucide-react";
+import { Instagram, Youtube, Facebook, Loader2, Share2, Lock } from "lucide-react";
 import {
   Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter, DialogDescription,
 } from "@/components/ui/dialog";
@@ -13,8 +13,12 @@ import { ptBR } from "date-fns/locale";
 import { supabase } from "@/integrations/supabase/client";
 import { buildYoutubeMetaFromCaption } from "@/lib/youtube-meta";
 import { getYoutubeChannelForProject } from "@/lib/youtube";
+import { getFacebookAccountForProject, createFacebookPost, friendlyFacebookError } from "@/lib/facebook";
 import YoutubeTagsEditor from "./YoutubeTagsEditor";
 import type { InstagramPost } from "@/lib/instagram";
+
+type FbAccount = { id: string; page_id: string; page_name: string | null; page_picture: string | null };
+type LinkedFB = { id: string; status: string; scheduled_at: string | null };
 
 type Props = {
   post: InstagramPost | null;
@@ -36,14 +40,30 @@ async function findLinkedYoutube(post: InstagramPost): Promise<LinkedYT[]> {
   return ((data ?? []) as any[]) as LinkedYT[];
 }
 
+/** Encontra o Facebook post vinculado (mesmo video_id + horário). */
+async function findLinkedFacebook(post: InstagramPost): Promise<LinkedFB | null> {
+  if (!post.video_id || !post.scheduled_at) return null;
+  const { data } = await supabase
+    .from("facebook_posts" as any)
+    .select("id, status, scheduled_at")
+    .eq("video_id", post.video_id)
+    .eq("scheduled_at", post.scheduled_at)
+    .maybeSingle();
+  return (data as any) ?? null;
+}
+
 export default function EditPostNetworksDialog({ post, open, onOpenChange, onSaved }: Props) {
   const [loading, setLoading] = useState(false);
   const [busy, setBusy] = useState(false);
   const [linkedYT, setLinkedYT] = useState<LinkedYT[]>([]);
+  const [linkedFB, setLinkedFB] = useState<LinkedFB | null>(null);
   const [wantIG, setWantIG] = useState(true);
   const [wantYT, setWantYT] = useState(false);
+  const [wantFB, setWantFB] = useState(false);
   const [ytAccount, setYtAccount] = useState<string | null>(null);
   const [ytChannelTitle, setYtChannelTitle] = useState<string | null>(null);
+  const [fbAccount, setFbAccount] = useState<FbAccount | null>(null);
+  const [projectId, setProjectId] = useState<string | null>(null);
   const [ytTags, setYtTags] = useState<string[]>([]);
   const [tagsInitialized, setTagsInitialized] = useState(false);
   const [hasVideoFile, setHasVideoFile] = useState<boolean>(false);
@@ -54,21 +74,29 @@ export default function EditPostNetworksDialog({ post, open, onOpenChange, onSav
     (async () => {
       setLoading(true);
       try {
-        const [yt, videoRow] = await Promise.all([
+        const [yt, fb, videoRow] = await Promise.all([
           findLinkedYoutube(post),
+          findLinkedFacebook(post),
           post.video_id
             ? supabase.from("videos").select("original_path, processed_path, project_id").eq("id", post.video_id).maybeSingle()
             : Promise.resolve({ data: null } as any),
         ]);
         if (cancelled) return;
         setLinkedYT(yt);
+        setLinkedFB(fb);
         setWantIG(true);
         setWantYT(yt.length > 0);
-        const projectId = (videoRow as any)?.data?.project_id ?? null;
-        const linked = await getYoutubeChannelForProject(projectId);
+        setWantFB(!!fb);
+        const pid = (videoRow as any)?.data?.project_id ?? null;
+        setProjectId(pid);
+        const [ytLinked, fbAcc] = await Promise.all([
+          getYoutubeChannelForProject(pid),
+          pid ? getFacebookAccountForProject(pid) : Promise.resolve(null),
+        ]);
         if (cancelled) return;
-        setYtAccount(linked?.account ?? null);
-        setYtChannelTitle(linked?.channel_title ?? linked?.label ?? null);
+        setYtAccount(ytLinked?.account ?? null);
+        setYtChannelTitle(ytLinked?.channel_title ?? ytLinked?.label ?? null);
+        setFbAccount(fbAcc ?? null);
         const existingTags = yt.flatMap((l) => Array.isArray(l.tags) ? l.tags : []);
         const dedup = Array.from(new Set(existingTags.map((t) => String(t).trim()).filter(Boolean)));
         setYtTags(dedup);
@@ -101,7 +129,12 @@ export default function EditPostNetworksDialog({ post, open, onOpenChange, onSav
 
   const save = async () => {
     if (!post) return;
-    if (!wantIG && !wantYT) {
+    console.info("[edit-networks] AGENDAMENTO - Plataformas recebidas", {
+      instagram: wantIG, facebook: wantFB, youtube: wantYT,
+      post_id: post.id, video_id: post.video_id, scheduled_at: post.scheduled_at,
+      project_id: projectId,
+    });
+    if (!wantIG && !wantYT && !wantFB) {
       toast.error("Selecione ao menos uma rede.");
       return;
     }
@@ -109,12 +142,16 @@ export default function EditPostNetworksDialog({ post, open, onOpenChange, onSav
       toast.error("Este vídeo não possui arquivo original/processado — YouTube indisponível.");
       return;
     }
-    if (wantYT && !post.scheduled_at) {
+    if ((wantYT || wantFB) && !post.scheduled_at) {
       toast.error("Post sem horário agendado.");
       return;
     }
     if (wantYT && !ytAccount) {
       toast.error("Este projeto não tem um canal do YouTube vinculado. Configure em Configurações → YouTube.");
+      return;
+    }
+    if (wantFB && !fbAccount) {
+      toast.error("Este projeto não tem uma Página do Facebook vinculada. Configure em Configurações → Facebook.");
       return;
     }
     setBusy(true);
@@ -124,6 +161,7 @@ export default function EditPostNetworksDialog({ post, open, onOpenChange, onSav
       const selectedSet = new Set<string>(wantYT && ytAccount ? [ytAccount] : []);
 
       if (wantYT && ytAccount) {
+        console.info("[edit-networks] Criando agendamento YouTube", { account: ytAccount });
         const meta = await buildYoutubeMetaFromCaption(
           post.caption ?? "", post.hashtags ?? "", { videoId: post.video_id ?? null },
         );
@@ -164,7 +202,36 @@ export default function EditPostNetworksDialog({ post, open, onOpenChange, onSav
         }
       }
 
-      // 3) Instagram: remover (o post IG atual é excluído)
+      // 3) Facebook: adicionar/remover mantendo o mesmo horário.
+      if (wantFB && fbAccount && projectId) {
+        if (!linkedFB) {
+          console.info("[edit-networks] Criando agendamento Facebook", {
+            project_id: projectId, page_id: fbAccount.page_id, video_id: post.video_id,
+            scheduled_at: post.scheduled_at,
+          });
+          try {
+            const description = [post.caption ?? "", post.hashtags ?? ""].filter(Boolean).join("\n\n");
+            const res: any = await createFacebookPost({
+              project_id: projectId,
+              video_id: post.video_id!,
+              description,
+              publish_now: false,
+              scheduled_at: post.scheduled_at!,
+            });
+            console.info("[edit-networks] Facebook agendado", { id: res?.post?.id });
+            actions.push("Facebook adicionado");
+          } catch (e: any) {
+            console.error("[edit-networks] Facebook falhou", e);
+            throw new Error(`Facebook: ${friendlyFacebookError(e)}`);
+          }
+        }
+      } else if (!wantFB && linkedFB) {
+        const { error } = await supabase.from("facebook_posts" as any).delete().eq("id", linkedFB.id);
+        if (error) throw error;
+        actions.push("Facebook removido");
+      }
+
+      // 4) Instagram: remover (o post IG atual é excluído)
       if (!wantIG) {
         const { error } = await supabase.from("instagram_posts" as any).delete().eq("id", post.id);
         if (error) throw error;
@@ -261,6 +328,41 @@ export default function EditPostNetworksDialog({ post, open, onOpenChange, onSav
                       videoId={post?.video_id ?? null}
                       disabled={busy}
                     />
+                  </div>
+                )}
+
+                <label
+                  title={!fbAccount ? "Conecte uma Página do Facebook em Configurações → Facebook." : undefined}
+                  className={`flex items-center gap-2 rounded-md border px-3 py-2 text-xs transition-colors ${
+                    wantFB ? "border-gold/50 bg-gold/5" : "border-border/60 bg-background/30 hover:bg-background/60"
+                  } ${!fbAccount ? "opacity-50 cursor-not-allowed" : "cursor-pointer"}`}
+                >
+                  <Checkbox
+                    checked={wantFB}
+                    onCheckedChange={(v) => setWantFB(!!v)}
+                    disabled={busy || !fbAccount}
+                  />
+                  <Facebook size={14} className="text-blue-400" />
+                  <span className="flex-1">Facebook</span>
+                  {linkedFB ? (
+                    <Badge variant="outline" className="text-[10px] border-blue-400/40 text-blue-300 bg-blue-500/10">
+                      {linkedFB.status.toLowerCase()}
+                    </Badge>
+                  ) : (
+                    <Badge variant="outline" className="text-[10px] border-border text-muted-foreground">
+                      não vinculado
+                    </Badge>
+                  )}
+                </label>
+                {wantFB && fbAccount && (
+                  <div className="rounded-md border border-border/40 bg-background/20 px-3 py-2">
+                    <div className="flex items-center gap-2 rounded-md border border-border/60 bg-background/40 px-2.5 py-1.5 text-[11px]">
+                      <Lock size={10} />
+                      <span className="text-muted-foreground">Página do projeto:</span>
+                      <Badge variant="outline" className="text-[10px]">
+                        📘 {fbAccount.page_name ?? fbAccount.page_id}
+                      </Badge>
+                    </div>
                   </div>
                 )}
               </div>
