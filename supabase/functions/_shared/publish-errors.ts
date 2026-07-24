@@ -98,7 +98,18 @@ export function classifyPublishError(
     };
   }
 
-  // Default: unknown → transient (safer to retry)
+  // HTTP 4xx sem código conhecido → permanente (payload/vídeo/conta ruim). Retry cego só gera loop.
+  if (status >= 400 && status < 500) {
+    return {
+      kind: "permanent",
+      code: `CLIENT_ERROR:${code}`,
+      message,
+      humanMessage: `${platformLabel(platform)} rejeitou a publicação (${status}): ${message}`,
+      action: "check_video",
+    };
+  }
+
+  // Default residual: unknown → transient (raro; só quando não temos status)
   return {
     kind: "unknown",
     code: `UNKNOWN:${code}`,

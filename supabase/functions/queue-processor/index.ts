@@ -170,7 +170,10 @@ async function processOne(item: any) {
     return;
   }
 
-  const cls = classifyPublishError(platform, result.status, result.body, "Falha na publicação");
+  // Usa o body cru da Meta quando disponível para classificação precisa
+  const errorBody = result.body?.meta_error ?? result.body?.error ?? result.body;
+  const cls = classifyPublishError(platform, result.status, errorBody, result.body?.error?.message ?? "Falha na publicação");
+  // attempt_count já foi incrementado no claim; se atingiu o teto, é a última tentativa
   const isTerminalRetry = item.attempt_count >= item.max_attempts;
 
   if (cls.kind === "permanent" || isTerminalRetry) {

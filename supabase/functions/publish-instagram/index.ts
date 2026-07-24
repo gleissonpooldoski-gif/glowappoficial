@@ -1065,7 +1065,20 @@ Deno.serve(async (req) => {
     if (activeIgId && activePostId && !rateLimited) {
       try { await releaseAccountLock(activeIgId, activePostId); } catch (_) { /* noop */ }
     }
-    return new Response(JSON.stringify({ error: message, blocked, rate_limited: rateLimited, status: "ERRO" }),
-      { status: 200, headers: { ...corsHeaders, "Content-Type": "application/json" } });
+    // Propaga o erro cru da Meta para o queue-processor classificar corretamente.
+    // HTTP status reflete o tipo de falha (4xx=cliente, 5xx=servidor/rate limit).
+    const metaErr = e?.metaData?.error ?? null;
+    const httpStatus = metaErr?.code === 4 || rateLimited ? 429
+      : (metaErr?.is_transient ? 503
+      : (isTokenExpiredError(e?.metaData, rawMessage) ? 401
+      : (blocked ? 403 : 400)));
+    return new Response(JSON.stringify({
+      ok: false,
+      error: { message, code: metaErr?.code ?? null, error_subcode: metaErr?.error_subcode ?? null,
+               type: metaErr?.type ?? null, fbtrace_id: metaErr?.fbtrace_id ?? null,
+               is_transient: metaErr?.is_transient ?? null },
+      meta_error: metaErr,
+      blocked, rate_limited: rateLimited, status: "ERRO",
+    }), { status: httpStatus, headers: { ...corsHeaders, "Content-Type": "application/json" } });
   }
 });
