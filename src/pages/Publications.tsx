@@ -650,9 +650,19 @@ export default function Publications() {
   useEffect(() => {
     load();
     loadIgAccounts();
-    const t = window.setInterval(load, 5000);
-    return () => window.clearInterval(t);
+    // Polling de 20s e apenas com a aba visível: antes eram 4 consultas pesadas
+    // (até 2.000 linhas) a cada 5s, mesmo com a aba em segundo plano.
+    const t = window.setInterval(() => {
+      if (!document.hidden) load();
+    }, 20000);
+    const onVisible = () => { if (!document.hidden) load(); };
+    document.addEventListener("visibilitychange", onVisible);
+    return () => {
+      window.clearInterval(t);
+      document.removeEventListener("visibilitychange", onVisible);
+    };
   }, []);
+
 
   const cancelScheduled = async (p: InstagramPost) => {
     if (!confirm("Cancelar este agendamento? O vídeo voltará para Vídeos Prontos.")) return;

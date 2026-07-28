@@ -45,7 +45,9 @@ export default function ChangeTemplateDialog({
     (async () => {
       setLoading(true);
       let query = supabase.from("templates").select("*").order("created_at", { ascending: false });
-      if (projectId) query = query.eq("project_id", projectId);
+      // Isolamento: sem projeto definido, só templates globais — nunca de outro projeto.
+      query = projectId ? query.eq("project_id", projectId) : query.is("project_id", null);
+
       const { data, error } = await query;
       if (error) toast.error(error.message);
       setTemplates((data as any[]) ?? []);

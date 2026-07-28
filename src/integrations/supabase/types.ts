@@ -1609,6 +1609,13 @@ export type Database = {
         Returns: Database["public"]["Enums"]["publish_queue_status"]
       }
       normalize_platform_status: { Args: { _status: string }; Returns: string }
+      sync_publish_queue: {
+        Args: never
+        Returns: {
+          removed: number
+          synced: number
+        }[]
+      }
     }
     Enums: {
       connection_health_status:

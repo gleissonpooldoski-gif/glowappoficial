@@ -1,5 +1,6 @@
 import { useEffect, useState } from "react";
 import { Loader2, Upload, ExternalLink } from "lucide-react";
+import { useProject } from "@/context/ProjectContext";
 import { toast } from "sonner";
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter } from "@/components/ui/dialog";
 import { Button } from "@/components/ui/button";
@@ -38,6 +39,7 @@ export default function YoutubeUploadDialog({
   onOpenChange: (v: boolean) => void;
   account: YoutubeAccount;
 }) {
+  const { activeProject } = useProject();
   const [videos, setVideos] = useState<LibVideo[]>([]);
   const [videoId, setVideoId] = useState<string>("");
   const [title, setTitle] = useState("");
@@ -53,7 +55,7 @@ export default function YoutubeUploadDialog({
     if (!open) return;
     setResult(null);
     setLoading(true);
-    listLibraryVideos(50)
+    listLibraryVideos(50, activeProject?.id ?? null)
       .then((rows) => {
         setVideos(rows as LibVideo[]);
         if (rows[0]?.id) {
@@ -63,7 +65,7 @@ export default function YoutubeUploadDialog({
       })
       .catch((e) => toast.error(e?.message ?? "Falha ao carregar biblioteca."))
       .finally(() => setLoading(false));
-  }, [open]);
+  }, [open, activeProject?.id]);
 
   const submit = async () => {
     if (!videoId) return toast.error("Selecione um vídeo da biblioteca.");
