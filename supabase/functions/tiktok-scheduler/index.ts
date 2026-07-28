@@ -10,6 +10,20 @@ Deno.serve(async (req) => {
       Deno.env.get("SUPABASE_SERVICE_ROLE_KEY")!,
     );
     const nowIso = new Date().toISOString();
+
+    // Reaper: libera posts presos em PUBLICANDO (worker morto no meio da execução)
+    // para que o próximo tick reprocesse em vez de ficarem órfãos para sempre.
+    const stuckBefore = new Date(Date.now() - 20 * 60_000).toISOString();
+    const { data: stuck } = await supabase
+      .from("tiktok_posts")
+      .update({ status: "AGENDADO" })
+      .eq("status", "PUBLICANDO")
+      .lt("updated_at", stuckBefore)
+      .select("id");
+    if (stuck?.length) {
+      console.log("[tiktok-scheduler]", JSON.stringify({ step: "stuck_released", count: stuck.length }));
+    }
+
     const { data: due, error } = await supabase
       .from("tiktok_posts")
       .select("id")
@@ -17,6 +31,7 @@ Deno.serve(async (req) => {
       .lte("scheduled_at", nowIso)
       .limit(10);
     if (error) throw error;
+
 
     const results: any[] = [];
     for (const row of due ?? []) {

@@ -84,16 +84,20 @@ export function uploadToYoutube(input: YoutubeUploadInput) {
   return invoke<{ success: boolean; video_id: string; url: string | null }>("youtube-upload", input as any);
 }
 
-export async function listLibraryVideos(limit = 50) {
-  const { data, error } = await supabase
+export async function listLibraryVideos(limit = 50, projectId?: string | null) {
+  let query = supabase
     .from("videos")
     .select("id, filename, original_path, thumbnail_url, duration_seconds, created_at")
-    .not("original_path", "is", null)
+    .not("original_path", "is", null);
+  // Isolamento por projeto: nunca oferecer vídeos de outro projeto para publicação.
+  if (projectId) query = query.eq("project_id", projectId);
+  const { data, error } = await query
     .order("created_at", { ascending: false })
     .limit(limit);
   if (error) throw error;
   return data ?? [];
 }
+
 
 /** Vincula (ou desvincula) um canal do YouTube a um projeto. */
 export async function setYoutubeChannelProject(account: YoutubeAccount, projectId: string | null) {
