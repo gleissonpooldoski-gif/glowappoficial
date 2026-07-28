@@ -35,6 +35,20 @@ Deno.serve(async (req) => {
       Deno.env.get("SUPABASE_SERVICE_ROLE_KEY")!,
     );
     const nowIso = new Date().toISOString();
+
+    // Reaper: libera posts presos em PUBLICANDO (worker morto no meio da execução)
+    // para que o próximo tick possa reprocessá-los em vez de ficarem órfãos.
+    const stuckBefore = new Date(Date.now() - 20 * 60_000).toISOString();
+    const { data: stuck } = await supabase
+      .from("youtube_posts")
+      .update({ status: "AGENDADO" })
+      .eq("status", "PUBLICANDO")
+      .lt("updated_at", stuckBefore)
+      .select("id");
+    if (stuck?.length) {
+      console.log("[youtube-scheduler]", JSON.stringify({ step: "youtube_stuck_released", count: stuck.length }));
+    }
+
     const { data: due, error } = await supabase
       .from("youtube_posts")
       .select("*")
