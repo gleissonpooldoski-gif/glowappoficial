@@ -8,37 +8,10 @@
 //   5. Envia via commentThreads.insert (requer scope youtube.force-ssl)
 import { createClient } from "https://esm.sh/@supabase/supabase-js@2.45.4";
 import { corsHeaders } from "npm:@supabase/supabase-js@2/cors";
+import { ensureAccessToken, resolveYoutubeCredential } from "../_shared/youtube-auth.ts";
 
-const TOKEN_ENDPOINT = "https://oauth2.googleapis.com/token";
 const COMMENT_ENDPOINT =
   "https://www.googleapis.com/youtube/v3/commentThreads?part=snippet";
-
-async function ensureAccessToken(supabase: any, account: string) {
-  const { data: cred, error } = await supabase
-    .from("youtube_credentials").select("*").eq("account", account).maybeSingle();
-  if (error) throw error;
-  if (!cred) throw new Error("Conta do YouTube não conectada.");
-  const exp = cred.expires_at ? new Date(cred.expires_at).getTime() : 0;
-  if (cred.access_token && exp - Date.now() > 60_000) return cred.access_token;
-  if (!cred.refresh_token) throw new Error("refresh_token ausente.");
-  const form = new URLSearchParams({
-    client_id: (Deno.env.get("YOUTUBE_CLIENT_ID") ?? "").trim(),
-    client_secret: (Deno.env.get("YOUTUBE_CLIENT_SECRET") ?? "").trim(),
-    refresh_token: cred.refresh_token,
-    grant_type: "refresh_token",
-  });
-  const r = await fetch(TOKEN_ENDPOINT, {
-    method: "POST", headers: { "Content-Type": "application/x-www-form-urlencoded" }, body: form.toString(),
-  });
-  const j: any = await r.json().catch(() => ({}));
-  if (!r.ok) throw new Error(j.error_description ?? j.error ?? "Falha ao renovar token.");
-  await supabase.from("youtube_credentials").update({
-    access_token: j.access_token,
-    expires_at: j.expires_in ? new Date(Date.now() + Number(j.expires_in) * 1000).toISOString() : null,
-    scope: j.scope ?? cred.scope,
-  }).eq("account", account);
-  return j.access_token;
-}
 
 // Remove qualquer URL/link/menção que a IA possa inserir — comentários devem apontar SOMENTE para a BIO.
 function stripLinks(text: string): string {
@@ -142,7 +115,9 @@ Deno.serve(async (req) => {
     // Garantia final: nenhum link/URL vai para o YouTube — o CTA aponta para a BIO.
     const finalText = stripLinks(adapted) || stripLinks(tpl.template);
 
-    const accessToken = await ensureAccessToken(supabase, post.account);
+    const cred = await resolveYoutubeCredential(supabase, { account: post.account, videoId: post.video_id ?? null });
+    console.log("[youtube-post-comment] canal resolvido", JSON.stringify({ account: cred.account, channel: cred.channel_title }));
+    const accessToken = await ensureAccessToken(supabase, cred, (e) => console.log("[youtube-post-comment]", JSON.stringify(e)));
     const payload = {
       snippet: {
         videoId: post.youtube_video_id,

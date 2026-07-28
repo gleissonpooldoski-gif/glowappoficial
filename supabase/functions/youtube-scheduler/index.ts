@@ -11,6 +11,8 @@ function isSegredoProject(name?: string | null, cat?: string | null): boolean {
 }
 
 const SEGREDO_RETRY_DELAYS_MS = [30_000, 120_000];
+// Backoff exponencial aplicado a TODOS os projetos em erros transitórios.
+const RETRY_DELAYS_MS = [15_000, 60_000];
 const MAX_FILE_SIZE_BYTES = 256 * 1024 * 1024 * 1024; // 256GB (limite YouTube)
 const MAX_SHORTS_DURATION_S = 180; // 3 min — margem confortável para Shorts
 
@@ -150,6 +152,8 @@ Deno.serve(async (req) => {
             },
             body: JSON.stringify({
               account: full.account,
+              video_id: full.video_id,
+              project_id: video?.project_id ?? null,
               storage_bucket: bucket,
               storage_path: path,
               title: full.title,
@@ -167,29 +171,30 @@ Deno.serve(async (req) => {
 
         let uploadResult: { res: Response; j: any; rawText: string } | null = null;
         // SEGREDO: retry escalonado. Outros projetos: comportamento original (1 tentativa).
-        const attempts = isSegredo ? SEGREDO_RETRY_DELAYS_MS.length + 1 : 1;
+        const delays = isSegredo ? SEGREDO_RETRY_DELAYS_MS : RETRY_DELAYS_MS;
+        const attempts = delays.length + 1;
         let lastErr: any = null;
         for (let attempt = 1; attempt <= attempts; attempt++) {
           const r = await doUpload();
           if (r.res.ok && !r.j?.error) { uploadResult = r; break; }
-          const transient = isSegredo && isTransientYoutubeError(r.res.status, r.rawText, r.j);
+          const transient = r.j?.transient === true || isTransientYoutubeError(r.res.status, r.rawText, r.j);
           lastErr = {
             at: nowIso2(), step: "youtube_publish_attempt_failed",
             attempt, http_status: r.res.status,
-            error_code: r.j?.error?.code ?? r.j?.status ?? null,
+            error_code: r.j?.code ?? r.j?.error?.code ?? r.j?.status ?? null,
             error_message: r.j?.error?.message ?? r.j?.error ?? r.rawText?.slice(0, 400) ?? null,
             transient, project: isSegredo ? "SEGREDO_DAS_PROMOCOES" : undefined,
           };
           await pushLog(lastErr);
-          if (!isSegredo || !transient || attempt >= attempts) break;
-          const delay = SEGREDO_RETRY_DELAYS_MS[attempt - 1] ?? 0;
+          if (!transient || attempt >= attempts) break;
+          const delay = delays[attempt - 1] ?? 0;
           await pushLog({ at: nowIso2(), step: "youtube_retry_scheduled", delay_ms: delay, next_attempt: attempt + 1 });
           await new Promise((r) => setTimeout(r, delay));
         }
 
         if (!uploadResult) {
-          const msg = lastErr?.error_message ?? "Falha no upload do YouTube.";
-          throw new Error(msg);
+          const code = lastErr?.error_code ? `[${lastErr.error_code}] ` : "";
+          throw new Error(`${code}${lastErr?.error_message ?? "Falha no upload do YouTube."}`);
         }
         const j = uploadResult.j;
 
