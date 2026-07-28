@@ -1,6 +1,6 @@
 import { useEffect, useState } from "react";
 import { Loader2, Upload, ExternalLink } from "lucide-react";
-import { useProject } from "@/context/ProjectContext";
+import { useActiveProject } from "@/context/ProjectContext";
 import { toast } from "sonner";
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter } from "@/components/ui/dialog";
 import { Button } from "@/components/ui/button";
@@ -39,7 +39,7 @@ export default function YoutubeUploadDialog({
   onOpenChange: (v: boolean) => void;
   account: YoutubeAccount;
 }) {
-  const { activeProject } = useProject();
+  const { activeProject } = useActiveProject();
   const [videos, setVideos] = useState<LibVideo[]>([]);
   const [videoId, setVideoId] = useState<string>("");
   const [title, setTitle] = useState("");
