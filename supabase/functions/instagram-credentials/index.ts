@@ -310,26 +310,60 @@ Deno.serve(async (req) => {
         { status: 200, headers: { ...corsHeaders, "Content-Type": "application/json" } });
     }
 
+    // Descobre as Páginas administradas pelo token (obrigatório antes de criar).
+    if (action === "discover_pages") {
+      const token = sanitizeToken(body.access_token);
+      const discovery = await fetchAdminPages(token);
+      if (!discovery.ok) {
+        return new Response(JSON.stringify({ error: discovery.error ?? NOT_ADMIN_MSG }),
+          { status: 400, headers: { ...corsHeaders, "Content-Type": "application/json" } });
+      }
+      return new Response(JSON.stringify({ success: true, owner: discovery.owner, pages: discovery.pages }),
+        { status: 200, headers: { ...corsHeaders, "Content-Type": "application/json" } });
+    }
+
     if (action === "create") {
       const display_name = String(body.display_name ?? "").trim();
       const access_token = sanitizeToken(body.access_token);
-      const ig_business_id = String(body.ig_business_id ?? "").trim();
+      const page_id = String(body.page_id ?? "").trim();
       const project_id = body.project_id ?? null;
-      if (!display_name || !access_token || !ig_business_id) {
-        return new Response(JSON.stringify({ error: "Nome, Access Token e Business ID são obrigatórios." }),
+      const fail = (error: string) => new Response(JSON.stringify({ error }),
+        { status: 400, headers: { ...corsHeaders, "Content-Type": "application/json" } });
+
+      if (!display_name || !access_token || !page_id) {
+        return fail("Nome, Access Token e Página do Facebook são obrigatórios.");
+      }
+      if (!isValidTokenFormat(access_token)) {
+        return fail("Token inválido ou formato incorreto. Remova espaços, quebras de linha e caracteres especiais.");
+      }
+
+      // 1) O token precisa ser um User Access Token que enxergue /me/accounts.
+      const discovery = await fetchAdminPages(access_token);
+      if (!discovery.ok) return fail(discovery.error ?? NOT_ADMIN_MSG);
+
+      // 2) A Página escolhida precisa pertencer a esse token.
+      const chosen = discovery.pages.find((p) => p.page_id === page_id);
+      if (!chosen) return fail(NOT_ADMIN_MSG);
+
+      // 3) O Instagram Business ID é SEMPRE obtido pela Graph API, nunca digitado.
+      const resolved = await resolveIgIdForPage(access_token, page_id);
+      if (!resolved.ok || !resolved.ig_business_id) {
+        return fail(resolved.error ?? "Não foi possível obter o Instagram Business ID desta Página.");
+      }
+      if (chosen.ig_business_id && chosen.ig_business_id !== resolved.ig_business_id) {
+        return fail("O Instagram vinculado à Página não confere. Reconecte utilizando o Meta Business Login.");
+      }
+      const ig_business_id = resolved.ig_business_id;
+
+      // 4) O IG obtido precisa responder na Graph API com o mesmo token.
+      const validation = await validateAccount(access_token, ig_business_id);
+      if (!validation.ok) {
+        return new Response(JSON.stringify({ error: validation.message, status: validation.status, result: validation }),
           { status: 400, headers: { ...corsHeaders, "Content-Type": "application/json" } });
       }
 
-      // Sanity check no formato do ID (dígitos apenas, típico 15-18 chars começando com 178…)
-      if (!/^\d{6,20}$/.test(ig_business_id)) {
-        return new Response(JSON.stringify({
-          error: "Instagram Business ID deve conter apenas dígitos. Copie o valor exato do campo 'Instagram Business Account ID' (não use @username, URL, ou o ID da Página do Facebook).",
-        }), { status: 400, headers: { ...corsHeaders, "Content-Type": "application/json" } });
-      }
-
-      // Gera slug único. Se já existir uma tentativa pendente/erro com o mesmo nome,
-      // reaproveita essa conta para a nova tentativa, sem tocar em contas CONNECTED.
-      let base = slugify(display_name);
+      // Só depois de tudo validado a credencial é persistida.
+      const base = slugify(display_name);
       let account = base;
       let n = 1;
       while (true) {
@@ -341,53 +375,25 @@ Deno.serve(async (req) => {
         account = `${base}_${n}`;
       }
 
-      // Salva a NOVA conta como PENDING antes da validação para isolar o erro nela.
-      // Não atualiza nem revalida contas já conectadas.
-      const { error: pendingErr } = await supabase.from("instagram_credentials").upsert({
+      const { error: saveErr } = await supabase.from("instagram_credentials").upsert({
         account,
         display_name,
         access_token,
         ig_business_id,
         project_id,
-        connection_status: "PENDING",
-        last_validated_at: new Date().toISOString(),
-        last_validation_status: "EMPTY",
-        last_validation_detail: "Validação em andamento.",
-      }, { onConflict: "account" });
-      if (pendingErr) {
-        return new Response(JSON.stringify({ error: `Falha ao preparar conta: ${pendingErr.message}` }),
-          { status: 400, headers: { ...corsHeaders, "Content-Type": "application/json" } });
-      }
-
-      const validation = await validateAccount(access_token, ig_business_id);
-      const connection_status = connectionStatusFromValidation(validation);
-      const { error: saveAttemptErr } = await supabase.from("instagram_credentials").update({
-        display_name,
-        access_token,
-        ig_business_id,
-        project_id,
-        connection_status,
+        connection_status: "CONNECTED",
         last_validated_at: new Date().toISOString(),
         last_validation_status: validation.status,
-        last_validation_detail: validation.message,
-      }).eq("account", account);
-      if (saveAttemptErr) {
-        return new Response(JSON.stringify({ error: `Falha ao salvar tentativa: ${saveAttemptErr.message}` }),
-          { status: 400, headers: { ...corsHeaders, "Content-Type": "application/json" } });
-      }
+        last_validation_detail: `${validation.message} Página: ${chosen.page_name} (#${chosen.page_id}).`,
+      }, { onConflict: "account" });
+      if (saveErr) return fail(`Falha ao salvar: ${saveErr.message}`);
 
-      if (!validation.ok) {
-        return new Response(JSON.stringify({
-          error: validation.message,
-          status: validation.status,
-          connection_status,
-          account,
-          result: validation,
-        }), { status: 400, headers: { ...corsHeaders, "Content-Type": "application/json" } });
-      }
-      return new Response(JSON.stringify({ success: true, account, connection_status, result: validation }),
-        { status: 200, headers: { ...corsHeaders, "Content-Type": "application/json" } });
+      return new Response(JSON.stringify({
+        success: true, account, connection_status: "CONNECTED",
+        page: chosen, ig_business_id, result: validation,
+      }), { status: 200, headers: { ...corsHeaders, "Content-Type": "application/json" } });
     }
+
 
     if (action === "delete") {
       const account = String(body.account ?? "").trim();
