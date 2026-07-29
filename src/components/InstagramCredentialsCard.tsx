@@ -32,6 +32,14 @@ type Project = { id: string; name: string };
 
 type Validation = { ok: boolean; status: string; message: string; username?: string | null };
 
+type DiscoveredPage = {
+  page_id: string;
+  page_name: string;
+  ig_business_id?: string;
+  ig_username?: string;
+};
+
+
 const STATUS_LABEL: Record<string, string> = {
   VALID: "✅ Token válido",
   TOKEN_INVALID: "❌ Token inválido",
