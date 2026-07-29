@@ -21,6 +21,13 @@ type Props = {
 
 type Group = { id: string; label: string; icon: string; categories: TextPresetCategory[] };
 
+const CURIO_CATS: TextPresetCategory[] = [
+  "curio_favorites", "curio_friends", "curio_comment", "curio_challenge", "curio_viral",
+];
+const REAL_CATS: TextPresetCategory[] = [
+  "real_favorites", "real_friends", "real_comment", "real_curiosity", "real_viral",
+];
+
 const GROUPS: Group[] = [
   {
     id: "general",
@@ -28,8 +35,16 @@ const GROUPS: Group[] = [
     icon: "✨",
     categories: TEXT_CATEGORIES
       .map((c) => c.value)
-      .filter((v) => !v.startsWith("memes_") && !v.startsWith("movies_")) as TextPresetCategory[],
+      .filter(
+        (v) =>
+          !v.startsWith("memes_") &&
+          !v.startsWith("movies_") &&
+          !CURIO_CATS.includes(v) &&
+          !REAL_CATS.includes(v),
+      ) as TextPresetCategory[],
   },
+  { id: "curiosidades", label: "Curiosidades", icon: "🧠", categories: CURIO_CATS },
+  { id: "historias", label: "Histórias Reais", icon: "📖", categories: REAL_CATS },
   {
     id: "memes",
     label: "Memes",
