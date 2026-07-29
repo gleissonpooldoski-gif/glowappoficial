@@ -151,6 +151,40 @@ async function validateAccount(rawToken: string, rawIgId: string): Promise<Valid
   }
 }
 
+// Resolve o Instagram Business ID REAL a partir da Página do Facebook vinculada
+// ao mesmo projeto: GET /{page_id}?fields=instagram_business_account
+// Retorna também o Page Access Token, que é o token correto para publicar Reels.
+async function resolveIgFromPage(
+  supabase: any,
+  projectId: string | null | undefined,
+): Promise<{ page_id?: string; ig_id?: string; page_token?: string; error?: string }> {
+  if (!projectId) return { error: "Conta sem projeto vinculado." };
+  const { data: page } = await supabase
+    .from("facebook_accounts")
+    .select("page_id, page_access_token")
+    .eq("project_id", projectId)
+    .maybeSingle();
+  if (!page?.page_id || !page?.page_access_token) {
+    return { error: "Nenhuma Página do Facebook conectada a este projeto." };
+  }
+  const token = sanitizeToken(page.page_access_token);
+  try {
+    const res = await fetch(
+      `${FB_BASE}/${encodeURIComponent(page.page_id)}?fields=instagram_business_account{id,username}&access_token=${encodeURIComponent(token)}`,
+    );
+    const out = await readMeta(res);
+    if (out.data?.error) return { page_id: page.page_id, page_token: token, error: out.data.error.message };
+    const igId = out.data?.instagram_business_account?.id;
+    if (!igId) {
+      return { page_id: page.page_id, page_token: token, error: "A Página não tem Instagram Business vinculado." };
+    }
+    return { page_id: page.page_id, page_token: token, ig_id: String(igId) };
+  } catch (e: any) {
+    return { page_id: page.page_id, page_token: token, error: e?.message ?? "Falha ao consultar a Página." };
+  }
+}
+
+
 Deno.serve(async (req) => {
   if (req.method === "OPTIONS") return new Response("ok", { headers: corsHeaders });
 
