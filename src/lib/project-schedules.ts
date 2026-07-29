@@ -165,15 +165,24 @@ export async function findProjectSlots(
 ): Promise<Date[]> {
   if (count <= 0) return [];
   const settings = opts.settings ?? (await getProjectSchedule(projectId));
-  const times = settings?.publication_times?.length ? settings.publication_times : DEFAULT_PROJECT_TIMES;
-  const perDay = Math.min(settings?.posts_per_day ?? times.length, times.length);
+  const saved = normalizeTimes(settings?.publication_times);
+  if (!settings || saved.length === 0) {
+    console.warn(
+      "[agendador] Projeto sem horários salvos — usando grade padrão",
+      { projeto: projectId, padrao: DEFAULT_PROJECT_TIMES },
+    );
+  }
+  const times = saved.length ? saved : DEFAULT_PROJECT_TIMES;
+  const perDay = Math.max(1, Math.min(settings?.posts_per_day ?? times.length, times.length));
   const horizon = opts.horizonDays ?? 365;
 
   const booked = await fetchBookedSlots(projectId);
-  const bookedTs = booked.map((d) => d.getTime());
+  // Um mesmo vídeo gera um registro por rede no MESMO horário — contar apenas
+  // horários distintos, senão o limite de posts/dia estoura e a grade é ignorada.
+  const bookedTs = Array.from(new Set(booked.map((d) => d.getTime())));
   const bookedPerDay = new Map<string, number>();
-  for (const d of booked) {
-    const key = ymd(d);
+  for (const ts of bookedTs) {
+    const key = ymd(new Date(ts));
     bookedPerDay.set(key, (bookedPerDay.get(key) ?? 0) + 1);
   }
 
@@ -188,6 +197,7 @@ export async function findProjectSlots(
   const parsed = times
     .map((t) => t.split(":").map(Number))
     .sort((a, b) => a[0] * 60 + a[1] - (b[0] * 60 + b[1]));
+  const allowed = new Set(parsed.map(([h, m]) => `${String(h).padStart(2, "0")}:${String(m).padStart(2, "0")}`));
 
   const out: Date[] = [];
   for (let dayOffset = 0; dayOffset < horizon && out.length < count; dayOffset++) {
@@ -208,6 +218,22 @@ export async function findProjectSlots(
       bookedPerDay.set(key, used);
     }
   }
+
+  // Log de validação obrigatório
+  console.info(
+    "[agendador] Projeto:", projectId,
+    "| Horários encontrados:", times.join(", "),
+    "| Próximo slot calculado:", out[0] ? out[0].toTimeString().slice(0, 5) : "nenhum",
+  );
+  for (const s of out) {
+    if (!allowed.has(s.toTimeString().slice(0, 5))) {
+      console.error("Agendamento ignorou configuração personalizada de horário", {
+        projeto: projectId,
+        configurado: times,
+        gerado: s.toISOString(),
+      });
+    }
+  }
   return out;
 }
 
@@ -215,6 +241,7 @@ export async function findNextProjectSlot(projectId: string): Promise<Date | nul
   const [s] = await findProjectSlots(projectId, 1);
   return s ?? null;
 }
+
 
 /** Atualiza os campos de acompanhamento (último/próximo slot) do projeto. */
 export async function refreshProjectSlotTracking(projectId: string) {
