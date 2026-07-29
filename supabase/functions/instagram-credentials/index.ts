@@ -151,6 +151,40 @@ async function validateAccount(rawToken: string, rawIgId: string): Promise<Valid
   }
 }
 
+// Resolve o Instagram Business ID REAL a partir da Página do Facebook vinculada
+// ao mesmo projeto: GET /{page_id}?fields=instagram_business_account
+// Retorna também o Page Access Token, que é o token correto para publicar Reels.
+async function resolveIgFromPage(
+  supabase: any,
+  projectId: string | null | undefined,
+): Promise<{ page_id?: string; ig_id?: string; page_token?: string; error?: string }> {
+  if (!projectId) return { error: "Conta sem projeto vinculado." };
+  const { data: page } = await supabase
+    .from("facebook_accounts")
+    .select("page_id, page_access_token")
+    .eq("project_id", projectId)
+    .maybeSingle();
+  if (!page?.page_id || !page?.page_access_token) {
+    return { error: "Nenhuma Página do Facebook conectada a este projeto." };
+  }
+  const token = sanitizeToken(page.page_access_token);
+  try {
+    const res = await fetch(
+      `${FB_BASE}/${encodeURIComponent(page.page_id)}?fields=instagram_business_account{id,username}&access_token=${encodeURIComponent(token)}`,
+    );
+    const out = await readMeta(res);
+    if (out.data?.error) return { page_id: page.page_id, page_token: token, error: out.data.error.message };
+    const igId = out.data?.instagram_business_account?.id;
+    if (!igId) {
+      return { page_id: page.page_id, page_token: token, error: "A Página não tem Instagram Business vinculado." };
+    }
+    return { page_id: page.page_id, page_token: token, ig_id: String(igId) };
+  } catch (e: any) {
+    return { page_id: page.page_id, page_token: token, error: e?.message ?? "Falha ao consultar a Página." };
+  }
+}
+
+
 Deno.serve(async (req) => {
   if (req.method === "OPTIONS") return new Response("ok", { headers: corsHeaders });
 
@@ -305,18 +339,38 @@ Deno.serve(async (req) => {
           { status: 400, headers: { ...corsHeaders, "Content-Type": "application/json" } });
       }
 
-      const validation = await validateAccount(access_token, ig_business_id);
+      let validation = await validateAccount(access_token, ig_business_id);
+      let finalToken = access_token;
+      let finalIgId = ig_business_id;
+
+      // Auto-correção na conexão: busca o IG Business ID real da Página vinculada.
+      if (!validation.ok) {
+        const resolved = await resolveIgFromPage(supabase, project_id);
+        if (resolved.ig_id && resolved.page_token) {
+          const retry = await validateAccount(resolved.page_token, resolved.ig_id);
+          if (retry.ok) {
+            finalToken = resolved.page_token;
+            finalIgId = resolved.ig_id;
+            validation = {
+              ...retry,
+              message: `${retry.message}\n\nID corrigido automaticamente pela Página ${resolved.page_id} (IG ID ${resolved.ig_id}).`,
+            };
+          }
+        }
+      }
+
       const connection_status = connectionStatusFromValidation(validation);
       const { error: saveAttemptErr } = await supabase.from("instagram_credentials").update({
         display_name,
-        access_token,
-        ig_business_id,
+        access_token: finalToken,
+        ig_business_id: finalIgId,
         project_id,
         connection_status,
         last_validated_at: new Date().toISOString(),
         last_validation_status: validation.status,
         last_validation_detail: validation.message,
       }).eq("account", account);
+
       if (saveAttemptErr) {
         return new Response(JSON.stringify({ error: `Falha ao salvar tentativa: ${saveAttemptErr.message}` }),
           { status: 400, headers: { ...corsHeaders, "Content-Type": "application/json" } });
@@ -368,7 +422,29 @@ Deno.serve(async (req) => {
           igId = igId || (Deno.env.get("META_FRAME_INSTAGRAM_ID") ?? "");
         }
       }
-      const validation = await validateAccount(token, igId);
+      let validation = await validateAccount(token, igId);
+      let autoFixed: { ig_id?: string; page_id?: string } | null = null;
+
+      // Auto-correção: se o ID salvo não bate, busca o Instagram Business ID real
+      // na Página do Facebook vinculada ao projeto e regrava token + ID.
+      if (!validation.ok && data) {
+        const resolved = await resolveIgFromPage(supabase, data.project_id);
+        if (resolved.ig_id && resolved.page_token) {
+          const retry = await validateAccount(resolved.page_token, resolved.ig_id);
+          if (retry.ok) {
+            await supabase.from("instagram_credentials").update({
+              ig_business_id: resolved.ig_id,
+              access_token: resolved.page_token,
+            }).eq("account", account);
+            validation = {
+              ...retry,
+              message: `${retry.message}\n\nID corrigido automaticamente pela Página ${resolved.page_id} (IG ID ${resolved.ig_id}).`,
+            };
+            autoFixed = { ig_id: resolved.ig_id, page_id: resolved.page_id };
+          }
+        }
+      }
+
       if (data) {
         await supabase.from("instagram_credentials").update({
           last_validated_at: new Date().toISOString(),
@@ -377,6 +453,11 @@ Deno.serve(async (req) => {
           connection_status: connectionStatusFromValidation(validation),
         }).eq("account", account);
       }
+      if (autoFixed) {
+        return new Response(JSON.stringify({ success: true, account, result: validation, auto_fixed: autoFixed }),
+          { status: 200, headers: { ...corsHeaders, "Content-Type": "application/json" } });
+      }
+
       return new Response(JSON.stringify({ success: true, account, result: validation }),
         { status: 200, headers: { ...corsHeaders, "Content-Type": "application/json" } });
     }
