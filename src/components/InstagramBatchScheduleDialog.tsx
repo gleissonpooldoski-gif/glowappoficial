@@ -11,7 +11,7 @@ import { supabase } from "@/integrations/supabase/client";
 import { publishInstagram, friendlyError } from "@/lib/instagram";
 import { getYoutubeChannelForProject, type YoutubeCredential } from "@/lib/youtube";
 import { getFacebookAccountForProject, createFacebookPost, isFacebookAccountReady, type FacebookAccount } from "@/lib/facebook";
-import { getSchedule, DEFAULT_TIMES, type ScheduleNetwork } from "@/lib/schedules";
+import { findProjectSlots, getProjectSchedule, refreshProjectSlotTracking, DEFAULT_PROJECT_TIMES, type ProjectScheduleSettings } from "@/lib/project-schedules";
 import { extractVideoFrames } from "@/lib/videoFrames";
 
 type VideoMeta = {
@@ -47,6 +47,8 @@ type ProjectBundle = {
   fbAccount: FacebookAccount | null;
   ttAccount: string | null;
   times: string[];
+  postsPerDay: number;
+  settings: ProjectScheduleSettings | null;
   lastScheduled: Date | null;
 };
 
@@ -63,31 +65,6 @@ function flattenHashtags(h: any): string {
   if (typeof h === "string") return h;
   const groups = [h.alcance, h.nicho, h.tema].filter(Array.isArray);
   return groups.flat().join(" ");
-}
-
-/** Constrói N slots futuros a partir de `times`, sempre STRICT após `afterDate`
- *  (ou após "agora" quando não há âncora). Avança de dia ao esgotar. */
-function buildSlotsFromTimes(times: string[], count: number, afterDate: Date | null): Date[] {
-  if (times.length === 0 || count <= 0) return [];
-  const parsed = times
-    .map((t) => t.split(":").map(Number))
-    .filter(([h, m]) => Number.isFinite(h) && Number.isFinite(m))
-    .sort((a, b) => a[0] * 60 + a[1] - (b[0] * 60 + b[1]));
-  const out: Date[] = [];
-  const minTs = Math.max(Date.now() + 60_000, afterDate ? afterDate.getTime() + 1 : 0);
-  const startDay = new Date(afterDate ?? new Date());
-  startDay.setHours(0, 0, 0, 0);
-  for (let d = 0; d < 365 && out.length < count; d++) {
-    for (const [h, m] of parsed) {
-      if (out.length >= count) break;
-      const slot = new Date(startDay);
-      slot.setDate(startDay.getDate() + d);
-      slot.setHours(h, m, 0, 0);
-      if (slot.getTime() < minTs) continue;
-      out.push(slot);
-    }
-  }
-  return out;
 }
 
 /** Busca o último agendamento (mais futuro) do projeto entre as 4 redes. */
@@ -177,16 +154,10 @@ export default function InstagramBatchScheduleDialog({ open, onOpenChange, video
         fetchLastScheduledForProject(pid).catch(() => null),
       ]);
 
-      let times: string[] = [];
-      const tryNet = async (net: ScheduleNetwork, account: string | null) => {
-        if (!account || times.length) return;
-        const s = await getSchedule(net, account, null).catch(() => null);
-        if (s?.times?.length) times = s.times;
-      };
-      await tryNet("instagram", igAccount);
-      await tryNet("youtube", ytChannel?.account ?? null);
-      await tryNet("tiktok", igAccount);
-      if (times.length === 0) times = DEFAULT_TIMES;
+      // Fonte de verdade: configuração dinâmica do PROJETO.
+      const settings = await getProjectSchedule(pid).catch(() => null);
+      const times = settings?.publication_times?.length ? settings.publication_times : DEFAULT_PROJECT_TIMES;
+      const postsPerDay = Math.min(settings?.posts_per_day ?? times.length, times.length);
 
       map.set(pid, {
         projectId: pid,
@@ -197,6 +168,8 @@ export default function InstagramBatchScheduleDialog({ open, onOpenChange, video
         fbAccount: fbAccount ?? null,
         ttAccount: igAccount,
         times,
+        postsPerDay,
+        settings: settings ?? null,
         lastScheduled,
       });
     }
@@ -335,17 +308,20 @@ export default function InstagramBatchScheduleDialog({ open, onOpenChange, video
       const perProjectCount = new Map<string, number>();
       const slotCache = new Map<string, Date[]>();
 
+      // Calcula os slots por projeto usando SEMPRE a configuração salva atual.
+      for (const [pid, bundle] of bundles.entries()) {
+        const total = videoRows.filter((r) => r.project_id === pid).length;
+        const slots = await findProjectSlots(pid, total, { settings: bundle.settings }).catch(() => []);
+        slotCache.set(pid, slots);
+      }
+
       const items: PlanItem[] = videos.map((v) => {
         const pid = projectByVideo.get(v.id) ?? null;
         if (!pid) return { video: v, projectId: null, bundle: null, slot: null, reason: "Sem projeto vinculado" };
         const bundle = bundles.get(pid) ?? null;
         if (!bundle) return { video: v, projectId: pid, bundle: null, slot: null, reason: "Projeto sem configuração" };
-        if (!slotCache.has(pid)) {
-          const total = videoRows.filter((r) => r.project_id === pid).length;
-          slotCache.set(pid, buildSlotsFromTimes(bundle.times, total, bundle.lastScheduled));
-        }
         const idx = perProjectCount.get(pid) ?? 0;
-        const slot = slotCache.get(pid)![idx] ?? null;
+        const slot = (slotCache.get(pid) ?? [])[idx] ?? null;
         perProjectCount.set(pid, idx + 1);
         return { video: v, projectId: pid, bundle, slot, reason: slot ? undefined : "Sem slot disponível" };
       });
@@ -382,6 +358,10 @@ export default function InstagramBatchScheduleDialog({ open, onOpenChange, video
         allErrs.push(`${label}: legenda não gerada — ${e?.message ?? "erro"}`);
       }
       setDone(i + 1);
+    }
+
+    for (const pid of new Set(plan.map((p) => p.projectId).filter(Boolean) as string[])) {
+      void refreshProjectSlotTracking(pid);
     }
 
     setErrors(allErrs);
