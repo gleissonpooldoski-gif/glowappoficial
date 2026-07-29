@@ -411,6 +411,7 @@ export default function InstagramPublishDialog({
         if (rows.length) {
           try { await supabase.from("publish_schedules_multi" as any).insert(rows); } catch { /* não bloqueia */ }
         }
+        if (activeProject?.id) void refreshProjectSlotTracking(activeProject.id);
       }
 
       if (errs.length === 0) {
