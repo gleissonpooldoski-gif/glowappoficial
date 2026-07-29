@@ -68,13 +68,16 @@ export default function InstagramCredentialsCard() {
   // "Nova conta" dialog
   const [createOpen, setCreateOpen] = useState(false);
   const [creating, setCreating] = useState(false);
+  const [discovering, setDiscovering] = useState(false);
+  const [pages, setPages] = useState<DiscoveredPage[]>([]);
   const [newForm, setNewForm] = useState({
     display_name: "",
     project_id: "" as string,
-    ig_business_id: "",
+    page_id: "",
     access_token: "",
     showToken: false,
   });
+
 
   // Delete confirmation
   const [toDelete, setToDelete] = useState<Stored | null>(null);
