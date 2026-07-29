@@ -235,7 +235,7 @@ const drawText = (ctx: CanvasRenderingContext2D, t: CompText, W: number, H: numb
 const getSourceMeta = async (input: Input, videoTrack: InputVideoTrack, audioTrack: InputAudioTrack | null): Promise<SourceMeta> => {
   const [duration, stats, videoCodec, audioCodec] = await Promise.all([
     input.computeDuration(),
-    videoTrack.computePacketStats(180).catch(() => null),
+    videoTrack.computePacketStats(30).catch(() => null),
     videoTrack.getCodec().catch(() => null),
     audioTrack?.getCodec().catch(() => null) ?? Promise.resolve(null),
   ]);
@@ -296,7 +296,7 @@ const validateFinalMp4 = async (blob: Blob, source: SourceMeta) => {
     videoTrack.getCodec(),
     audioTrack?.getCodec() ?? Promise.resolve(null),
     outputInput.computeDuration(),
-    videoTrack.computePacketStats(180).catch(() => null),
+    videoTrack.computePacketStats(30).catch(() => null),
     audioTrack?.computeDuration().catch(() => null) ?? Promise.resolve(null),
   ]);
 
@@ -367,10 +367,54 @@ export async function renderComposition(input: CompositionInput): Promise<Compos
   const canvas = document.createElement("canvas");
   canvas.width = W;
   canvas.height = H;
-  const ctx = canvas.getContext("2d", { alpha: false });
+  const ctx = canvas.getContext("2d", { alpha: false, desynchronized: true }) as CanvasRenderingContext2D | null;
   if (!ctx) throw new Error("Canvas 2D não disponível.");
 
   const scale = Math.min(W, H) / 1080;
+
+  const makeLayer = () => {
+    const c = document.createElement("canvas");
+    c.width = W;
+    c.height = H;
+    return c;
+  };
+
+  const applyTemplateTransform = (c: CanvasRenderingContext2D) => {
+    const ox = ((templateOpts.x ?? 0) / 100) * W;
+    const oy = ((templateOpts.y ?? 0) / 100) * H;
+    const os = templateOpts.scale ?? 1;
+    const crop = templateOpts.crop;
+    if (crop && (crop.top || crop.right || crop.bottom || crop.left)) {
+      const cx1 = (Math.max(0, Math.min(100, crop.left)) / 100) * W;
+      const cy1 = (Math.max(0, Math.min(100, crop.top)) / 100) * H;
+      const cx2 = W - (Math.max(0, Math.min(100, crop.right)) / 100) * W;
+      const cy2 = H - (Math.max(0, Math.min(100, crop.bottom)) / 100) * H;
+      c.beginPath();
+      c.rect(cx1, cy1, Math.max(0, cx2 - cx1), Math.max(0, cy2 - cy1));
+      c.clip();
+    }
+    c.translate(W / 2 + ox, H / 2 + oy);
+    c.scale(os, os);
+    c.translate(-W / 2, -H / 2);
+  };
+
+  // Camadas estáticas são desenhadas UMA vez e apenas compostas por frame.
+  let tplImageLayer: HTMLCanvasElement | null = null;
+  if (tplImage) {
+    tplImageLayer = makeLayer();
+    const lctx = tplImageLayer.getContext("2d")!;
+    lctx.save();
+    applyTemplateTransform(lctx);
+    drawImageContainCover(lctx, tplImage, tplImage.naturalWidth, tplImage.naturalHeight, W, H, templateOpts.fit);
+    lctx.restore();
+  }
+
+  let textLayer: HTMLCanvasElement | null = null;
+  if (texts.length > 0) {
+    textLayer = makeLayer();
+    const lctx = textLayer.getContext("2d")!;
+    for (const t of texts) drawText(lctx, t, W, H, scale);
+  }
 
   const renderFrame = async (sample: VideoSample) => {
     ctx.save();
@@ -387,29 +431,14 @@ export async function renderComposition(input: CompositionInput): Promise<Compos
     drawSampleContainCover(ctx, sample, W, H, "cover");
     ctx.restore();
 
-    if (tplImage || tplSink) {
+    if (tplImageLayer || tplSink) {
       ctx.save();
       ctx.globalAlpha = templateOpts.opacity;
       ctx.globalCompositeOperation = (templateOpts.blend === "normal" ? "source-over" : templateOpts.blend) as GlobalCompositeOperation;
-      const ox = ((templateOpts.x ?? 0) / 100) * W;
-      const oy = ((templateOpts.y ?? 0) / 100) * H;
-      const os = templateOpts.scale ?? 1;
-      const crop = templateOpts.crop;
-      if (crop && (crop.top || crop.right || crop.bottom || crop.left)) {
-        const cx1 = (Math.max(0, Math.min(100, crop.left)) / 100) * W;
-        const cy1 = (Math.max(0, Math.min(100, crop.top)) / 100) * H;
-        const cx2 = W - (Math.max(0, Math.min(100, crop.right)) / 100) * W;
-        const cy2 = H - (Math.max(0, Math.min(100, crop.bottom)) / 100) * H;
-        ctx.beginPath();
-        ctx.rect(cx1, cy1, Math.max(0, cx2 - cx1), Math.max(0, cy2 - cy1));
-        ctx.clip();
-      }
-      ctx.translate(W / 2 + ox, H / 2 + oy);
-      ctx.scale(os, os);
-      ctx.translate(-W / 2, -H / 2);
-      if (tplImage) {
-        drawImageContainCover(ctx, tplImage, tplImage.naturalWidth, tplImage.naturalHeight, W, H, templateOpts.fit);
+      if (tplImageLayer) {
+        ctx.drawImage(tplImageLayer, 0, 0);
       } else if (tplSink) {
+        applyTemplateTransform(ctx);
         const tplTime = tplDuration > 0 ? ((sample.timestamp % tplDuration) + tplDuration) % tplDuration : Math.max(0, sample.timestamp);
         const wrapped = await tplSink.getCanvas(tplTime);
         if (wrapped?.canvas) drawImageContainCover(ctx, wrapped.canvas, wrapped.canvas.width, wrapped.canvas.height, W, H, templateOpts.fit);
@@ -417,10 +446,11 @@ export async function renderComposition(input: CompositionInput): Promise<Compos
       ctx.restore();
     }
 
-    ctx.save();
-    ctx.globalCompositeOperation = "source-over";
-    for (const t of texts) drawText(ctx, t, W, H, scale);
-    ctx.restore();
+    if (textLayer) {
+      ctx.globalCompositeOperation = "source-over";
+      ctx.globalAlpha = 1;
+      ctx.drawImage(textLayer, 0, 0);
+    }
     ctx.restore();
 
     return canvas;
@@ -438,7 +468,7 @@ export async function renderComposition(input: CompositionInput): Promise<Compos
       codec: VIDEO_CODEC,
       bitrate: QUALITY_HIGH,
       frameRate: sourceMeta.fps,
-      keyFrameInterval: 2,
+      keyFrameInterval: 5,
       forceTranscode: true,
       allowRotationMetadata: false,
       processedWidth: W,

@@ -39,9 +39,9 @@ type Ctx = {
 
 const RenderQueueContext = createContext<Ctx | undefined>(undefined);
 
-/** Renderizar tudo ao mesmo tempo trava a CPU e deixa TODOS os vídeos lentos.
- *  Processamos poucos por vez para maximizar a vazão real. */
-const MAX_CONCURRENT = Math.max(1, Math.min(2, Math.floor((navigator.hardwareConcurrency || 4) / 4)));
+/** Equilíbrio: paralelismo suficiente para não ficar ocioso durante upload/validação,
+ *  sem saturar a CPU e travar a edição. */
+const MAX_CONCURRENT = Math.max(2, Math.min(3, Math.floor((navigator.hardwareConcurrency || 4) / 2)));
 
 export function RenderQueueProvider({ children }: { children: ReactNode }) {
   const [jobs, setJobs] = useState<RenderJob[]>([]);
