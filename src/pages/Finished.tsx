@@ -18,10 +18,12 @@ import { useActiveProject } from "@/context/ProjectContext";
 import { cn } from "@/lib/utils";
 import JSZip from "jszip";
 import { extractVideoFrames } from "@/lib/videoFrames";
+import { describeEdgeError } from "@/lib/edge-errors";
 import {
   AlertDialog, AlertDialogAction, AlertDialogCancel, AlertDialogContent,
   AlertDialogDescription, AlertDialogFooter, AlertDialogHeader, AlertDialogTitle,
 } from "@/components/ui/alert-dialog";
+
 
 const BUCKET = "videos-processed";
 
@@ -288,8 +290,9 @@ export default function Finished() {
           frames,
         },
       });
-      if (error) throw error;
-      if ((data as any)?.error) throw new Error((data as any).error);
+      if (error || (data as any)?.error) {
+        throw new Error(await describeEdgeError(error, data, "Falha ao gerar legenda"));
+      }
       setCaptions((s) => ({ ...s, [v.id]: data as CaptionResult }));
       if ((data as any)?.validated === false) {
         toast.warning("Legenda gerada, mas não passou 100% na validação. Revise antes de publicar.");

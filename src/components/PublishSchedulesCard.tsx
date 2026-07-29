@@ -110,7 +110,19 @@ function ProjectScheduleEditor({ project }: { project: ActiveProject }) {
     setTimes(next.sort());
   };
 
+  const startInPast = (() => {
+    if (!startDate) return false;
+    const [y, mo, d] = startDate.split("-").map(Number);
+    const [h, mi] = (startTime || "00:00").split(":").map(Number);
+    const dt = new Date(y, (mo || 1) - 1, d || 1, h || 0, mi || 0, 0, 0);
+    return dt.getTime() < Date.now();
+  })();
+
   const save = async () => {
+    if (startTime && !startDate) {
+      toast.error("Informe também a data inicial para o horário inicial valer.");
+      return;
+    }
     setSaving(true);
     try {
       const s = await saveProjectSchedule({
@@ -123,13 +135,17 @@ function ProjectScheduleEditor({ project }: { project: ActiveProject }) {
       applySettings(s);
       await loadPreview(s);
       void refreshProjectSlotTracking(project.id);
-      toast.success(`Configuração salva: ${project.name}`);
+      const anchor = s.start_date
+        ? ` — início ${s.start_date.split("-").reverse().join("/")}${s.start_time ? ` às ${s.start_time.slice(0, 5)}` : ""}`
+        : "";
+      toast.success(`Configuração salva: ${project.name}${anchor}`);
     } catch (e: any) {
-      toast.error(e?.message ?? "Erro ao salvar");
+      toast.error(e?.message ?? "Erro ao salvar configuração de horários");
     } finally {
       setSaving(false);
     }
   };
+
 
   const clearStart = async () => {
     setStartDate("");
@@ -215,6 +231,14 @@ function ProjectScheduleEditor({ project }: { project: ActiveProject }) {
           </Button>
         </div>
       </div>
+
+      {startInPast && (
+        <p className="rounded-md bg-amber-500/10 px-2 py-1.5 text-[11px] text-amber-500">
+          A data/horário inicial está no passado — os agendamentos começarão a partir de agora,
+          seguindo a grade. Escolha uma data futura para fixar o início da sequência.
+        </p>
+      )}
+
 
       {preview.length > 0 && (
         <div className="space-y-2 rounded-md border border-border/50 bg-background/30 p-3">
