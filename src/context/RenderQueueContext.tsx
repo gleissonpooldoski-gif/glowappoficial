@@ -39,14 +39,22 @@ type Ctx = {
 
 const RenderQueueContext = createContext<Ctx | undefined>(undefined);
 
+/** Renderizar tudo ao mesmo tempo trava a CPU e deixa TODOS os vídeos lentos.
+ *  Processamos poucos por vez para maximizar a vazão real. */
+const MAX_CONCURRENT = Math.max(1, Math.min(2, Math.floor((navigator.hardwareConcurrency || 4) / 4)));
+
 export function RenderQueueProvider({ children }: { children: ReactNode }) {
   const [jobs, setJobs] = useState<RenderJob[]>([]);
   const jobsRef = useRef<RenderJob[]>([]);
   jobsRef.current = jobs;
 
+  const runningRef = useRef(0);
+  const pendingRef = useRef<Array<{ id: string; payload: EnqueuePayload }>>([]);
+
   const update = useCallback((id: string, patch: Partial<RenderJob>) => {
     setJobs((prev) => prev.map((j) => (j.id === id ? { ...j, ...patch } : j)));
   }, []);
+
 
   const runJob = useCallback(async (jobId: string, payload: EnqueuePayload) => {
     const { editId, projectId, templateId, name, composition, videoMeta, replaceVideoId } = payload;
@@ -180,8 +188,19 @@ export function RenderQueueProvider({ children }: { children: ReactNode }) {
     }
   }, [update]);
 
+  const pump = useCallback(() => {
+    while (runningRef.current < MAX_CONCURRENT && pendingRef.current.length > 0) {
+      const next = pendingRef.current.shift()!;
+      runningRef.current += 1;
+      void runJob(next.id, next.payload).finally(() => {
+        runningRef.current -= 1;
+        pump();
+      });
+    }
+  }, [runJob]);
+
   const enqueue = useCallback((payload: EnqueuePayload) => {
-    const id = `${payload.editId}-${Date.now()}`;
+    const id = `${payload.editId}-${Date.now()}-${Math.random().toString(36).slice(2, 7)}`;
     const job: RenderJob = {
       id,
       editId: payload.editId,
@@ -193,14 +212,17 @@ export function RenderQueueProvider({ children }: { children: ReactNode }) {
       startedAt: Date.now(),
     };
     setJobs((prev) => [...prev, job]);
-    // Fire and forget.
-    void runJob(id, payload);
+    pendingRef.current.push({ id, payload });
+    pump();
     return id;
-  }, [runJob]);
+  }, [pump]);
+
 
   const dismiss = useCallback((id: string) => {
+    pendingRef.current = pendingRef.current.filter((p) => p.id !== id);
     setJobs((prev) => prev.filter((j) => j.id !== id));
   }, []);
+
 
   return (
     <RenderQueueContext.Provider value={{ jobs, enqueue, dismiss }}>
