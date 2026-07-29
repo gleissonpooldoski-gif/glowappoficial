@@ -159,21 +159,58 @@ export default function InstagramCredentialsCard() {
     loadAll();
   };
 
-  const createAccount = async () => {
-    const cleanToken = (newForm.access_token ?? "")
-      .replace(/[\r\n\t]/g, "")
-      .trim()
-      .replace(/^["']|["']$/g, "");
-    if (!newForm.display_name.trim() || !cleanToken || !newForm.ig_business_id.trim()) {
-      toast.error("Preencha nome, Business ID e Access Token.");
-      return;
-    }
+  const cleanTokenValue = () =>
+    (newForm.access_token ?? "").replace(/[\r\n\t]/g, "").trim().replace(/^["']|["']$/g, "");
+
+  const readFnError = async (error: any, fallback: string) => {
+    let msg = error?.message ?? fallback;
+    try {
+      const ctx: any = error?.context;
+      if (ctx && typeof ctx.text === "function") {
+        const parsed = JSON.parse(await ctx.text());
+        if (parsed?.error) msg = parsed.error;
+      }
+    } catch { /* mantém msg */ }
+    return msg;
+  };
+
+  const discoverPages = async () => {
+    const cleanToken = cleanTokenValue();
+    if (!cleanToken) return toast.error("Informe o User Access Token do Facebook.");
     if (!/^[\x21-\x7E]+$/.test(cleanToken)) {
       toast.error("Token inválido ou formato incorreto. Remova espaços, quebras de linha e caracteres especiais.");
       return;
     }
-    if (!/^\d{6,20}$/.test(newForm.ig_business_id.trim())) {
-      toast.error("Instagram Business ID deve conter apenas dígitos (ex.: 17841400000000000). Não use @username, URL ou ID de Página do Facebook.");
+    setDiscovering(true);
+    setPages([]);
+    setNewForm((f) => ({ ...f, page_id: "" }));
+    const { data, error } = await supabase.functions.invoke("instagram-credentials", {
+      body: { action: "discover_pages", access_token: cleanToken },
+    });
+    setDiscovering(false);
+    if (error) return toast.error(await readFnError(error, "Falha ao validar o token."), { duration: 12000 });
+    if (data?.error) return toast.error(data.error, { duration: 12000 });
+    const found = (data?.pages ?? []) as DiscoveredPage[];
+    const withIg = found.filter((p) => p.ig_business_id);
+    setPages(withIg);
+    if (withIg.length === 0) {
+      return toast.error(
+        "Nenhuma Página administrada por este token possui um Instagram Profissional vinculado. Vincule no Meta Business Suite e tente novamente.",
+        { duration: 12000 },
+      );
+    }
+    if (withIg.length === 1) setNewForm((f) => ({ ...f, page_id: withIg[0].page_id }));
+    toast.success(`${withIg.length} Página(s) com Instagram Profissional encontrada(s).`);
+  };
+
+  const createAccount = async () => {
+    const cleanToken = cleanTokenValue();
+    if (!newForm.display_name.trim() || !cleanToken) {
+      toast.error("Preencha nome e Access Token.");
+      return;
+    }
+    if (!newForm.page_id) {
+      toast.error("Valide o token e selecione a Página do Facebook antes de salvar.");
       return;
     }
     setCreating(true);
@@ -182,34 +219,23 @@ export default function InstagramCredentialsCard() {
         action: "create",
         display_name: newForm.display_name.trim(),
         access_token: cleanToken,
-        ig_business_id: newForm.ig_business_id.trim(),
+        page_id: newForm.page_id,
         project_id: newForm.project_id || null,
       },
     });
     setCreating(false);
     if (error) {
-      // Extrai a mensagem real da Meta do corpo da resposta (FunctionsHttpError esconde por padrão)
-      let msg = error.message ?? "Falha ao validar a conta.";
-      try {
-        const ctx: any = (error as any).context;
-        if (ctx && typeof ctx.text === "function") {
-          const raw = await ctx.text();
-          const parsed = JSON.parse(raw);
-          if (parsed?.result && parsed?.account) {
-            setResults((prev) => ({ ...prev, [parsed.account]: parsed.result }));
-          }
-          if (parsed?.error) msg = parsed.error;
-        }
-      } catch { /* mantém msg */ }
       await loadAll();
-      return toast.error(msg, { duration: 10000 });
+      return toast.error(await readFnError(error, "Falha ao validar a conta."), { duration: 12000 });
     }
-    if (data?.error) return toast.error(data.error, { duration: 10000 });
+    if (data?.error) return toast.error(data.error, { duration: 12000 });
     toast.success(`Conta criada: ${data?.result?.message ?? "OK"}`);
     setCreateOpen(false);
-    setNewForm({ display_name: "", project_id: "", ig_business_id: "", access_token: "", showToken: false });
+    setPages([]);
+    setNewForm({ display_name: "", project_id: "", page_id: "", access_token: "", showToken: false });
     loadAll();
   };
+
 
   const confirmDelete = async () => {
     if (!toDelete) return;
