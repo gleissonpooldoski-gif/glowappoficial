@@ -402,7 +402,29 @@ Deno.serve(async (req) => {
           igId = igId || (Deno.env.get("META_FRAME_INSTAGRAM_ID") ?? "");
         }
       }
-      const validation = await validateAccount(token, igId);
+      let validation = await validateAccount(token, igId);
+      let autoFixed: { ig_id?: string; page_id?: string } | null = null;
+
+      // Auto-correção: se o ID salvo não bate, busca o Instagram Business ID real
+      // na Página do Facebook vinculada ao projeto e regrava token + ID.
+      if (!validation.ok && data) {
+        const resolved = await resolveIgFromPage(supabase, data.project_id);
+        if (resolved.ig_id && resolved.page_token) {
+          const retry = await validateAccount(resolved.page_token, resolved.ig_id);
+          if (retry.ok) {
+            await supabase.from("instagram_credentials").update({
+              ig_business_id: resolved.ig_id,
+              access_token: resolved.page_token,
+            }).eq("account", account);
+            validation = {
+              ...retry,
+              message: `${retry.message}\n\nID corrigido automaticamente pela Página ${resolved.page_id} (IG ID ${resolved.ig_id}).`,
+            };
+            autoFixed = { ig_id: resolved.ig_id, page_id: resolved.page_id };
+          }
+        }
+      }
+
       if (data) {
         await supabase.from("instagram_credentials").update({
           last_validated_at: new Date().toISOString(),
@@ -411,6 +433,11 @@ Deno.serve(async (req) => {
           connection_status: connectionStatusFromValidation(validation),
         }).eq("account", account);
       }
+      if (autoFixed) {
+        return new Response(JSON.stringify({ success: true, account, result: validation, auto_fixed: autoFixed }),
+          { status: 200, headers: { ...corsHeaders, "Content-Type": "application/json" } });
+      }
+
       return new Response(JSON.stringify({ success: true, account, result: validation }),
         { status: 200, headers: { ...corsHeaders, "Content-Type": "application/json" } });
     }
