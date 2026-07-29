@@ -219,8 +219,10 @@ export function RenderQueueProvider({ children }: { children: ReactNode }) {
 
 
   const dismiss = useCallback((id: string) => {
+    pendingRef.current = pendingRef.current.filter((p) => p.id !== id);
     setJobs((prev) => prev.filter((j) => j.id !== id));
   }, []);
+
 
   return (
     <RenderQueueContext.Provider value={{ jobs, enqueue, dismiss }}>
