@@ -85,17 +85,30 @@ export async function saveProjectSchedule(input: {
 }): Promise<ProjectScheduleSettings> {
   const times = normalizeTimes(input.publication_times);
   if (times.length === 0) throw new Error("Adicione ao menos um horário válido");
-  if (times.length !== input.publication_times.length) {
-    // horários duplicados/inválidos foram descartados
-  }
+
   const payload: Record<string, unknown> = {
     project_id: input.project_id,
     platform: "all",
     publication_times: times,
     posts_per_day: Math.max(1, Math.min(times.length, Math.round(input.posts_per_day))),
   };
-  if (input.start_date !== undefined) payload.start_date = input.start_date || null;
-  if (input.start_time !== undefined) payload.start_time = input.start_time || null;
+
+  if (input.start_date !== undefined) {
+    const d = (input.start_date ?? "").trim();
+    if (d && !/^\d{4}-\d{2}-\d{2}$/.test(d)) throw new Error("Data inicial inválida (use o seletor de data)");
+    payload.start_date = d || null;
+  }
+  if (input.start_time !== undefined) {
+    const t = (input.start_time ?? "").trim();
+    if (t) {
+      const m = t.match(/^(\d{1,2}):(\d{2})/);
+      if (!m || Number(m[1]) > 23 || Number(m[2]) > 59) throw new Error("Horário inicial inválido");
+      payload.start_time = `${m[1].padStart(2, "0")}:${m[2]}:00`;
+    } else {
+      payload.start_time = null;
+    }
+  }
+
 
   const existing = await getProjectSchedule(input.project_id);
   if (existing) {
@@ -187,9 +200,19 @@ export async function findProjectSlots(
   }
 
   const lastBooked = bookedTs.length ? Math.max(...bookedTs) : 0;
-  const anchorDate = opts.startFrom ?? startAnchor(settings as ProjectScheduleSettings);
-  const anchorTs = Math.max(anchorDate ? anchorDate.getTime() : 0, lastBooked);
-  const minTs = Math.max(Date.now() + 60_000, anchorTs > 0 ? anchorTs + 1 : 0);
+  const explicitAnchor = opts.startFrom ?? startAnchor(settings as ProjectScheduleSettings);
+  const explicitTs = explicitAnchor ? explicitAnchor.getTime() : 0;
+  const nowFloor = Date.now() + 60_000;
+
+  // Regra: quando o usuário define "Começar em" (data + horário inicial) e esse
+  // momento ainda está no futuro, ele é a ÚNICA âncora — não é empurrado pelo
+  // último agendamento existente. Agendamentos já criados continuam intactos,
+  // apenas evitamos colidir com eles (checagem de bookedTs abaixo).
+  const anchorIsFuture = explicitTs > nowFloor;
+  const minTs = anchorIsFuture
+    ? explicitTs
+    : Math.max(nowFloor, lastBooked > 0 ? lastBooked + 1 : 0);
+
 
   const startDay = new Date(minTs);
   startDay.setHours(0, 0, 0, 0);
@@ -200,6 +223,23 @@ export async function findProjectSlots(
   const allowed = new Set(parsed.map(([h, m]) => `${String(h).padStart(2, "0")}:${String(m).padStart(2, "0")}`));
 
   const out: Date[] = [];
+
+  // O "horário inicial" definido pelo usuário é sempre respeitado, mesmo que
+  // não esteja na grade: ele vira o primeiro slot da sequência.
+  const anchorHm = anchorIsFuture && explicitAnchor
+    ? `${String(explicitAnchor.getHours()).padStart(2, "0")}:${String(explicitAnchor.getMinutes()).padStart(2, "0")}`
+    : null;
+  if (anchorHm && !allowed.has(anchorHm) && explicitAnchor) {
+    const collides = bookedTs.some((ts) => Math.abs(ts - explicitTs) < 5 * 60_000);
+    if (!collides) {
+      out.push(new Date(explicitTs));
+      bookedTs.push(explicitTs);
+      const k = ymd(explicitAnchor);
+      bookedPerDay.set(k, (bookedPerDay.get(k) ?? 0) + 1);
+    }
+    allowed.add(anchorHm);
+  }
+
   for (let dayOffset = 0; dayOffset < horizon && out.length < count; dayOffset++) {
     const day = new Date(startDay);
     day.setDate(startDay.getDate() + dayOffset);
@@ -219,14 +259,17 @@ export async function findProjectSlots(
     }
   }
 
+  out.sort((a, b) => a.getTime() - b.getTime());
+
   // Log de validação obrigatório
   console.info(
     "[agendador] Projeto:", projectId,
-    "| Horários encontrados:", times.join(", "),
-    "| Próximo slot calculado:", out[0] ? out[0].toTimeString().slice(0, 5) : "nenhum",
+    "| Horários configurados:", times.join(", "),
+    "| Início configurado:", explicitAnchor ? explicitAnchor.toLocaleString("pt-BR") : "(nenhum)",
+    "| Próximo slot calculado:", out[0] ? out[0].toLocaleString("pt-BR") : "nenhum",
   );
   for (const s of out) {
-    if (!allowed.has(s.toTimeString().slice(0, 5))) {
+    if (!allowed.has(`${String(s.getHours()).padStart(2, "0")}:${String(s.getMinutes()).padStart(2, "0")}`)) {
       console.error("Agendamento ignorou configuração personalizada de horário", {
         projeto: projectId,
         configurado: times,
@@ -234,6 +277,7 @@ export async function findProjectSlots(
       });
     }
   }
+
   return out;
 }
 

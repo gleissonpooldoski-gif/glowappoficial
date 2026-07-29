@@ -4,6 +4,8 @@
 // - tags: 15-30 palavras-chave SEO variadas (para o campo snippet.tags do YouTube).
 import { createClient } from "https://esm.sh/@supabase/supabase-js@2.45.4";
 import { corsHeaders } from "npm:@supabase/supabase-js@2/cors";
+import { aiErrorResponse, callAi, parseModelJson } from "../_shared/ai-gateway.ts";
+
 
 type ProjectCtx = { name: string | null; category: string | null };
 
@@ -66,7 +68,7 @@ Deno.serve(async (req) => {
       projectName: pnIn = null,
       projectCategory: pcIn = null,
       videoId = null,
-    } = await req.json();
+    } = await req.json().catch(() => ({} as Record<string, unknown>)) as Record<string, any>;
 
     // Enriquece com contexto do projeto se veio videoId.
     let projectName = pnIn as string | null;
@@ -86,8 +88,6 @@ Deno.serve(async (req) => {
     const fieldHashtags = String(hashtags).split(/\s+/).filter((s) => s.startsWith("#"));
     const originalHashtags = Array.from(new Set([...captionHashtags, ...fieldHashtags]));
 
-    const apiKey = Deno.env.get("LOVABLE_API_KEY");
-    if (!apiKey) throw new Error("LOVABLE_API_KEY ausente.");
 
     const tagGuidance = categoryTagGuidance(projectName, projectCategory);
 
@@ -137,30 +137,17 @@ Deno.serve(async (req) => {
       (projectCategory ? `\nCategoria: ${projectCategory}` : "") +
       "\n\nGere o JSON com title, description, hashtags e tags.";
 
-    const res = await fetch("https://ai.gateway.lovable.dev/v1/chat/completions", {
-      method: "POST",
-      headers: { "Content-Type": "application/json", "Lovable-API-Key": apiKey },
-      body: JSON.stringify({
-        model: "google/gemini-2.5-flash",
-        messages: [
-          { role: "system", content: system },
-          { role: "user", content: user },
-        ],
-        response_format: { type: "json_object" },
-      }),
+    const raw = await callAi({
+      module: "generate-youtube-title",
+      messages: [
+        { role: "system", content: system },
+        { role: "user", content: user },
+      ],
+      context: { project: projectName, videoId },
     });
-    if (!res.ok) {
-      const detail = await res.text().catch(() => "");
-      throw new Error(`AI Gateway ${res.status}: ${detail.slice(0, 200)}`);
-    }
-    const json: any = await res.json();
-    const raw = String(json?.choices?.[0]?.message?.content ?? "").trim();
 
-    let parsed: { title?: string; description?: string; hashtags?: string[]; tags?: string[] } = {};
-    try {
-      const cleaned = raw.replace(/^```(?:json)?/i, "").replace(/```$/, "").trim();
-      parsed = JSON.parse(cleaned);
-    } catch { parsed = {}; }
+
+    const parsed = parseModelJson<{ title?: string; description?: string; hashtags?: string[]; tags?: string[] }>(raw);
 
     let title = String(parsed.title ?? "").trim();
     title = title
@@ -231,11 +218,7 @@ Deno.serve(async (req) => {
       JSON.stringify({ title, description, hashtags: hashtagsOut, tags: tagsOut }),
       { headers: { ...corsHeaders, "Content-Type": "application/json" }, status: 200 },
     );
-  } catch (e: any) {
-    console.error("[generate-youtube-title]", e?.message);
-    return new Response(JSON.stringify({ error: e?.message ?? "Erro." }), {
-      headers: { ...corsHeaders, "Content-Type": "application/json" },
-      status: 500,
-    });
+  } catch (e) {
+    return aiErrorResponse("generate-youtube-title", e, corsHeaders);
   }
 });

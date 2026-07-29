@@ -13,6 +13,7 @@ import { getYoutubeChannelForProject, type YoutubeCredential } from "@/lib/youtu
 import { getFacebookAccountForProject, createFacebookPost, isFacebookAccountReady, type FacebookAccount } from "@/lib/facebook";
 import { findProjectSlots, getProjectSchedule, refreshProjectSlotTracking, DEFAULT_PROJECT_TIMES, type ProjectScheduleSettings } from "@/lib/project-schedules";
 import { extractVideoFrames } from "@/lib/videoFrames";
+import { describeEdgeError } from "@/lib/edge-errors";
 
 type VideoMeta = {
   id: string;
@@ -195,7 +196,9 @@ export default function InstagramBatchScheduleDialog({ open, onOpenChange, video
         frames,
       },
     });
-    if (error || (data as any)?.error) throw new Error((data as any)?.error ?? error?.message ?? "Falha ao gerar legenda");
+    if (error || (data as any)?.error) {
+      throw new Error(await describeEdgeError(error, data, "Falha ao gerar legenda"));
+    }
     const caption = String((data as any)?.caption ?? "").trim();
     const hashtags = flattenHashtags((data as any)?.hashtags);
     if (!caption) throw new Error("IA retornou legenda vazia");

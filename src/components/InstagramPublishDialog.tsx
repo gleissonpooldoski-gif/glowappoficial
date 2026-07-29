@@ -16,6 +16,7 @@ import { findNextProjectSlot, refreshProjectSlotTracking } from "@/lib/project-s
 import { useActiveProject } from "@/context/ProjectContext";
 import { extractVideoFrames } from "@/lib/videoFrames";
 import { createFacebookPost, getFacebookAccountForProject, friendlyFacebookError, isFacebookAccountReady, type FacebookAccount } from "@/lib/facebook";
+import { describeEdgeError } from "@/lib/edge-errors";
 
 type NetId = "instagram" | "youtube" | "facebook";
 
@@ -197,8 +198,9 @@ export default function InstagramPublishDialog({
           frames,
         },
       });
-      if (error) throw error;
-      if ((data as any)?.error) throw new Error((data as any).error);
+      if (error || (data as any)?.error) {
+        throw new Error(await describeEdgeError(error, data, "Falha ao gerar legenda"));
+      }
       setCaption(String((data as any)?.caption ?? ""));
       setHashtags(flattenHashtags((data as any)?.hashtags));
       if (!silent) {
@@ -226,8 +228,9 @@ export default function InstagramPublishDialog({
           frames,
         },
       });
-      if (error) throw error;
-      if ((data as any)?.error) throw new Error((data as any).error);
+      if (error || (data as any)?.error) {
+        throw new Error(await describeEdgeError(error, data, "Falha ao gerar hashtags"));
+      }
       setHashtags(flattenHashtags((data as any)?.hashtags));
       if (!silent) toast.success("Novas hashtags geradas");
     } catch (e: any) {

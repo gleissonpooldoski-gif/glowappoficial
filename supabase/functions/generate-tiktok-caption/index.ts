@@ -1,6 +1,7 @@
 // Gera legenda + hashtags otimizadas para TikTok a partir da legenda base.
 // Foco: gancho inicial forte, texto curto, hashtags de descoberta.
 import { corsHeaders } from "npm:@supabase/supabase-js@2/cors";
+import { aiErrorResponse, callAi, parseModelJson } from "../_shared/ai-gateway.ts";
 
 Deno.serve(async (req) => {
   if (req.method === "OPTIONS") return new Response("ok", { headers: corsHeaders });
@@ -11,7 +12,7 @@ Deno.serve(async (req) => {
       hashtags = "",
       projectName = null,
       projectCategory = null,
-    } = await req.json();
+    } = await req.json().catch(() => ({} as Record<string, unknown>)) as Record<string, any>;
 
     const cleanCaption = String(caption)
       .replace(/#[\p{L}\p{N}_]+/gu, "")
@@ -22,8 +23,6 @@ Deno.serve(async (req) => {
     const fieldHashtags = String(hashtags).split(/\s+/).filter((s) => s.startsWith("#"));
     const originalHashtags = Array.from(new Set([...captionHashtags, ...fieldHashtags]));
 
-    const apiKey = Deno.env.get("LOVABLE_API_KEY");
-    if (!apiKey) throw new Error("LOVABLE_API_KEY ausente.");
 
     const isSegredo = (() => {
       const s = `${projectName ?? ""} ${projectCategory ?? ""}`.toLowerCase();
@@ -61,30 +60,16 @@ Deno.serve(async (req) => {
       (projectCategory ? `\nNicho: ${projectCategory}` : "") +
       "\n\nGere caption + hashtags adaptadas para TikTok.";
 
-    const res = await fetch("https://ai.gateway.lovable.dev/v1/chat/completions", {
-      method: "POST",
-      headers: { "Content-Type": "application/json", "Lovable-API-Key": apiKey },
-      body: JSON.stringify({
-        model: "google/gemini-2.5-flash",
-        messages: [
-          { role: "system", content: system },
-          { role: "user", content: user },
-        ],
-        response_format: { type: "json_object" },
-      }),
+    const raw = await callAi({
+      module: "generate-tiktok-caption",
+      messages: [
+        { role: "system", content: system },
+        { role: "user", content: user },
+      ],
+      context: { project: projectName },
     });
-    if (!res.ok) {
-      const detail = await res.text().catch(() => "");
-      throw new Error(`AI Gateway ${res.status}: ${detail.slice(0, 200)}`);
-    }
-    const json: any = await res.json();
-    const raw = String(json?.choices?.[0]?.message?.content ?? "").trim();
 
-    let parsed: { caption?: string; hashtags?: string[] } = {};
-    try {
-      const cleaned = raw.replace(/^```(?:json)?/i, "").replace(/```$/, "").trim();
-      parsed = JSON.parse(cleaned);
-    } catch { parsed = {}; }
+    const parsed = parseModelJson<{ caption?: string; hashtags?: string[] }>(raw);
 
     let outCaption = String(parsed.caption ?? "").trim();
     outCaption = outCaption.replace(/#[\p{L}\p{N}_]+/gu, "").replace(/\s+/g, " ").trim();
@@ -104,11 +89,7 @@ Deno.serve(async (req) => {
       JSON.stringify({ caption: finalCaption, hashtags: tags, hook: outCaption }),
       { headers: { ...corsHeaders, "Content-Type": "application/json" }, status: 200 },
     );
-  } catch (e: any) {
-    console.error("[generate-tiktok-caption]", e?.message);
-    return new Response(JSON.stringify({ error: e?.message ?? "Erro." }), {
-      headers: { ...corsHeaders, "Content-Type": "application/json" },
-      status: 500,
-    });
+  } catch (e) {
+    return aiErrorResponse("generate-tiktok-caption", e, corsHeaders);
   }
 });

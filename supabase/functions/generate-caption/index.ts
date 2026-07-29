@@ -1,8 +1,11 @@
 // Edge function: gera legenda + hashtags para um vídeo pronto usando Lovable AI (visão + validação).
+import { AiGatewayError, aiErrorResponse, callAi, parseModelJson } from "../_shared/ai-gateway.ts";
+
 const corsHeaders = {
   "Access-Control-Allow-Origin": "*",
   "Access-Control-Allow-Headers": "authorization, x-client-info, apikey, content-type",
 };
+
 
 type Body = {
   filename?: string;
@@ -37,30 +40,17 @@ function normalizeHashtags(groups: any) {
   };
 }
 
-async function callModel(apiKey: string, messages: any[], expectJson = true) {
-  const res = await fetch(GATEWAY, {
-    method: "POST",
-    headers: { Authorization: `Bearer ${apiKey}`, "Content-Type": "application/json" },
-    body: JSON.stringify({
-      model: MODEL,
-      messages,
-      ...(expectJson ? { response_format: { type: "json_object" } } : {}),
-    }),
+async function callModel(_apiKey: string, messages: any[], expectJson = true) {
+  const raw = await callAi({
+    module: "generate-caption",
+    model: MODEL,
+    messages,
+    jsonMode: expectJson,
+    context: { gateway: GATEWAY },
   });
-  if (!res.ok) {
-    const text = await res.text();
-    const err: any = new Error(`gateway ${res.status}: ${text}`);
-    err.status = res.status;
-    throw err;
-  }
-  const data = await res.json();
-  const raw = data?.choices?.[0]?.message?.content ?? "{}";
-  try {
-    return typeof raw === "string" ? JSON.parse(raw) : raw;
-  } catch {
-    return { _raw: raw };
-  }
+  return parseModelJson<any>(raw);
 }
+
 
 function buildContextText(body: Body) {
   return [
@@ -224,12 +214,35 @@ async function validate(apiKey: string, body: Body, caption: string, hashtags: a
 
 Deno.serve(async (req) => {
   if (req.method === "OPTIONS") return new Response("ok", { headers: corsHeaders });
+  if (req.method !== "POST") {
+    return json(405, { error: "Método não suportado.", code: "METHOD_NOT_ALLOWED" });
+  }
 
+  const startedAt = Date.now();
   try {
-    const apiKey = Deno.env.get("LOVABLE_API_KEY");
-    if (!apiKey) return json(500, { error: "LOVABLE_API_KEY ausente" });
+    const apiKey = Deno.env.get("LOVABLE_API_KEY") ?? "";
 
-    const body = (await req.json()) as Body;
+    let body: Body;
+    try {
+      body = (await req.json()) as Body;
+    } catch {
+      return json(400, { error: "Corpo da requisição inválido (JSON esperado).", code: "INVALID_BODY" });
+    }
+    if (body === null || typeof body !== "object") {
+      return json(400, { error: "Corpo da requisição inválido.", code: "INVALID_BODY" });
+    }
+    if (body.frames !== undefined && !Array.isArray(body.frames)) {
+      return json(400, { error: "'frames' deve ser uma lista de data URLs.", code: "INVALID_FRAMES" });
+    }
+    // Protege memória do worker: no máximo 6 frames
+    if (Array.isArray(body.frames) && body.frames.length > 6) body.frames = body.frames.slice(0, 6);
+
+    console.info(JSON.stringify({
+      module: "generate-caption", event: "request",
+      project: body.projectName ?? null, category: body.projectCategory ?? null,
+      filename: body.filename ?? null, frames: body.frames?.length ?? 0,
+      timestamp: new Date().toISOString(),
+    }));
 
     const MAX_ATTEMPTS = 3;
     let lastResult: { caption: string; hashtags: any } | null = null;
@@ -247,21 +260,26 @@ Deno.serve(async (req) => {
         }
         lastReason = v.reason || "reprovada na validação";
         console.warn(`[generate-caption] attempt ${attempt} rejeitada: ${lastReason}`);
-      } catch (e: any) {
-        if (e?.status === 429) return json(429, { error: "Limite de requisições atingido. Tente novamente em instantes." });
-        if (e?.status === 402) return json(402, { error: "Créditos de IA esgotados. Adicione créditos no workspace." });
-        console.error("[generate-caption] attempt error", e);
-        lastReason = e?.message ?? "erro no modelo";
+      } catch (e) {
+        // Erros de crédito/limite/timeout são definitivos: não adianta repetir.
+        if (e instanceof AiGatewayError && e.code !== "AI_EMPTY_RESPONSE") {
+          return aiErrorResponse("generate-caption", e, corsHeaders);
+        }
+        console.error(JSON.stringify({
+          module: "generate-caption", event: "attempt_error", attempt,
+          error: String((e as Error)?.message ?? e), stack: (e as Error)?.stack ?? null,
+        }));
+        lastReason = (e as Error)?.message ?? "erro no modelo";
       }
     }
 
     // Fallback: devolve última tentativa mesmo assim, sinalizando que não validou
-    if (lastResult) {
-      return json(200, { ...lastResult, validated: false, warning: lastReason });
+    if (lastResult?.caption) {
+      return json(200, { ...lastResult, validated: false, warning: lastReason, ms: Date.now() - startedAt });
     }
-    return json(500, { error: "Falha ao gerar legenda." });
+    return json(502, { error: "Não foi possível gerar a legenda agora. Tente novamente.", code: "AI_NO_RESULT", detail: lastReason });
   } catch (e) {
-    console.error("[generate-caption] fatal", e);
-    return json(500, { error: (e as Error).message });
+    return aiErrorResponse("generate-caption", e, corsHeaders);
   }
+
 });
