@@ -166,16 +166,10 @@ export default function InstagramPublishDialog({
     try {
       // Cronograma é do PROJETO — usa a grade do Instagram do projeto ativo.
       // Se o projeto não tem IG, cai para o canal do YouTube.
+      // REGRA: apenas a grade salva do projeto define o horário. Sem fallback legado.
       let slot: Date | null = null;
       if (activeProject?.id) {
-        try { slot = await findNextProjectSlot(activeProject.id); } catch { /* ignore */ }
-      }
-      // Fallback legado (projeto sem configuração acessível)
-      if (!slot && account) {
-        try { slot = await findNextSlot("instagram", account); } catch { /* ignore */ }
-      }
-      if (!slot && ytAccount) {
-        try { slot = await findNextSlot("youtube", ytAccount); } catch { /* ignore */ }
+        slot = await findNextProjectSlot(activeProject.id);
       }
       setAutoSlot(slot);
       if (slot) {
