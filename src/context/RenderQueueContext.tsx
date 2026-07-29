@@ -39,14 +39,22 @@ type Ctx = {
 
 const RenderQueueContext = createContext<Ctx | undefined>(undefined);
 
+/** Renderizar tudo ao mesmo tempo trava a CPU e deixa TODOS os vídeos lentos.
+ *  Processamos poucos por vez para maximizar a vazão real. */
+const MAX_CONCURRENT = Math.max(1, Math.min(2, Math.floor((navigator.hardwareConcurrency || 4) / 4)));
+
 export function RenderQueueProvider({ children }: { children: ReactNode }) {
   const [jobs, setJobs] = useState<RenderJob[]>([]);
   const jobsRef = useRef<RenderJob[]>([]);
   jobsRef.current = jobs;
 
+  const runningRef = useRef(0);
+  const pendingRef = useRef<Array<{ id: string; payload: EnqueuePayload }>>([]);
+
   const update = useCallback((id: string, patch: Partial<RenderJob>) => {
     setJobs((prev) => prev.map((j) => (j.id === id ? { ...j, ...patch } : j)));
   }, []);
+
 
   const runJob = useCallback(async (jobId: string, payload: EnqueuePayload) => {
     const { editId, projectId, templateId, name, composition, videoMeta, replaceVideoId } = payload;
