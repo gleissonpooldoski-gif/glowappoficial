@@ -18,7 +18,17 @@ export type TextPresetCategory =
   | "movies_curiosities"
   | "movies_share"
   | "movies_follow"
-  | "movies_save";
+  | "movies_save"
+  | "curio_friends"
+  | "curio_comment"
+  | "curio_challenge"
+  | "curio_viral"
+  | "curio_favorites"
+  | "real_friends"
+  | "real_comment"
+  | "real_curiosity"
+  | "real_viral"
+  | "real_favorites";
 
 export type TextPreset = {
   id: string;
@@ -49,6 +59,16 @@ export const TEXT_CATEGORIES: { value: TextPresetCategory; label: string; hint: 
   { value: "movies_share",      label: "Filmes • Compartilhar", hint: "CTAs de compartilhamento para filmes" },
   { value: "movies_follow",     label: "Filmes • Seguir",      hint: "CTAs de seguir para filmes" },
   { value: "movies_save",       label: "Filmes • Salvar",      hint: "CTAs de salvar para filmes" },
+  { value: "curio_favorites",   label: "Curiosidades • ⭐ Favoritos",       hint: "Os CTAs mais usados" },
+  { value: "curio_friends",     label: "Curiosidades • Enviar para amigos", hint: "CTAs de compartilhamento" },
+  { value: "curio_comment",     label: "Curiosidades • Comentários",        hint: "CTAs de comentário" },
+  { value: "curio_challenge",   label: "Curiosidades • Desafio",            hint: "CTAs de desafio" },
+  { value: "curio_viral",       label: "Curiosidades • Viral Shorts/Reels", hint: "Ganchos virais" },
+  { value: "real_favorites",    label: "Histórias Reais • ⭐ Favoritos",       hint: "Os CTAs mais usados" },
+  { value: "real_friends",      label: "Histórias Reais • Enviar para amigos", hint: "CTAs de compartilhamento" },
+  { value: "real_comment",      label: "Histórias Reais • Comentários",        hint: "CTAs de comentário" },
+  { value: "real_curiosity",    label: "Histórias Reais • Curiosidade",        hint: "Ganchos de curiosidade" },
+  { value: "real_viral",        label: "Histórias Reais • Viral Shorts/Reels", hint: "Ganchos virais" },
 ];
 
 const mk = (prefix: string, texts: string[]): TextPreset[] =>
@@ -301,5 +321,72 @@ export const TEXT_PRESETS: Record<TextPresetCategory, TextPreset[]> = {
     "🎬 Não perca essa indicação.",
     "💾 Esse filme merece um lugar na sua lista.",
     "🍿 Vale a pena salvar essa recomendação.",
+  ]),
+  curio_favorites: mk("cufav", [
+    "🥇 Marca alguém que precisa descobrir isso 👀",
+    "🥈 Duvido seu amigo saber dessa... manda pra ele 🤯",
+    "🥉 Você sabia ou descobriu agora? Comenta 👇",
+  ]),
+  curio_friends: mk("cufr", [
+    "👀 Envia para aquele amigo que não sabia disso",
+    "📲 Marca alguém que precisa descobrir isso",
+    "🤯 Manda para aquele amigo que vai duvidar dessa curiosidade",
+    "🔥 Compartilha com alguém que ama aprender coisas novas",
+    "😳 Envia para uma pessoa que precisa ver isso hoje",
+    "🧠 Marca aquele amigo inteligente pra ver se ele sabia",
+    "📢 Duvido seu amigo saber dessa... manda pra ele",
+  ]),
+  curio_comment: mk("cucm", [
+    "🤔 Você já sabia dessa curiosidade?",
+    "👀 Você fazia ideia disso?",
+    "😱 Qual dessas curiosidades mais te surpreendeu?",
+    "🧠 Você sabia ou descobriu agora?",
+    "🔥 Comenta se essa informação te surpreendeu",
+    "⚡ De 0 a 10, quanto você sabia disso?",
+    "👀 Você percebeu esse detalhe?",
+  ]),
+  curio_challenge: mk("cuch", [
+    "🚨 Duvido você acertar antes do final",
+    "🧠 Só quem presta atenção vai descobrir",
+    "👀 Você consegue explicar isso?",
+    "🔥 Poucas pessoas sabem dessa informação",
+    "🤯 Aposto que você nunca ouviu isso antes",
+    "⚠️ Espera até o final porque isso muda tudo",
+  ]),
+  curio_viral: mk("cuvr", [
+    "😳 Salva esse vídeo porque você vai querer lembrar disso",
+    "📌 Guarda essa curiosidade para contar depois",
+    "🤯 Essa informação parece mentira, mas é real",
+    "👀 O mundo é mais estranho do que você imagina",
+    "🔥 Depois dessa você nunca mais vai olhar igual",
+  ]),
+  real_favorites: mk("hrfav", [
+    "🥇 Envia para aquele amigo que precisa ver essa história 🚨",
+    "🥈 Você imaginaria que isso aconteceria? 👀",
+    "🥉 Marca alguém que precisa conhecer essa história 🔥",
+  ]),
+  real_friends: mk("hrfr", [
+    "🚨 Envia para aquele amigo que precisa ver essa história",
+    "👀 Marca alguém que jamais imaginaria isso acontecendo",
+    "📲 Compartilha com alguém que gosta de histórias reais",
+    "😳 Manda para alguém que não acreditaria nisso",
+  ]),
+  real_comment: mk("hrcm", [
+    "🤔 Você imaginaria que isso aconteceria?",
+    "👀 O que você faria nessa situação?",
+    "🔥 Você acredita que isso aconteceu de verdade?",
+    "🗣️ Conta aí: qual seria sua reação?",
+  ]),
+  real_curiosity: mk("hrcu", [
+    "🚨 Poucos esperavam esse final...",
+    "👀 Você já viu algo parecido acontecer?",
+    "🔥 Essa história merece ser compartilhada",
+    "⚠️ A realidade sempre surpreende",
+  ]),
+  real_viral: mk("hrvr", [
+    "😱 Espera até o final dessa história",
+    "👀 O detalhe que poucos perceberam",
+    "🔥 Você não vai acreditar no que aconteceu",
+    "📌 Salva essa história para lembrar depois",
   ]),
 };
