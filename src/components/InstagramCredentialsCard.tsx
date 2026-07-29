@@ -424,21 +424,16 @@ export default function InstagramCredentialsCard() {
                 </Select>
               </div>
               <div className="space-y-1.5">
-                <Label className="text-xs">Instagram Business Account ID</Label>
-                <Input
-                  placeholder="17841400000000000"
-                  value={newForm.ig_business_id}
-                  onChange={(e) => setNewForm({ ...newForm, ig_business_id: e.target.value })}
-                />
-              </div>
-              <div className="space-y-1.5">
-                <Label className="text-xs">Access Token</Label>
+                <Label className="text-xs">User Access Token do Facebook</Label>
                 <div className="relative">
                   <Input
                     type={newForm.showToken ? "text" : "password"}
                     placeholder="EAAG..."
                     value={newForm.access_token}
-                    onChange={(e) => setNewForm({ ...newForm, access_token: e.target.value })}
+                    onChange={(e) => {
+                      setNewForm({ ...newForm, access_token: e.target.value, page_id: "" });
+                      setPages([]);
+                    }}
                     className="pr-10"
                   />
                   <button
@@ -449,7 +444,37 @@ export default function InstagramCredentialsCard() {
                     {newForm.showToken ? <EyeOff size={14} /> : <Eye size={14} />}
                   </button>
                 </div>
+                <Button variant="outline" size="sm" disabled={discovering} onClick={discoverPages}>
+                  {discovering
+                    ? <Loader2 size={13} className="mr-1 animate-spin" />
+                    : <RefreshCw size={13} className="mr-1" />}
+                  Validar token e buscar Páginas
+                </Button>
               </div>
+
+              <div className="space-y-1.5">
+                <Label className="text-xs">Página do Facebook (com Instagram Profissional)</Label>
+                <Select
+                  value={newForm.page_id || undefined}
+                  onValueChange={(v) => setNewForm({ ...newForm, page_id: v })}
+                  disabled={pages.length === 0}
+                >
+                  <SelectTrigger>
+                    <SelectValue placeholder={pages.length === 0 ? "Valide o token primeiro" : "Selecionar Página"} />
+                  </SelectTrigger>
+                  <SelectContent>
+                    {pages.map((p) => (
+                      <SelectItem key={p.page_id} value={p.page_id}>
+                        {p.page_name} {p.ig_username ? `— @${p.ig_username}` : ""}
+                      </SelectItem>
+                    ))}
+                  </SelectContent>
+                </Select>
+                <p className="text-[11px] text-muted-foreground">
+                  O Instagram Business ID é obtido automaticamente pela Graph API — nunca é digitado manualmente.
+                </p>
+              </div>
+
             </div>
             <DialogFooter>
               <Button variant="ghost" onClick={() => setCreateOpen(false)}>Cancelar</Button>
