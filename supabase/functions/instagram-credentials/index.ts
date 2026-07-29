@@ -339,18 +339,38 @@ Deno.serve(async (req) => {
           { status: 400, headers: { ...corsHeaders, "Content-Type": "application/json" } });
       }
 
-      const validation = await validateAccount(access_token, ig_business_id);
+      let validation = await validateAccount(access_token, ig_business_id);
+      let finalToken = access_token;
+      let finalIgId = ig_business_id;
+
+      // Auto-correção na conexão: busca o IG Business ID real da Página vinculada.
+      if (!validation.ok) {
+        const resolved = await resolveIgFromPage(supabase, project_id);
+        if (resolved.ig_id && resolved.page_token) {
+          const retry = await validateAccount(resolved.page_token, resolved.ig_id);
+          if (retry.ok) {
+            finalToken = resolved.page_token;
+            finalIgId = resolved.ig_id;
+            validation = {
+              ...retry,
+              message: `${retry.message}\n\nID corrigido automaticamente pela Página ${resolved.page_id} (IG ID ${resolved.ig_id}).`,
+            };
+          }
+        }
+      }
+
       const connection_status = connectionStatusFromValidation(validation);
       const { error: saveAttemptErr } = await supabase.from("instagram_credentials").update({
         display_name,
-        access_token,
-        ig_business_id,
+        access_token: finalToken,
+        ig_business_id: finalIgId,
         project_id,
         connection_status,
         last_validated_at: new Date().toISOString(),
         last_validation_status: validation.status,
         last_validation_detail: validation.message,
       }).eq("account", account);
+
       if (saveAttemptErr) {
         return new Response(JSON.stringify({ error: `Falha ao salvar tentativa: ${saveAttemptErr.message}` }),
           { status: 400, headers: { ...corsHeaders, "Content-Type": "application/json" } });
