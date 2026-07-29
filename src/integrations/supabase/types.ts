@@ -705,6 +705,59 @@ export type Database = {
           },
         ]
       }
+      project_schedule_settings: {
+        Row: {
+          created_at: string
+          id: string
+          last_scheduled_slot: string | null
+          next_available_slot: string | null
+          platform: string
+          posts_per_day: number
+          project_id: string
+          publication_times: Json
+          start_date: string | null
+          start_time: string | null
+          timezone: string
+          updated_at: string
+        }
+        Insert: {
+          created_at?: string
+          id?: string
+          last_scheduled_slot?: string | null
+          next_available_slot?: string | null
+          platform?: string
+          posts_per_day?: number
+          project_id: string
+          publication_times?: Json
+          start_date?: string | null
+          start_time?: string | null
+          timezone?: string
+          updated_at?: string
+        }
+        Update: {
+          created_at?: string
+          id?: string
+          last_scheduled_slot?: string | null
+          next_available_slot?: string | null
+          platform?: string
+          posts_per_day?: number
+          project_id?: string
+          publication_times?: Json
+          start_date?: string | null
+          start_time?: string | null
+          timezone?: string
+          updated_at?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "project_schedule_settings_project_id_fkey"
+            columns: ["project_id"]
+            isOneToOne: false
+            referencedRelation: "projects"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
       projects: {
         Row: {
           category: Database["public"]["Enums"]["project_category"]
