@@ -367,7 +367,7 @@ export async function renderComposition(input: CompositionInput): Promise<Compos
   const canvas = document.createElement("canvas");
   canvas.width = W;
   canvas.height = H;
-  const ctx = canvas.getContext("2d", { alpha: false, desynchronized: true } as any);
+  const ctx = canvas.getContext("2d", { alpha: false, desynchronized: true }) as CanvasRenderingContext2D | null;
   if (!ctx) throw new Error("Canvas 2D não disponível.");
 
   const scale = Math.min(W, H) / 1080;
