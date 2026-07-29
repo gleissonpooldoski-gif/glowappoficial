@@ -235,7 +235,7 @@ const drawText = (ctx: CanvasRenderingContext2D, t: CompText, W: number, H: numb
 const getSourceMeta = async (input: Input, videoTrack: InputVideoTrack, audioTrack: InputAudioTrack | null): Promise<SourceMeta> => {
   const [duration, stats, videoCodec, audioCodec] = await Promise.all([
     input.computeDuration(),
-    videoTrack.computePacketStats(180).catch(() => null),
+    videoTrack.computePacketStats(30).catch(() => null),
     videoTrack.getCodec().catch(() => null),
     audioTrack?.getCodec().catch(() => null) ?? Promise.resolve(null),
   ]);
@@ -296,7 +296,7 @@ const validateFinalMp4 = async (blob: Blob, source: SourceMeta) => {
     videoTrack.getCodec(),
     audioTrack?.getCodec() ?? Promise.resolve(null),
     outputInput.computeDuration(),
-    videoTrack.computePacketStats(180).catch(() => null),
+    videoTrack.computePacketStats(30).catch(() => null),
     audioTrack?.computeDuration().catch(() => null) ?? Promise.resolve(null),
   ]);
 
@@ -468,7 +468,7 @@ export async function renderComposition(input: CompositionInput): Promise<Compos
       codec: VIDEO_CODEC,
       bitrate: QUALITY_HIGH,
       frameRate: sourceMeta.fps,
-      keyFrameInterval: 2,
+      keyFrameInterval: 5,
       forceTranscode: true,
       allowRotationMetadata: false,
       processedWidth: W,
