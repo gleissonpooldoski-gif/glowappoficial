@@ -11,7 +11,7 @@ import { supabase } from "@/integrations/supabase/client";
 import { publishInstagram, friendlyError } from "@/lib/instagram";
 import { getYoutubeChannelForProject, type YoutubeCredential } from "@/lib/youtube";
 import { getFacebookAccountForProject, createFacebookPost, isFacebookAccountReady, type FacebookAccount } from "@/lib/facebook";
-import { findProjectSlots, getProjectSchedule, DEFAULT_PROJECT_TIMES, type ProjectScheduleSettings } from "@/lib/project-schedules";
+import { findProjectSlots, getProjectSchedule, refreshProjectSlotTracking, DEFAULT_PROJECT_TIMES, type ProjectScheduleSettings } from "@/lib/project-schedules";
 import { extractVideoFrames } from "@/lib/videoFrames";
 
 type VideoMeta = {
@@ -358,6 +358,10 @@ export default function InstagramBatchScheduleDialog({ open, onOpenChange, video
         allErrs.push(`${label}: legenda não gerada — ${e?.message ?? "erro"}`);
       }
       setDone(i + 1);
+    }
+
+    for (const pid of new Set(plan.map((p) => p.projectId).filter(Boolean) as string[])) {
+      void refreshProjectSlotTracking(pid);
     }
 
     setErrors(allErrs);
