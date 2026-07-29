@@ -12,6 +12,7 @@ import { supabase } from "@/integrations/supabase/client";
 import { InstagramAccount, publishInstagram, friendlyError, useIgAccountForProject, platformLabelFor } from "@/lib/instagram";
 import { uploadToYoutube, useYoutubeChannelForProject } from "@/lib/youtube";
 import { findNextSlot, ScheduleNetwork, scheduleAccountFor } from "@/lib/schedules";
+import { findNextProjectSlot, refreshProjectSlotTracking } from "@/lib/project-schedules";
 import { useActiveProject } from "@/context/ProjectContext";
 import { extractVideoFrames } from "@/lib/videoFrames";
 import { createFacebookPost, getFacebookAccountForProject, friendlyFacebookError, isFacebookAccountReady, type FacebookAccount } from "@/lib/facebook";
@@ -158,7 +159,7 @@ export default function InstagramPublishDialog({
     if (!open || mode !== "schedule" || scheduleMode !== "auto") return;
     void computeAutoSlot();
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [open, mode, scheduleMode, account, ytAccount]);
+  }, [open, mode, scheduleMode, account, ytAccount, activeProject?.id]);
 
   const computeAutoSlot = async () => {
     setSlotBusy(true);
@@ -166,7 +167,11 @@ export default function InstagramPublishDialog({
       // Cronograma é do PROJETO — usa a grade do Instagram do projeto ativo.
       // Se o projeto não tem IG, cai para o canal do YouTube.
       let slot: Date | null = null;
-      if (account) {
+      if (activeProject?.id) {
+        try { slot = await findNextProjectSlot(activeProject.id); } catch { /* ignore */ }
+      }
+      // Fallback legado (projeto sem configuração acessível)
+      if (!slot && account) {
         try { slot = await findNextSlot("instagram", account); } catch { /* ignore */ }
       }
       if (!slot && ytAccount) {
