@@ -188,8 +188,19 @@ export function RenderQueueProvider({ children }: { children: ReactNode }) {
     }
   }, [update]);
 
+  const pump = useCallback(() => {
+    while (runningRef.current < MAX_CONCURRENT && pendingRef.current.length > 0) {
+      const next = pendingRef.current.shift()!;
+      runningRef.current += 1;
+      void runJob(next.id, next.payload).finally(() => {
+        runningRef.current -= 1;
+        pump();
+      });
+    }
+  }, [runJob]);
+
   const enqueue = useCallback((payload: EnqueuePayload) => {
-    const id = `${payload.editId}-${Date.now()}`;
+    const id = `${payload.editId}-${Date.now()}-${Math.random().toString(36).slice(2, 7)}`;
     const job: RenderJob = {
       id,
       editId: payload.editId,
@@ -201,10 +212,11 @@ export function RenderQueueProvider({ children }: { children: ReactNode }) {
       startedAt: Date.now(),
     };
     setJobs((prev) => [...prev, job]);
-    // Fire and forget.
-    void runJob(id, payload);
+    pendingRef.current.push({ id, payload });
+    pump();
     return id;
-  }, [runJob]);
+  }, [pump]);
+
 
   const dismiss = useCallback((id: string) => {
     setJobs((prev) => prev.filter((j) => j.id !== id));
