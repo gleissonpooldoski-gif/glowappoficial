@@ -151,7 +151,61 @@ async function validateAccount(rawToken: string, rawIgId: string): Promise<Valid
   }
 }
 
+const NOT_ADMIN_MSG =
+  "O token informado não pertence a um usuário administrador de uma Página do Facebook. Reconecte utilizando o Meta Business Login.";
+
+type DiscoveredPage = { page_id: string; page_name: string; ig_business_id?: string; ig_username?: string };
+
+// Valida que o token é um User Access Token do Facebook capaz de listar /me/accounts
+// e devolve as Páginas administradas com o Instagram Profissional vinculado.
+async function fetchAdminPages(token: string): Promise<{ ok: boolean; error?: string; owner?: { id?: string; name?: string }; pages: DiscoveredPage[] }> {
+  if (!token || !isValidTokenFormat(token)) {
+    return { ok: false, error: "Token inválido ou formato incorreto. Remova espaços, quebras de linha e caracteres especiais.", pages: [] };
+  }
+  try {
+    const meRes = await fetch(`${FB_BASE}/me?fields=id,name&access_token=${encodeURIComponent(token)}`);
+    const me = await readMeta(meRes);
+    if (me.data?.error || !me.data?.id) {
+      return { ok: false, error: `${NOT_ADMIN_MSG} (${me.data?.error?.message ?? `HTTP ${me.status}`})`, pages: [] };
+    }
+    const pagesRes = await fetch(`${FB_BASE}/me/accounts?fields=id,name,instagram_business_account{id,username}&limit=100&access_token=${encodeURIComponent(token)}`);
+    const pages = await readMeta(pagesRes);
+    if (pages.data?.error || !Array.isArray(pages.data?.data)) {
+      return { ok: false, error: `${NOT_ADMIN_MSG} (${pages.data?.error?.message ?? `HTTP ${pages.status}`})`, pages: [] };
+    }
+    if (pages.data.data.length === 0) {
+      return { ok: false, error: NOT_ADMIN_MSG, pages: [] };
+    }
+    const list: DiscoveredPage[] = pages.data.data.map((p: any) => ({
+      page_id: String(p.id),
+      page_name: p.name ?? "",
+      ig_business_id: p.instagram_business_account?.id ? String(p.instagram_business_account.id) : undefined,
+      ig_username: p.instagram_business_account?.username ?? undefined,
+    }));
+    return { ok: true, owner: { id: me.data.id, name: me.data.name }, pages: list };
+  } catch (e: any) {
+    return { ok: false, error: e?.message ?? "Falha ao consultar a Graph API.", pages: [] };
+  }
+}
+
+// Confirma na Graph API que a Página escolhida realmente possui o IG Business informado.
+async function resolveIgIdForPage(token: string, pageId: string): Promise<{ ok: boolean; ig_business_id?: string; ig_username?: string; error?: string }> {
+  try {
+    const res = await fetch(`${FB_BASE}/${encodeURIComponent(pageId)}?fields=id,name,instagram_business_account{id,username}&access_token=${encodeURIComponent(token)}`);
+    const r = await readMeta(res);
+    if (r.data?.error) return { ok: false, error: r.data.error.message ?? `HTTP ${r.status}` };
+    const ig = r.data?.instagram_business_account;
+    if (!ig?.id) {
+      return { ok: false, error: "A Página selecionada não possui um Instagram Profissional (Business/Creator) vinculado. Vincule o Instagram à Página no Meta Business Suite e tente novamente." };
+    }
+    return { ok: true, ig_business_id: String(ig.id), ig_username: ig.username ?? undefined };
+  } catch (e: any) {
+    return { ok: false, error: e?.message ?? "Falha ao validar a Página." };
+  }
+}
+
 Deno.serve(async (req) => {
+
   if (req.method === "OPTIONS") return new Response("ok", { headers: corsHeaders });
 
   const supabase = createClient(
