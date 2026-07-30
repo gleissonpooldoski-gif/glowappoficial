@@ -716,6 +716,7 @@ export default function Editor() {
         projectId: edit.project_id,
         templateId: edit.template_id,
         name: jobName,
+        priority: true,
         replaceVideoId: reEditVideoId,
         composition: {
           videoUrl,

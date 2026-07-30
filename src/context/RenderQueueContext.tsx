@@ -1,7 +1,15 @@
-import { createContext, useCallback, useContext, useRef, useState, ReactNode } from "react";
+import { createContext, useCallback, useContext, useEffect, useMemo, useRef, useState, ReactNode } from "react";
 import { supabase } from "@/integrations/supabase/client";
 import { toast } from "sonner";
 import { renderComposition, type CompositionInput } from "@/lib/exportComposition";
+
+export type RenderPhase =
+  | "queued"
+  | "preparing"
+  | "rendering"
+  | "finalizing"
+  | "completed"
+  | "failed";
 
 export type RenderJob = {
   id: string; // local job id
@@ -9,10 +17,15 @@ export type RenderJob = {
   projectId: string;
   templateId: string | null;
   name: string;
-  phase: "queued" | "rendering" | "uploading" | "completed" | "failed";
+  phase: RenderPhase;
   progress: number; // 0-100
   error?: string | null;
-  startedAt: number;
+  priority: boolean;
+  createdAt: number;
+  startedAt: number | null;
+  finishedAt: number | null;
+  /** Estimativa de conclusão em ms (null enquanto não há amostra). */
+  etaMs: number | null;
 };
 
 export type EnqueuePayload = {
@@ -21,6 +34,8 @@ export type EnqueuePayload = {
   templateId: string | null;
   name: string;
   composition: CompositionInput;
+  /** Coloca o job no topo da fila (Exportar Agora). */
+  priority?: boolean;
   /** When set, updates this existing finished video row instead of inserting a new one. */
   replaceVideoId?: string | null;
   videoMeta?: {
@@ -33,32 +48,105 @@ export type EnqueuePayload = {
 
 type Ctx = {
   jobs: RenderJob[];
+  /** Concorrência efetiva calculada para o ambiente atual. */
+  concurrency: number;
+  /** Jobs renderizando neste momento. */
+  activeCount: number;
+  /** Jobs aguardando na fila. */
+  pendingCount: number;
+  /** Posição na fila (1-based) ou null se já iniciou/terminou. */
+  queuePosition: (id: string) => number | null;
   enqueue: (payload: EnqueuePayload) => string;
   dismiss: (id: string) => void;
 };
 
 const RenderQueueContext = createContext<Ctx | undefined>(undefined);
 
-/** Equilíbrio: paralelismo suficiente para não ficar ocioso durante upload/validação,
- *  sem saturar a CPU e travar a edição. */
-const MAX_CONCURRENT = Math.max(2, Math.min(3, Math.floor((navigator.hardwareConcurrency || 4) / 2)));
+/**
+ * Detecta a capacidade do ambiente (CPU lógica + memória do dispositivo) e
+ * define quantas renderizações podem correr em paralelo sem saturar a máquina.
+ * Máquina pequena -> 2, média -> 4, robusta -> 6+.
+ */
+function detectConcurrency(): number {
+  const nav = navigator as Navigator & { deviceMemory?: number };
+  const cpus = Math.max(1, nav.hardwareConcurrency || 4);
+  const memGb = nav.deviceMemory ?? 4; // Chrome expõe 0.25..8
+
+  // Cada render usa ~1 thread de encode + decode de vídeo: metade dos núcleos.
+  const byCpu = Math.floor(cpus / 2);
+  // ~1.5 GB por renderização simultânea, deixando margem para o editor.
+  const byMem = Math.floor(memGb / 1.5);
+
+  const capacity = Math.min(byCpu, byMem);
+  return Math.max(2, Math.min(8, capacity || 2));
+}
 
 export function RenderQueueProvider({ children }: { children: ReactNode }) {
   const [jobs, setJobs] = useState<RenderJob[]>([]);
   const jobsRef = useRef<RenderJob[]>([]);
   jobsRef.current = jobs;
 
+  const [concurrency] = useState(() => detectConcurrency());
+  const concurrencyRef = useRef(concurrency);
+  concurrencyRef.current = concurrency;
+
   const runningRef = useRef(0);
   const pendingRef = useRef<Array<{ id: string; payload: EnqueuePayload }>>([]);
+  /** Guarda contra processamento duplicado do mesmo job. */
+  const startedRef = useRef<Set<string>>(new Set());
+  /** Evita enfileirar a mesma edição duas vezes. */
+  const activeEditsRef = useRef<Set<string>>(new Set());
+  /** Amostras de duração para estimativa de tempo. */
+  const samplesRef = useRef<number[]>([]);
 
   const update = useCallback((id: string, patch: Partial<RenderJob>) => {
     setJobs((prev) => prev.map((j) => (j.id === id ? { ...j, ...patch } : j)));
   }, []);
 
+  const avgDuration = useCallback(() => {
+    const s = samplesRef.current;
+    if (!s.length) return null;
+    return s.reduce((a, b) => a + b, 0) / s.length;
+  }, []);
+
+  // Atualiza ETA das renderizações ativas periodicamente.
+  useEffect(() => {
+    const t = setInterval(() => {
+      setJobs((prev) => {
+        let changed = false;
+        const avg = samplesRef.current.length
+          ? samplesRef.current.reduce((a, b) => a + b, 0) / samplesRef.current.length
+          : null;
+        const next = prev.map((j) => {
+          if (j.phase === "completed" || j.phase === "failed") return j;
+          let eta: number | null = null;
+          if (j.startedAt && j.progress > 3) {
+            const elapsed = Date.now() - j.startedAt;
+            eta = Math.max(0, (elapsed / j.progress) * (100 - j.progress));
+          } else if (avg) {
+            eta = avg;
+          }
+          if (eta !== null && Math.abs((j.etaMs ?? -1) - eta) > 1000) {
+            changed = true;
+            return { ...j, etaMs: eta };
+          }
+          return j;
+        });
+        return changed ? next : prev;
+      });
+    }, 1000);
+    return () => clearInterval(t);
+  }, []);
 
   const runJob = useCallback(async (jobId: string, payload: EnqueuePayload) => {
+    if (startedRef.current.has(jobId)) return;
+    startedRef.current.add(jobId);
+
     const { editId, projectId, templateId, name, composition, videoMeta, replaceVideoId } = payload;
+    const startedAt = Date.now();
     try {
+      update(jobId, { phase: "preparing", progress: 1, startedAt });
+
       // Mark edit as processing right away so it shows up in UI.
       await (supabase as any).from("edits").update({ status: "processing" }).eq("id", editId);
 
@@ -76,7 +164,7 @@ export function RenderQueueProvider({ children }: { children: ReactNode }) {
         throw new Error("Exportação inválida: somente MP4 é permitido.");
       }
 
-      update(jobId, { phase: "uploading", progress: 96 });
+      update(jobId, { phase: "finalizing", progress: 96 });
 
       const stamp = Date.now();
       const base = (name?.trim() || videoMeta?.filename || "video-final")
@@ -167,11 +255,13 @@ export function RenderQueueProvider({ children }: { children: ReactNode }) {
         updated_at: new Date().toISOString(),
       }).eq("id", editId);
 
-      update(jobId, { phase: "completed", progress: 100 });
+      const elapsed = Date.now() - startedAt;
+      samplesRef.current = [...samplesRef.current.slice(-4), elapsed];
+
+      update(jobId, { phase: "completed", progress: 100, finishedAt: Date.now(), etaMs: 0 });
       toast.success(replaceVideoId
         ? `"${name}" atualizado em Vídeos Prontos.`
         : `"${name}" pronto! Enviado para Vídeos Prontos.`);
-
 
       // Auto-dismiss completed after a bit.
       setTimeout(() => {
@@ -180,26 +270,42 @@ export function RenderQueueProvider({ children }: { children: ReactNode }) {
     } catch (e: any) {
       console.error("[RenderQueue] job failed", e);
       const msg = e?.message ?? "Falha ao renderizar";
-      update(jobId, { phase: "failed", error: msg });
+      update(jobId, { phase: "failed", error: msg, finishedAt: Date.now(), etaMs: null });
       toast.error(`Falha ao renderizar "${name}": ${msg}`);
       try {
         await (supabase as any).from("edits").update({ status: "failed" }).eq("id", editId);
       } catch {}
+    } finally {
+      activeEditsRef.current.delete(editId);
     }
   }, [update]);
 
+  /** Worker desacoplado: assim que um job termina, o próximo entra imediatamente. */
   const pump = useCallback(() => {
-    while (runningRef.current < MAX_CONCURRENT && pendingRef.current.length > 0) {
+    while (runningRef.current < concurrencyRef.current && pendingRef.current.length > 0) {
       const next = pendingRef.current.shift()!;
       runningRef.current += 1;
       void runJob(next.id, next.payload).finally(() => {
         runningRef.current -= 1;
-        pump();
+        // libera a próxima vaga no próximo tick para não bloquear a UI
+        setTimeout(pump, 0);
       });
     }
   }, [runJob]);
 
   const enqueue = useCallback((payload: EnqueuePayload) => {
+    // Guarda contra processamento duplicado da mesma edição.
+    if (activeEditsRef.current.has(payload.editId)) {
+      const existing = jobsRef.current.find(
+        (j) => j.editId === payload.editId && j.phase !== "completed" && j.phase !== "failed",
+      );
+      if (existing) {
+        toast.info(`"${payload.name}" já está na fila de renderização.`);
+        return existing.id;
+      }
+    }
+    activeEditsRef.current.add(payload.editId);
+
     const id = `${payload.editId}-${Date.now()}-${Math.random().toString(36).slice(2, 7)}`;
     const job: RenderJob = {
       id,
@@ -209,23 +315,51 @@ export function RenderQueueProvider({ children }: { children: ReactNode }) {
       name: payload.name,
       phase: "queued",
       progress: 0,
-      startedAt: Date.now(),
+      priority: !!payload.priority,
+      createdAt: Date.now(),
+      startedAt: null,
+      finishedAt: null,
+      etaMs: avgDuration(),
     };
     setJobs((prev) => [...prev, job]);
-    pendingRef.current.push({ id, payload });
+
+    if (payload.priority) {
+      // Exportar Agora: vai para o topo, à frente dos jobs não prioritários.
+      const lastPriorityIdx = pendingRef.current.reduce(
+        (acc, p, i) => (p.payload.priority ? i : acc),
+        -1,
+      );
+      pendingRef.current.splice(lastPriorityIdx + 1, 0, { id, payload });
+    } else {
+      pendingRef.current.push({ id, payload });
+    }
+
     pump();
     return id;
-  }, [pump]);
-
+  }, [avgDuration, pump]);
 
   const dismiss = useCallback((id: string) => {
+    const removed = pendingRef.current.find((p) => p.id === id);
+    if (removed) activeEditsRef.current.delete(removed.payload.editId);
     pendingRef.current = pendingRef.current.filter((p) => p.id !== id);
     setJobs((prev) => prev.filter((j) => j.id !== id));
   }, []);
 
+  const queuePosition = useCallback((id: string) => {
+    const idx = pendingRef.current.findIndex((p) => p.id === id);
+    return idx === -1 ? null : idx + 1;
+  }, []);
+
+  const activeCount = useMemo(
+    () => jobs.filter((j) => j.phase === "preparing" || j.phase === "rendering" || j.phase === "finalizing").length,
+    [jobs],
+  );
+  const pendingCount = useMemo(() => jobs.filter((j) => j.phase === "queued").length, [jobs]);
 
   return (
-    <RenderQueueContext.Provider value={{ jobs, enqueue, dismiss }}>
+    <RenderQueueContext.Provider
+      value={{ jobs, concurrency, activeCount, pendingCount, queuePosition, enqueue, dismiss }}
+    >
       {children}
     </RenderQueueContext.Provider>
   );
