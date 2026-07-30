@@ -163,17 +163,75 @@ async function analyzeVideo(body: Body, frames: string[]): Promise<Analysis | nu
   return null;
 }
 
-/** Análise mínima derivada do OCR/arquivo quando não há visão disponível. */
-function textOnlyAnalysis(body: Body): Analysis {
+// ------------------------------------------------- análise heurística (sem IA)
+// Usada quando a etapa de visão não está disponível (ex.: gateway 402/timeout).
+// Extrai assunto, palavras-chave e nicho de tudo que o app já conhece do vídeo:
+// texto sobreposto (OCR do editor), nome do arquivo, template e linha editorial.
+
+const STOPWORDS = new Set([
+  "para", "com", "sobre", "uma", "esse", "essa", "isso", "aqui", "mais", "muito",
+  "todo", "toda", "pessoa", "pessoas", "video", "videos", "cena", "tela", "coisa",
+  "final", "mp4", "mov", "webm", "reels", "short", "shorts", "export", "render",
+  "copia", "copy", "novo", "nova", "the", "and", "que", "dos", "das", "por", "sem",
+  "sua", "seu", "pra", "quando", "porque", "depois", "antes", "onde", "como", "isto",
+]);
+
+const deaccent = (s: string) =>
+  String(s).toLowerCase().normalize("NFD").replace(/[\u0300-\u036f]/g, "");
+
+function keywordsFrom(text: string, limit = 14): string[] {
+  return Array.from(
+    new Set(
+      deaccent(text)
+        .split(/[^a-z0-9]+/)
+        .filter((w) => w.length > 3 && !STOPWORDS.has(w) && !BANNED_TAGS.has(w)),
+    ),
+  ).slice(0, limit);
+}
+
+/** Deduz o nicho a partir do banco interno de assuntos. */
+function inferNiche(hay: string): { nicho?: string; subnicho?: string } {
+  const flat = slug(hay);
+  const hits: string[] = [];
+  for (const entry of HASHTAG_BANK) {
+    const k = entry.keys.find((key) => flat.includes(slug(key)));
+    if (k) hits.push(k);
+  }
+  return { nicho: hits[0], subnicho: hits[1] };
+}
+
+/** Análise derivada de OCR/arquivo/contexto quando não há visão de IA disponível. */
+function heuristicAnalysis(body: Body): Analysis {
   const overlay = String(body.videoText ?? "").replace(/\s+/g, " ").trim();
+  const fileWords = String(body.filename ?? "")
+    .replace(/\.[a-z0-9]+$/i, "")
+    .replace(/[_\-.]+/g, " ")
+    .replace(/\b\d{4,}\b/g, " ")
+    .trim();
+
+  const hay = [overlay, fileWords, body.templateName, body.projectCategory, body.projectName]
+    .filter(Boolean).join(" ");
+  const { nicho, subnicho } = inferNiche(hay);
+
+  const kws = Array.from(new Set([
+    ...keywordsFrom(overlay, 12),
+    ...keywordsFrom(fileWords, 6),
+    ...keywordsFrom(String(body.projectCategory ?? ""), 4),
+  ])).slice(0, 15);
+
+  const assunto = overlay || (fileWords ? fileWords : "") || String(body.projectCategory ?? "");
+
   return {
-    tema: overlay || undefined,
-    assunto: overlay || undefined,
+    tema: assunto || undefined,
+    assunto: assunto || undefined,
     ocr: overlay ? [overlay] : [],
-    palavras_chave: overlay.split(/[\s,.;!?]+/).filter((w) => w.length > 4).slice(0, 10),
-    confianca: overlay ? 0.35 : 0.1,
+    nicho,
+    subnicho,
+    palavras_chave: kws,
+    confianca: overlay ? 0.4 : kws.length ? 0.25 : 0.1,
   };
 }
+
 
 // ---------------------------------------------------------------- ETAPA 2: copy
 
@@ -471,8 +529,11 @@ const FALLBACK_TITLES = [
 ];
 
 /** Fallback construído a partir da ANÁLISE (não do projeto). */
-function localFallback(body: Body, a: Analysis) {
-  const seed = Number.isFinite(body.variationSeed) ? Number(body.variationSeed) : Date.now();
+function localFallback(body: Body, a: Analysis, seedOverride?: number) {
+  const seed = Number.isFinite(seedOverride)
+    ? Number(seedOverride)
+    : Number.isFinite(body.variationSeed) ? Number(body.variationSeed) : Date.now();
+
   const overlay = arr(a.ocr)[0] ?? String(body.videoText ?? "").trim();
 
   const HOOKS = [
@@ -554,7 +615,49 @@ function localFallback(body: Body, a: Analysis) {
   };
 }
 
+/**
+ * Fallback INTELIGENTE: gera várias variações a partir da análise, aplica as
+ * mesmas validações de qualidade da IA (ancoragem no vídeo, clichês, coerência
+ * de hashtags) e devolve a melhor. Nunca entrega texto genérico se houver
+ * qualquer elemento concreto do vídeo disponível.
+ */
+function smartFallback(body: Body, a: Analysis) {
+  const base = Number.isFinite(body.variationSeed) ? Number(body.variationSeed) : Date.now();
+  const terms = anchorTerms(a);
+
+  let best: ReturnType<typeof localFallback> | null = null;
+  let bestScore = -Infinity;
+  let bestMeta = { attempt: 0, generic: true, coherent: false, anchors: 0 };
+
+  for (let i = 0; i < 4; i++) {
+    const cand = localFallback(body, a, base + i * 613);
+    const tags = cand.hashtags.alcance.concat(cand.hashtags.nicho, cand.hashtags.tema);
+    const flat = slug(`${cand.caption} ${tags.join(" ")}`);
+    const anchors = terms.filter((t) => flat.includes(t)).length;
+    const generic = isGeneric(cand.caption, a);
+    const coherent = hashtagsCoherent(cand.hashtags, a);
+
+    const score =
+      anchors * 10 +
+      tags.length +
+      (generic ? -40 : 0) +
+      (coherent ? 15 : 0) +
+      (cand.caption.length > 90 ? 5 : 0);
+
+    if (score > bestScore) {
+      best = cand;
+      bestScore = score;
+      bestMeta = { attempt: i, generic, coherent, anchors };
+    }
+    if (!generic && coherent && anchors >= 1) break;
+  }
+
+  return { ...(best as ReturnType<typeof localFallback>), quality: { ...bestMeta, score: bestScore } };
+}
+
 // ---------------------------------------------------------------- handler
+
+
 
 Deno.serve(async (req) => {
   if (req.method === "OPTIONS") return new Response("ok", { headers: corsHeaders });
@@ -573,7 +676,14 @@ Deno.serve(async (req) => {
 
     // ETAPA 1 — assistir ao vídeo
     const vision = await analyzeVideo(body, frames);
-    const analysis: Analysis = vision ?? textOnlyAnalysis(body);
+    const analysis: Analysis = vision ?? heuristicAnalysis(body);
+    console.info(JSON.stringify({
+      module: "generate-caption", event: "analysis_ready",
+      vision: Boolean(vision), source: vision ? "ai_vision" : "heuristic",
+      frames: frames.length, nicho: analysis.nicho ?? null,
+      keywords: arr(analysis.palavras_chave).slice(0, 10),
+      confianca: analysis.confianca ?? null,
+    }));
 
     // ETAPA 2 — escrever a partir da análise, com rejeição de genérico
     for (let attempt = 0; attempt < 2; attempt++) {
@@ -599,8 +709,16 @@ Deno.serve(async (req) => {
         if (attempt === 0) continue;
       }
 
-      const fbLocal = localFallback(body, analysis);
+      const fbLocal = smartFallback(body, analysis);
       const needsTags = (hashtags.alcance.length + hashtags.nicho.length + hashtags.tema.length) < 16;
+
+      console.info(JSON.stringify({
+        module: "generate-caption", event: "caption_delivered",
+        version: "ai", model: res.model, attempt, generic, coherent,
+        vision: Boolean(vision), chars: caption.length,
+        tags: hashtags.alcance.length + hashtags.nicho.length + hashtags.tema.length,
+        ms: Date.now() - startedAt,
+      }));
 
       return json(200, {
         title: String(res.parsed.title ?? "").trim() || fbLocal.title,
@@ -625,10 +743,14 @@ Deno.serve(async (req) => {
       });
     }
 
-    const fb = localFallback(body, analysis);
+    const fb = smartFallback(body, analysis);
     console.warn(JSON.stringify({
       module: "generate-caption", event: "local_fallback_used",
-      vision: Boolean(vision), frames: frames.length, ms: Date.now() - startedAt,
+      version: "fallback_inteligente",
+      reason: vision ? "copy_stage_unavailable" : "vision_and_copy_unavailable",
+      analysis_source: vision ? "ai_vision" : "heuristic",
+      quality: fb.quality, nicho: analysis.nicho ?? null,
+      frames: frames.length, ms: Date.now() - startedAt,
     }));
     return json(200, {
       ...fb,
@@ -637,16 +759,18 @@ Deno.serve(async (req) => {
       analysisJson: analysis,
       source: "fallback",
       vision: Boolean(vision),
-      validated: false,
+      validated: !fb.quality.generic && fb.quality.coherent,
       ms: Date.now() - startedAt,
     });
+
   } catch (e) {
     console.error(JSON.stringify({
       module: "generate-caption", event: "unexpected_error",
       error: String((e as Error)?.message ?? e),
     }));
-    const fb = localFallback(body, textOnlyAnalysis(body));
+    const fb = smartFallback(body, heuristicAnalysis(body));
     return json(200, { ...fb, source: "fallback", validated: false });
+
   }
 });
 
