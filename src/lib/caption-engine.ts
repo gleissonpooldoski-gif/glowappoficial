@@ -159,6 +159,7 @@ export async function generateVideoContent(input: GenerateInput): Promise<Genera
     if (error) throw error;
 
 
+    const title = String((data as any)?.title ?? "").trim();
     const caption = String((data as any)?.caption ?? "").trim();
     const cta = String((data as any)?.cta ?? "").trim();
     const groupsRaw = (data as any)?.hashtags;
@@ -173,17 +174,21 @@ export async function generateVideoContent(input: GenerateInput): Promise<Genera
 
     if (!caption) return clientFallback(input);
 
-    const body = cta && !caption.toLowerCase().includes(cta.toLowerCase().slice(0, 18))
+    const withCta = cta && !caption.toLowerCase().includes(cta.toLowerCase().slice(0, 18))
       ? `${caption}\n\n${cta}`
       : caption;
+    const head = title && !caption.toLowerCase().startsWith(title.toLowerCase().slice(0, 16))
+      ? `${title}\n\n${withCta}`
+      : withCta;
 
     return {
+      title,
       caption,
       cta,
       hashtags,
       hashtagsText: hashtags.join(" "),
       groups,
-      captionFull: [body, hashtags.join(" ")].filter(Boolean).join("\n\n"),
+      captionFull: [head, hashtags.join(" ")].filter(Boolean).join("\n\n"),
       source: ((data as any)?.source === "fallback" ? "fallback" : "ai"),
       analysis: String((data as any)?.analysis ?? "") || undefined,
     };
