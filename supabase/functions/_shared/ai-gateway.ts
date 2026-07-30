@@ -108,23 +108,35 @@ export async function callAi(opts: CallOpts): Promise<string> {
     if (!res.ok) {
       const detail = (await res.text().catch(() => "")).slice(0, 500);
       const err = mapGatewayStatus(res.status, detail);
+      let reason = "";
+      try { reason = JSON.parse(detail)?.message ?? JSON.parse(detail)?.title ?? ""; } catch { /* texto puro */ }
       console.error(JSON.stringify({
-        module, event: "ai_gateway_error", gateway_status: res.status,
-        code: err.code, detail, ms: Date.now() - started, ...context,
+        module, event: "ai_gateway_error", model, gateway_status: res.status,
+        code: err.code, reason: reason || detail.slice(0, 160), detail,
+        request_id: res.headers.get("x-lovable-aig-log-id") ?? null,
+        ms: Date.now() - started, ...context,
       }));
       throw err;
     }
 
     const data = await res.json();
     const content = data?.choices?.[0]?.message?.content;
+    const usage = data?.usage ?? {};
     console.info(JSON.stringify({
       module, event: "ai_gateway_ok", model, ms: Date.now() - started,
-      chars: typeof content === "string" ? content.length : 0, ...context,
+      prompt_tokens: usage?.prompt_tokens ?? null,
+      completion_tokens: usage?.completion_tokens ?? null,
+      total_tokens: usage?.total_tokens ?? null,
+      finish_reason: data?.choices?.[0]?.finish_reason ?? null,
+      chars: typeof content === "string" ? content.length : 0,
+      preview: typeof content === "string" ? content.slice(0, 400) : null,
+      ...context,
     }));
     if (typeof content !== "string" || !content.trim()) {
       throw new AiGatewayError(502, "AI_EMPTY_RESPONSE", "A IA retornou uma resposta vazia. Tente novamente.");
     }
     return content;
+
   } catch (e) {
     if (e instanceof AiGatewayError) throw e;
     if ((e as Error)?.name === "AbortError") {
