@@ -14,7 +14,7 @@ import { uploadToYoutube, useYoutubeChannelForProject } from "@/lib/youtube";
 
 import { findNextProjectSlot, refreshProjectSlotTracking } from "@/lib/project-schedules";
 import { useActiveProject } from "@/context/ProjectContext";
-import { extractVideoFrames } from "@/lib/videoFrames";
+import { generateVideoContent } from "@/lib/caption-engine";
 import { createFacebookPost, getFacebookAccountForProject, friendlyFacebookError, isFacebookAccountReady, type FacebookAccount } from "@/lib/facebook";
 import { describeEdgeError } from "@/lib/edge-errors";
 
