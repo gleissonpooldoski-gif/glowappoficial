@@ -615,7 +615,49 @@ function localFallback(body: Body, a: Analysis, seedOverride?: number) {
   };
 }
 
+/**
+ * Fallback INTELIGENTE: gera várias variações a partir da análise, aplica as
+ * mesmas validações de qualidade da IA (ancoragem no vídeo, clichês, coerência
+ * de hashtags) e devolve a melhor. Nunca entrega texto genérico se houver
+ * qualquer elemento concreto do vídeo disponível.
+ */
+function smartFallback(body: Body, a: Analysis) {
+  const base = Number.isFinite(body.variationSeed) ? Number(body.variationSeed) : Date.now();
+  const terms = anchorTerms(a);
+
+  let best: ReturnType<typeof localFallback> | null = null;
+  let bestScore = -Infinity;
+  let bestMeta = { attempt: 0, generic: true, coherent: false, anchors: 0 };
+
+  for (let i = 0; i < 4; i++) {
+    const cand = localFallback(body, a, base + i * 613);
+    const tags = cand.hashtags.alcance.concat(cand.hashtags.nicho, cand.hashtags.tema);
+    const flat = slug(`${cand.caption} ${tags.join(" ")}`);
+    const anchors = terms.filter((t) => flat.includes(t)).length;
+    const generic = isGeneric(cand.caption, a);
+    const coherent = hashtagsCoherent(cand.hashtags, a);
+
+    const score =
+      anchors * 10 +
+      tags.length +
+      (generic ? -40 : 0) +
+      (coherent ? 15 : 0) +
+      (cand.caption.length > 90 ? 5 : 0);
+
+    if (score > bestScore) {
+      best = cand;
+      bestScore = score;
+      bestMeta = { attempt: i, generic, coherent, anchors };
+    }
+    if (!generic && coherent && anchors >= 1) break;
+  }
+
+  return { ...(best as ReturnType<typeof localFallback>), quality: { ...bestMeta, score: bestScore } };
+}
+
 // ---------------------------------------------------------------- handler
+
+
 
 Deno.serve(async (req) => {
   if (req.method === "OPTIONS") return new Response("ok", { headers: corsHeaders });
