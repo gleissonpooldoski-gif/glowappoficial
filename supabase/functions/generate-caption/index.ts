@@ -96,10 +96,30 @@ function framesOf(body: Body): string[] {
 const VISION_SYSTEM = `Você é um analista de vídeo. Sua tarefa NÃO é escrever legenda: é ASSISTIR e DESCREVER com precisão.
 
 Você recebe frames em ordem cronológica de um vídeo curto (Reels/Shorts/TikTok).
-Descreva apenas o que é possível observar. Nunca invente marcas, nomes, preços, títulos de filmes, falas ou lugares que não estejam visíveis ou escritos na tela.
 
-Identifique também o NICHO do vídeo a partir do conteúdo observado (exemplos possíveis, mas não limitados a: curiosidades, crimes, acontecimentos, favela/comunidade, notícias, humor, memes, filmes, séries, promoções, marketplaces, maquiagem, moda, tecnologia, fitness, maternidade, pets, decoração, cozinha, automóveis, educação, saúde, finanças, esportes, astronomia, ou qualquer outro).
-Não use listas fixas: nomeie o nicho que melhor descreve o conteúdo, mesmo que seja incomum.
+# BLOCO DE LIMPEZA (PRÉ-PROCESSAMENTO — OBRIGATÓRIO ANTES DE ANALISAR)
+IGNORE COMPLETAMENTE tudo que não faz parte do conteúdo real do vídeo:
+marca d'água, nome da página, @usuários, usernames, hashtags, legenda da publicação,
+descrição do post, comentários, avisos da plataforma, botões da interface, ícones,
+contador de curtidas, contador de comentários, horário, data, números aleatórios,
+códigos, links, QR Codes, texto parcialmente reconhecido, palavras cortadas,
+frases incompletas, caracteres sem sentido, propagandas, textos fixos da página,
+logotipos e elementos repetidos.
+
+OCR: use somente frases completas e claramente relacionadas ao conteúdo do vídeo.
+Descarte palavras quebradas, textos ilegíveis, caracteres aleatórios, hashtags,
+nomes de páginas e qualquer trecho que pareça parte da interface do aplicativo.
+Se nada sobrar após a limpeza, devolva "ocr": [].
+
+Descreva apenas o que é possível observar. Nunca invente marcas, nomes, preços, títulos de filmes, falas ou lugares que não estejam visíveis na cena.
+
+# NICHO
+O nicho deve representar o assunto principal do vídeo. Exemplos: Tecnologia, Curiosidades,
+Humor, Futebol, Automóveis, Animais, Receitas, Gastronomia, Educação, Ciência, Natureza,
+Negócios, Empreendedorismo, Fitness, Saúde, Moda, Beleza, Viagem, Filmes, Séries, Música,
+Games, Finanças, Marketing, DIY, Construção, Relacionamentos, Maternidade, Agronegócio.
+NUNCA use como nicho: nome da página, hashtags, palavras do OCR, marca d'água ou texto da publicação.
+Se não for possível identificar o nicho com confiança, use "Geral".
 
 Responda SOMENTE JSON válido:
 {
@@ -112,15 +132,38 @@ Responda SOMENTE JSON válido:
  "ambiente": "onde se passa",
  "acoes": "ação principal do início ao fim",
  "emocoes": "emoção predominante",
- "ocr": ["textos lidos na tela, literalmente"],
+ "ocr": ["apenas frases completas e limpas lidas na cena"],
  "cenas": ["descrição curta de cada frame na ordem"],
  "narrativa": "a história/arco do vídeo em 1-2 frases",
- "nicho": "nicho identificado a partir do conteúdo",
+ "nicho": "nicho identificado a partir do conteúdo visual",
  "subnicho": "recorte mais específico do nicho",
- "palavras_chave": ["8 a 15 termos concretos extraídos do vídeo"],
+ "palavras_chave": ["8 a 15 termos concretos do conteúdo visual"],
  "confianca": 0.0
 }
+Sem explicações, sem comentários, sem hashtags, sem marca d'água, sem legenda da publicação.
 "confianca" é de 0 a 1: quão claro está o conteúdo nos frames.`;
+
+/** Remove ruído de interface/OCR inválido das strings lidas na tela. */
+const UI_NOISE = /(curtidas?|likes?|coment[áa]rios?|compartilh|seguir|follow|inscreva|assista|link na bio|arraste|deslize|ver mais|swipe|subscribe|shorts?|reels?|tiktok|instagram|youtube|facebook|kwai)/i;
+
+function cleanOcr(list: unknown): string[] {
+  return arr(list)
+    .map((t) => String(t).replace(/\s+/g, " ").trim())
+    .filter((t) => {
+      if (t.length < 8) return false;                    // fragmentos
+      if (/^[@#]/.test(t)) return false;                 // usuário / hashtag
+      if (/https?:\/\/|www\.|\.com|\.br\b/i.test(t)) return false; // links
+      if (/^[\d\s.,:;%/-]+$/.test(t)) return false;      // números/horas/datas
+      if (UI_NOISE.test(t)) return false;                // interface/plataforma
+      if (!/[aeiouáéíóúâêôãõ]/i.test(t)) return false;   // caracteres sem sentido
+      const words = t.split(" ").filter(Boolean);
+      if (words.length < 2) return false;                // palavra solta/cortada
+      return true;
+    })
+    .filter((t, i, a) => a.findIndex((o) => deaccent(o) === deaccent(t)) === i)
+    .slice(0, 12);
+}
+
 
 function visionUserParts(body: Body, frames: string[]) {
   const hints = [
@@ -152,7 +195,12 @@ async function analyzeVideo(body: Body, frames: string[]): Promise<Analysis | nu
         context: { stage: "vision", model, frames: frames.length },
       });
       const parsed = parseModelJson<Analysis>(raw);
-      if (parsed && (parsed.assunto || parsed.tema || parsed.narrativa)) return parsed;
+      if (parsed && (parsed.assunto || parsed.tema || parsed.narrativa)) {
+        (parsed as any).ocr = cleanOcr((parsed as any).ocr);
+        const n = String((parsed as any).nicho ?? "").trim();
+        if (!n || /^[@#]/.test(n)) (parsed as any).nicho = "geral";
+        return parsed;
+      }
     } catch (e) {
       console.warn(JSON.stringify({
         module: "generate-caption", event: "vision_failed", model,
