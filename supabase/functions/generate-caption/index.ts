@@ -163,17 +163,75 @@ async function analyzeVideo(body: Body, frames: string[]): Promise<Analysis | nu
   return null;
 }
 
-/** Análise mínima derivada do OCR/arquivo quando não há visão disponível. */
-function textOnlyAnalysis(body: Body): Analysis {
+// ------------------------------------------------- análise heurística (sem IA)
+// Usada quando a etapa de visão não está disponível (ex.: gateway 402/timeout).
+// Extrai assunto, palavras-chave e nicho de tudo que o app já conhece do vídeo:
+// texto sobreposto (OCR do editor), nome do arquivo, template e linha editorial.
+
+const STOPWORDS = new Set([
+  "para", "com", "sobre", "uma", "esse", "essa", "isso", "aqui", "mais", "muito",
+  "todo", "toda", "pessoa", "pessoas", "video", "videos", "cena", "tela", "coisa",
+  "final", "mp4", "mov", "webm", "reels", "short", "shorts", "export", "render",
+  "copia", "copy", "novo", "nova", "the", "and", "que", "dos", "das", "por", "sem",
+  "sua", "seu", "pra", "quando", "porque", "depois", "antes", "onde", "como", "isto",
+]);
+
+const deaccent = (s: string) =>
+  String(s).toLowerCase().normalize("NFD").replace(/[\u0300-\u036f]/g, "");
+
+function keywordsFrom(text: string, limit = 14): string[] {
+  return Array.from(
+    new Set(
+      deaccent(text)
+        .split(/[^a-z0-9]+/)
+        .filter((w) => w.length > 3 && !STOPWORDS.has(w) && !BANNED_TAGS.has(w)),
+    ),
+  ).slice(0, limit);
+}
+
+/** Deduz o nicho a partir do banco interno de assuntos. */
+function inferNiche(hay: string): { nicho?: string; subnicho?: string } {
+  const flat = slug(hay);
+  const hits: string[] = [];
+  for (const entry of HASHTAG_BANK) {
+    const k = entry.keys.find((key) => flat.includes(slug(key)));
+    if (k) hits.push(k);
+  }
+  return { nicho: hits[0], subnicho: hits[1] };
+}
+
+/** Análise derivada de OCR/arquivo/contexto quando não há visão de IA disponível. */
+function heuristicAnalysis(body: Body): Analysis {
   const overlay = String(body.videoText ?? "").replace(/\s+/g, " ").trim();
+  const fileWords = String(body.filename ?? "")
+    .replace(/\.[a-z0-9]+$/i, "")
+    .replace(/[_\-.]+/g, " ")
+    .replace(/\b\d{4,}\b/g, " ")
+    .trim();
+
+  const hay = [overlay, fileWords, body.templateName, body.projectCategory, body.projectName]
+    .filter(Boolean).join(" ");
+  const { nicho, subnicho } = inferNiche(hay);
+
+  const kws = Array.from(new Set([
+    ...keywordsFrom(overlay, 12),
+    ...keywordsFrom(fileWords, 6),
+    ...keywordsFrom(String(body.projectCategory ?? ""), 4),
+  ])).slice(0, 15);
+
+  const assunto = overlay || (fileWords ? fileWords : "") || String(body.projectCategory ?? "");
+
   return {
-    tema: overlay || undefined,
-    assunto: overlay || undefined,
+    tema: assunto || undefined,
+    assunto: assunto || undefined,
     ocr: overlay ? [overlay] : [],
-    palavras_chave: overlay.split(/[\s,.;!?]+/).filter((w) => w.length > 4).slice(0, 10),
-    confianca: overlay ? 0.35 : 0.1,
+    nicho,
+    subnicho,
+    palavras_chave: kws,
+    confianca: overlay ? 0.4 : kws.length ? 0.25 : 0.1,
   };
 }
+
 
 // ---------------------------------------------------------------- ETAPA 2: copy
 
