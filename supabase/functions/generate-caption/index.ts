@@ -529,8 +529,11 @@ const FALLBACK_TITLES = [
 ];
 
 /** Fallback construído a partir da ANÁLISE (não do projeto). */
-function localFallback(body: Body, a: Analysis) {
-  const seed = Number.isFinite(body.variationSeed) ? Number(body.variationSeed) : Date.now();
+function localFallback(body: Body, a: Analysis, seedOverride?: number) {
+  const seed = Number.isFinite(seedOverride)
+    ? Number(seedOverride)
+    : Number.isFinite(body.variationSeed) ? Number(body.variationSeed) : Date.now();
+
   const overlay = arr(a.ocr)[0] ?? String(body.videoText ?? "").trim();
 
   const HOOKS = [
