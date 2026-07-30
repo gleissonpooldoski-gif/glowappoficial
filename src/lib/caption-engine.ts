@@ -64,21 +64,38 @@ async function resolveVideoUrl(input: GenerateInput): Promise<string | null> {
   }
 }
 
-/** Últimas legendas usadas — evita que a IA repita estruturas. */
-async function loadHistory(): Promise<string[]> {
+/** Últimas legendas/hashtags usadas — evita repetição de estrutura e de tags. */
+async function loadHistory(): Promise<{ captions: string[]; hashtags: string[] }> {
+  let rows: any[] = [];
   try {
     const { data } = await supabase
       .from("instagram_posts")
-      .select("caption")
+      .select("caption, hashtags")
       .order("created_at", { ascending: false })
-      .limit(8);
-    return (data ?? [])
-      .map((r: any) => String(r?.caption ?? "").split("\n")[0].trim())
-      .filter((c: string) => c.length > 10);
+      .limit(12);
+    rows = data ?? [];
   } catch {
-    return [];
+    rows = [];
   }
+
+
+  const captions = rows
+    .map((r: any) => String(r?.caption ?? "").split("\n")[0].trim())
+    .filter((c: string) => c.length > 10)
+    .slice(0, 8);
+
+  const hashtags = Array.from(
+    new Set(
+      rows
+        .flatMap((r: any) => String(r?.hashtags ?? "").split(/\s+/))
+        .map((t: string) => t.trim())
+        .filter((t: string) => t.startsWith("#") && t.length > 2),
+    ),
+  ).slice(0, 40);
+
+  return { captions, hashtags };
 }
+
 
 /** Fallback local no cliente — só usado se a Edge Function estiver totalmente fora. */
 function clientFallback(input: GenerateInput): GeneratedContent {
@@ -117,7 +134,7 @@ export async function generateVideoContent(input: GenerateInput): Promise<Genera
   let frames: string[] = [];
   try {
     const url = await resolveVideoUrl(input);
-    if (url) frames = await extractVideoFrames(url, input.frameCount ?? 4).catch(() => []);
+    if (url) frames = await extractVideoFrames(url, input.frameCount ?? 6).catch(() => []);
   } catch { /* segue sem frames */ }
 
   const history = await loadHistory();
@@ -132,10 +149,13 @@ export async function generateVideoContent(input: GenerateInput): Promise<Genera
         videoText: input.videoText ?? null,
         style: input.style ?? null,
         frames,
-        history,
+        history: history.captions,
+        recentHashtags: history.hashtags,
+        variationSeed: Math.floor(Math.random() * 1e6),
       },
     });
     if (error) throw error;
+
 
     const caption = String((data as any)?.caption ?? "").trim();
     const cta = String((data as any)?.cta ?? "").trim();
