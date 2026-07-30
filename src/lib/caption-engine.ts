@@ -8,12 +8,13 @@ import { extractVideoFrames } from "@/lib/videoFrames";
 export type HashtagGroups = { alcance: string[]; nicho: string[]; tema: string[] };
 
 export type GeneratedContent = {
+  title: string;          // título curto e chamativo
   caption: string;        // legenda (sem hashtags)
   cta: string;            // chamada para ação
   hashtags: string[];     // lista plana, já com "#"
   hashtagsText: string;   // hashtags separadas por espaço
   groups: HashtagGroups;
-  captionFull: string;    // legenda + CTA + hashtags (pronto para publicar)
+  captionFull: string;    // título + legenda + CTA + hashtags (pronto para publicar)
   source: "ai" | "fallback";
   analysis?: string;
 };
