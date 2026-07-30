@@ -101,30 +101,31 @@ async function loadHistory(): Promise<{ captions: string[]; hashtags: string[] }
 /** Fallback local no cliente — só usado se a Edge Function estiver totalmente fora. */
 function clientFallback(input: GenerateInput): GeneratedContent {
   const cat = (input.projectCategory ?? "").trim();
-  const cta = "Comenta aí o que você achou e salva pra rever depois.";
-  const caption = [
-    input.videoText?.trim() || "Vale assistir até o final pra entender esse detalhe",
-    cta,
-  ].join(". ").replace(/\s+/g, " ");
+  const title = "Repara no detalhe que aparece no fim";
+  const cta = "Conta aqui nos comentários o que você achou.";
+  const caption = (input.videoText?.trim() ||
+    "Tem um detalhe nesse vídeo que só faz sentido quando você assiste até o fim").replace(/\s+/g, " ");
   const slug = (s: string) =>
     s.toLowerCase().normalize("NFD").replace(/[\u0300-\u036f]/g, "").replace(/[^a-z0-9]/g, "");
-  const nicho = cat.split(/[\s,/&-]+/).map(slug).filter((w) => w.length > 2).slice(0, 4);
+  const nicho = cat.split(/[\s,/&-]+/).map(slug).filter((w) => w.length > 2).slice(0, 6);
   const groups: HashtagGroups = {
-    alcance: ["#reels", "#viral", "#paravoce"],
+    alcance: [],
     nicho: nicho.map((t) => `#${t}`),
     tema: [],
   };
   const hashtags = flattenGroups(groups);
   return {
+    title,
     caption,
     cta,
     hashtags,
     hashtagsText: hashtags.join(" "),
     groups,
-    captionFull: [caption, hashtags.join(" ")].filter(Boolean).join("\n\n"),
+    captionFull: [title, caption, cta, hashtags.join(" ")].filter(Boolean).join("\n\n"),
     source: "fallback",
   };
 }
+
 
 /**
  * Geração automática única para TODOS os fluxos.
