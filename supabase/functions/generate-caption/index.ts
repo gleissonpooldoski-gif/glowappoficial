@@ -486,13 +486,22 @@ function localFallback(body: Body, a: Analysis) {
   const hook = pickOne(HOOKS, seed >> 3);
 
   const subject = String(a.assunto ?? a.tema ?? a.narrativa ?? "").trim();
+  const seen = new Set<string>();
+  const uniq = (s: string | null) => {
+    if (!s) return null;
+    const k = slug(s);
+    if (!k || seen.has(k)) return null;
+    seen.add(k);
+    return s;
+  };
   const contextParts = [
-    subject ? subject.replace(/[.!?]+$/, "") + "." : null,
-    a.acoes ? String(a.acoes).replace(/[.!?]+$/, "").slice(0, 140) + "." : null,
-    a.emocoes ? `A reação diz tudo: ${String(a.emocoes).toLowerCase()}.` : null,
-    overlay ? `Na tela: "${overlay.slice(0, 80)}".` : null,
-    a.contexto ? String(a.contexto).replace(/[.!?]+$/, "").slice(0, 140) + "." : null,
+    uniq(subject ? subject.replace(/[.!?]+$/, "") + "." : null),
+    uniq(a.acoes ? String(a.acoes).replace(/[.!?]+$/, "").slice(0, 140) + "." : null),
+    uniq(a.contexto ? String(a.contexto).replace(/[.!?]+$/, "").slice(0, 140) + "." : null),
+    uniq(a.emocoes ? `A reação diz tudo: ${String(a.emocoes).toLowerCase()}.` : null),
+    uniq(overlay ? `Na tela: "${overlay.slice(0, 80)}".` : null),
   ].filter(Boolean) as string[];
+
 
   const context = (contextParts.length
     ? contextParts.slice(0, 3).join(" ")
