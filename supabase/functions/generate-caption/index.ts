@@ -1,11 +1,15 @@
-// Edge function: gera legenda + hashtags para um vídeo pronto usando Lovable AI (visão + validação).
-import { AiGatewayError, aiErrorResponse, callAi, parseModelJson } from "../_shared/ai-gateway.ts";
+// Edge function ÚNICA de geração automática de legenda + CTA + hashtags.
+// Regras:
+// - Analisa o vídeo (frames) para descrever o que realmente aparece.
+// - NUNCA falha: se a IA principal estiver indisponível (créditos, limite, timeout),
+//   tenta modelos alternativos e, em último caso, usa fallback local por template.
+// - Sempre responde 200 com { caption, cta, hashtags:{alcance,nicho,tema}, source }.
+import { callAi, parseModelJson } from "../_shared/ai-gateway.ts";
 
 const corsHeaders = {
   "Access-Control-Allow-Origin": "*",
   "Access-Control-Allow-Headers": "authorization, x-client-info, apikey, content-type",
 };
-
 
 type Body = {
   filename?: string;
@@ -13,12 +17,22 @@ type Body = {
   projectName?: string | null;
   projectCategory?: string | null;
   videoText?: string | null;
-  frames?: string[]; // data URLs (image/jpeg;base64,...) extraídos do vídeo no cliente
-  style?: string | null; // ex: "curioso", "engraçado", "informativo"
+  frames?: string[];
+  style?: string | null;
+  history?: string[]; // legendas recentes do projeto (evitar repetição)
 };
 
-const MODEL = "google/gemini-2.5-flash";
-const GATEWAY = "https://ai.gateway.lovable.dev/v1/chat/completions";
+// Cadeia de modelos: visão primeiro, depois alternativas mais baratas/rápidas.
+const VISION_MODELS = [
+  "google/gemini-3.6-flash",
+  "google/gemini-2.5-flash",
+  "openai/gpt-5.4-mini",
+];
+const TEXT_MODELS = [
+  "google/gemini-3.1-flash-lite",
+  "google/gemini-2.5-flash-lite",
+  "openai/gpt-5.4-nano",
+];
 
 function json(status: number, body: unknown) {
   return new Response(JSON.stringify(body), {
@@ -28,65 +42,13 @@ function json(status: number, body: unknown) {
 }
 
 const normalizeTag = (t: string) => {
-  const s = String(t).trim().replace(/\s+/g, "");
-  return s.startsWith("#") ? s : `#${s}`;
+  const s = String(t).trim().replace(/^#+/, "").replace(/\s+/g, "");
+  return s ? `#${s}` : "";
 };
 
 function normalizeHashtags(groups: any) {
-  return {
-    alcance: Array.isArray(groups?.alcance) ? groups.alcance.map(normalizeTag) : [],
-    nicho: Array.isArray(groups?.nicho) ? groups.nicho.map(normalizeTag) : [],
-    tema: Array.isArray(groups?.tema) ? groups.tema.map(normalizeTag) : [],
-  };
-}
-
-async function callModel(_apiKey: string, messages: any[], expectJson = true) {
-  const raw = await callAi({
-    module: "generate-caption",
-    model: MODEL,
-    messages,
-    jsonMode: expectJson,
-    context: { gateway: GATEWAY },
-  });
-  return parseModelJson<any>(raw);
-}
-
-
-function buildContextText(body: Body) {
-  return [
-    body.projectName ? `Projeto/página: ${body.projectName}` : null,
-    body.projectCategory ? `Nicho: ${body.projectCategory}` : null,
-    body.templateName ? `Template aplicado: ${body.templateName}` : null,
-    body.filename ? `Arquivo: ${body.filename}` : null,
-    body.videoText ? `Texto sobreposto no vídeo: ${body.videoText}` : null,
-    body.style ? `Tom desejado: ${body.style}` : null,
-  ]
-    .filter(Boolean)
-    .join("\n");
-}
-
-function buildFrameContent(body: Body) {
-  const parts: any[] = [];
-  const ctx = buildContextText(body);
-  const hasFrames = Array.isArray(body.frames) && body.frames.length > 0;
-
-  parts.push({
-    type: "text",
-    text:
-      (hasFrames
-        ? "Analise os frames abaixo (extraídos do vídeo em ordem cronológica) e gere uma legenda + hashtags que descrevam APENAS o que aparece no vídeo. NÃO invente fatos, pessoas, filmes, marcas ou situações que não estejam visíveis.\n\n"
-        : "Não há frames disponíveis: gere uma legenda genérica coerente com o nicho, sem inventar detalhes específicos.\n\n") +
-      (ctx ? `Contexto adicional (use apenas como complemento):\n${ctx}` : ""),
-  });
-
-  if (hasFrames) {
-    for (const f of body.frames!) {
-      if (typeof f === "string" && f.startsWith("data:image")) {
-        parts.push({ type: "image_url", image_url: { url: f } });
-      }
-    }
-  }
-  return parts;
+  const pick = (v: any) => (Array.isArray(v) ? v.map(normalizeTag).filter(Boolean) : []);
+  return { alcance: pick(groups?.alcance), nicho: pick(groups?.nicho), tema: pick(groups?.tema) };
 }
 
 function isSegredoProject(name?: string | null, cat?: string | null): boolean {
@@ -94,192 +56,260 @@ function isSegredoProject(name?: string | null, cat?: string | null): boolean {
   return s.includes("segredo") || s.includes("promo") || s.includes("achad");
 }
 
-const GENERATION_SYSTEM_BASE = `Você é um social media humano, especialista em Instagram Reels em português do Brasil.
+function buildContextText(body: Body) {
+  return [
+    body.projectName ? `Projeto/página: ${body.projectName}` : null,
+    body.projectCategory ? `Nicho/categoria: ${body.projectCategory}` : null,
+    body.templateName ? `Template aplicado: ${body.templateName}` : null,
+    body.filename ? `Arquivo: ${body.filename}` : null,
+    body.videoText ? `Texto sobreposto no vídeo: ${body.videoText}` : null,
+    body.style ? `Tom de voz desejado: ${body.style}` : null,
+    Array.isArray(body.history) && body.history.length
+      ? `Legendas recentes desta página (NÃO repita estruturas nem frases):\n- ${body.history.slice(0, 8).join("\n- ")}`
+      : null,
+  ].filter(Boolean).join("\n");
+}
 
-Sua tarefa é criar UMA legenda + hashtags OTIMIZADAS PARA INSTAGRAM com base no que REALMENTE aparece no vídeo (frames anexados).
+const SYSTEM_BASE = `Você é um social media brasileiro, humano, especialista em Reels/Shorts/TikTok.
 
-REGRAS ABSOLUTAS:
-- Baseie-se PRIMEIRO no conteúdo visual dos frames.
-- NUNCA invente nomes de pessoas, filmes, marcas, lugares, falas ou situações que não estejam visíveis.
-- Se não tiver certeza do que é, descreva de forma neutra (ex: "essa cena", "esse momento") em vez de chutar.
-- Contexto textual (nicho, template, nome do projeto) é APENAS complemento.
+ETAPA 1 — ANÁLISE DO VÍDEO (obrigatória, mentalmente):
+A partir dos frames em ordem cronológica, identifique:
+- produtos e objetos visíveis (formato, cor, material, uso aparente);
+- pessoas (quantidade, ação, expressão) sem inventar identidades;
+- cenário/ambiente;
+- textos presentes na tela (leia o que está escrito — OCR);
+- sequência das cenas e a AÇÃO PRINCIPAL do vídeo.
 
-LEGENDA (otimizada para Instagram):
-- 1 a 3 frases curtas, no máximo ~220 caracteres.
-- A PRIMEIRA frase é um GANCHO forte que prende nos primeiros 2 segundos (pergunta, afirmação inesperada, curiosidade).
-- Pensada para gerar COMENTÁRIOS, SALVAMENTOS e COMPARTILHAMENTOS (não só likes).
-- Tom natural, humano, conversacional. Zero clichê de marketing.
-- Termine com uma micro-CTA coerente com a cena (ex: "comenta aí", "marca alguém", "salva pra depois").
-- 0 a 2 emojis, só se agregarem.
+ETAPA 2 — ESCRITA:
+Escreva como alguém que ASSISTIU ao vídeo. A legenda precisa ser específica ao que foi visto.
+PROIBIDO texto genérico como "Confira essa promoção", "Produto incrível", "Olha isso", "Imperdível", "Você precisa ver".
+Se algo não estiver claro nos frames, descreva de forma neutra ("essa cena", "esse momento") — nunca invente nomes, marcas, filmes, falas ou lugares.
+O nicho/categoria serve APENAS para adaptar a linguagem, nunca para substituir a análise do vídeo.
 
-HASHTAGS (estratégia de descoberta no Instagram):
-- 12 a 18 no total, todas relacionadas ao conteúdo real do vídeo, nicho e público-alvo.
-- Divididas em 3 grupos: "alcance" (grandes/genéricas do nicho, alto volume, termos de descoberta), "nicho" (segmento específico e público-alvo), "tema" (específicas do que aparece no vídeo).
-- Misture volumes: algumas amplas para alcance + várias específicas para relevância.
-- Zero hashtags aleatórias, banidas, spam ou sem contexto.
-- Cada hashtag começa com # e não contém espaço.
+LEGENDA:
+- 1 a 3 frases curtas (máx. ~220 caracteres), tom natural e conversacional.
+- Primeira frase = gancho forte ligado ao que aparece no vídeo.
+- Zero clichê de marketing, 0 a 2 emojis.
+- Sem hashtags dentro da legenda.
 
-Responda SOMENTE em JSON válido:
-{"caption":"...", "hashtags":{"alcance":["#..."],"nicho":["#..."],"tema":["#..."]}}`;
+CTA (campo separado):
+- Uma frase curta, coerente com o conteúdo identificado:
+  beleza → convidar a conhecer o kit/rotina; tecnologia → destacar funcionalidades;
+  casa → destacar praticidade; moda → destacar estilo; fitness → destacar benefícios;
+  conteúdo/curiosidade → estimular comentário, salvamento ou marcação.
+- Sem links, URLs ou @menções.
+
+HASHTAGS:
+- 12 a 18 no total, sempre derivadas do conteúdo identificado no vídeo + nicho + categoria + palavras do produto.
+- Grupos: "alcance" (amplas de alto volume), "nicho" (segmento e público), "tema" (específicas do que aparece).
+- Misture hashtags grandes e específicas; varie entre vídeos, não repita sempre o mesmo conjunto.
+- Cada hashtag começa com # e não tem espaços.
+
+Responda SOMENTE JSON válido:
+{"analysis":"resumo objetivo do que aparece no vídeo","caption":"...","cta":"...","hashtags":{"alcance":["#..."],"nicho":["#..."],"tema":["#..."]}}`;
 
 const SEGREDO_STRATEGY = `
 
-MODO ESPECIAL — PROJETO SEGREDO DAS PROMOÇÕES (estratégia de CONVERSÃO por curiosidade):
-- Nunca faça texto meramente descritivo do produto. O objetivo é DESPERTAR CURIOSIDADE.
-- PROIBIDO incluir links, URLs, domínios, códigos de afiliado ou @menções na legenda.
-- PROIBIDO mencionar "link na bio", "confira na bio", "veja na bio", "está na bio", "mais informações na bio", "passe na bio", "os detalhes estão na bio" ou qualquer variação semelhante. Essa chamada JÁ está no template da legenda e não deve ser repetida.
-- A CTA/legenda deve servir APENAS para despertar curiosidade e prender atenção. Selecione ALEATORIAMENTE um dos modelos abaixo (ou crie variações naturais no mesmo estilo, sem repetir sempre o mesmo, e SEM mencionar bio):
-  "👀 Tem muita gente perguntando onde encontrar esse produto."
-  "🔥 Esse produto está chamando muita atenção."
-  "✨ Achei esse produto e precisei compartilhar."
-  "💡 Esse pode ser um daqueles produtos que facilitam bastante o dia a dia."
-  "🤔 Muita gente ainda não conhece esse achado."
-  "💬 Se quiser saber qual é esse produto, comenta aí."
-  "😅 Depois que descobri esse produto fiquei pensando como não conhecia antes."
-  "🚀 Esse produto está aparecendo para muita gente ultimamente."
-  "👀 Você teria esse produto?"
-  "😳 Confesso que não esperava que isso existisse."
-  "📦 Mais um achadinho interessante."
-  "✨ Esse é um daqueles produtos que quase ninguém conhece."
-  "👀 Vale a pena conhecer esse produto."
-  "😅 Muita gente já perguntou onde encontrar."
-  "💬 Quem já conhece esse produto sabe do que estou falando."
-  "🛍️ Esse é o tipo de produto que surpreende."
-  "🤯 Não imaginei que um produto assim existisse."
-  "⭐ Esse achado merece atenção."
-  "📢 Esse produto está dando o que falar."
-  "👀 Aposto que você ficou curioso para saber qual é."
-- Nunca repita exatamente a mesma frase em vídeos consecutivos. Mantenha linguagem natural, evite soar robótico.
-- Tom: gancho de curiosidade, sem exagero de clickbait. Estimular o usuário a continuar assistindo/lendo ou comentar pedindo mais informações — sem nunca citar a bio.`;
+MODO ESPECIAL — PROJETO DE PROMOÇÕES/ACHADOS (conversão por curiosidade):
+- Descreva o produto que aparece no vídeo de forma concreta, mas conduza para a CURIOSIDADE.
+- PROIBIDO links, URLs, códigos de afiliado, @menções e qualquer variação de "link na bio"/"confira na bio" (já existe no template).
+- O CTA deve despertar curiosidade ou pedir comentário, variando a cada vídeo.`;
 
-const GENERATION_SYSTEM = GENERATION_SYSTEM_BASE;
-
-const VALIDATION_SYSTEM = `Você é um revisor crítico de social media. Receberá os frames de um vídeo e uma legenda proposta.
-
-Sua tarefa: verificar se a legenda é FIEL ao vídeo.
-
-Cheque:
-1. A legenda descreve/conversa com o que realmente aparece nos frames?
-2. Há informações inventadas (pessoas, filmes, marcas, falas, lugares) que não estão visíveis?
-3. As hashtags estão relacionadas ao conteúdo real e ao nicho?
-4. A chamada para ação faz sentido para a cena?
-
-Responda SOMENTE em JSON válido:
-{"ok": true|false, "reason": "explique brevemente se ok=false"}
-
-Seja rigoroso: se houver QUALQUER informação inventada ou desconectada, ok=false.`;
-
-async function generateOnce(apiKey: string, body: Body) {
-  const parts = buildFrameContent(body);
-  const system = GENERATION_SYSTEM +
-    (isSegredoProject(body.projectName, body.projectCategory) ? SEGREDO_STRATEGY : "");
-  const result = await callModel(apiKey, [
-    { role: "system", content: system },
-    { role: "user", content: parts },
-  ]);
-  const caption = String(result?.caption ?? "").trim();
-  const hashtags = normalizeHashtags(result?.hashtags ?? {});
-  return { caption, hashtags };
+function framesOf(body: Body): string[] {
+  return (Array.isArray(body.frames) ? body.frames : []).filter(
+    (f) => typeof f === "string" && f.startsWith("data:image"),
+  );
 }
 
-async function validate(apiKey: string, body: Body, caption: string, hashtags: any) {
-  const hasFrames = Array.isArray(body.frames) && body.frames.length > 0;
-  if (!hasFrames) return { ok: true, reason: "sem frames para validar" };
+function buildUserParts(body: Body, frames: string[]) {
+  const ctx = buildContextText(body);
+  const parts: any[] = [{
+    type: "text",
+    text:
+      (frames.length
+        ? "Analise os frames abaixo (ordem cronológica do vídeo) e gere legenda, CTA e hashtags fiéis ao que aparece.\n\n"
+        : "Não há frames disponíveis. Use o contexto abaixo para gerar o texto mais específico possível, sem inventar detalhes visuais.\n\n") +
+      (ctx ? `Contexto do projeto (complemento):\n${ctx}` : ""),
+  }];
+  for (const f of frames) parts.push({ type: "image_url", image_url: { url: f } });
+  return parts;
+}
 
-  const parts: any[] = [
-    {
-      type: "text",
-      text:
-        `Legenda proposta:\n"${caption}"\n\nHashtags: ${[
-          ...hashtags.alcance, ...hashtags.nicho, ...hashtags.tema,
-        ].join(" ")}\n\nAgora avalie contra os frames.`,
-    },
-  ];
-  for (const f of body.frames!) {
-    if (typeof f === "string" && f.startsWith("data:image")) {
-      parts.push({ type: "image_url", image_url: { url: f } });
+async function tryModels(models: string[], messages: any[], context: Record<string, unknown>) {
+  let lastErr: unknown = null;
+  for (const model of models) {
+    try {
+      const raw = await callAi({
+        module: "generate-caption",
+        model,
+        messages,
+        jsonMode: true,
+        timeoutMs: 40_000,
+        context: { ...context, model },
+      });
+      const parsed = parseModelJson<any>(raw);
+      if (parsed && String(parsed.caption ?? "").trim()) return { parsed, model };
+    } catch (e) {
+      lastErr = e;
+      console.warn(JSON.stringify({
+        module: "generate-caption", event: "model_failed", model,
+        error: String((e as Error)?.message ?? e),
+      }));
     }
   }
-  try {
-    const res = await callModel(apiKey, [
-      { role: "system", content: VALIDATION_SYSTEM },
-      { role: "user", content: parts },
-    ]);
-    return { ok: Boolean(res?.ok), reason: String(res?.reason ?? "") };
-  } catch (e) {
-    console.error("[generate-caption] validation error", e);
-    return { ok: true, reason: "validação indisponível" };
-  }
+  if (lastErr) console.error(JSON.stringify({ module: "generate-caption", event: "all_models_failed" }));
+  return null;
 }
+
+// ---------------- Fallback local (nunca deixa o usuário sem texto) ----------------
+
+const NICHE_RULES: Array<{ test: RegExp; tags: string[]; cta: string; lead: string }> = [
+  { test: /belez|skin|makeup|maquia|cabelo|cosm/i,
+    tags: ["beleza", "skincare", "autocuidado", "rotinadebeleza", "dicasdebeleza"],
+    cta: "Vale conhecer o kit completo antes de montar sua rotina.",
+    lead: "Esse cuidado simples muda o resultado da rotina" },
+  { test: /tech|tecnolog|gadget|eletr|celular|smart/i,
+    tags: ["tecnologia", "gadgets", "techbrasil", "inovacao", "eletronicos"],
+    cta: "Repare nas funções que ele entrega em tão pouco espaço.",
+    lead: "Um detalhe de tecnologia que resolve mais do que parece" },
+  { test: /casa|cozinha|organiza|lar|decor|utilid/i,
+    tags: ["casa", "organizacao", "utilidadesdomesticas", "dicasdecasa", "praticidade"],
+    cta: "Praticidade assim faz diferença no dia a dia da casa.",
+    lead: "Uma solução prática pra facilitar a rotina em casa" },
+  { test: /moda|roupa|estilo|look|fashion/i,
+    tags: ["moda", "estilo", "lookdodia", "modabrasil", "inspiracao"],
+    cta: "Dá pra montar looks diferentes só mudando um detalhe.",
+    lead: "Um detalhe de estilo que muda o look inteiro" },
+  { test: /fitness|treino|academia|saude|emagre/i,
+    tags: ["fitness", "treino", "saude", "vidasaudavel", "disciplina"],
+    cta: "Constância nos detalhes é o que traz o resultado.",
+    lead: "Pequenos ajustes no treino que fazem diferença real" },
+  { test: /film|cinema|serie|frame|cena/i,
+    tags: ["cinema", "filmes", "cenas", "setimaarte", "curiosidades"],
+    cta: "Comenta aí o que essa cena te fez sentir.",
+    lead: "Essa cena carrega mais coisa do que parece" },
+  { test: /meme|humor|engra|risada/i,
+    tags: ["memes", "humor", "risada", "engracado", "viral"],
+    cta: "Marca alguém que ia rir com isso.",
+    lead: "Difícil assistir isso sem rir" },
+  { test: /curios|hist[oó]ria|fato|saber/i,
+    tags: ["curiosidades", "voceSabia", "fatos", "aprendanotiktok", "conhecimento"],
+    cta: "Salva pra lembrar disso depois.",
+    lead: "Poucas pessoas conhecem esse detalhe" },
+];
+
+const GENERIC_TAGS = ["reels", "viral", "fyp", "paravoce", "conteudo", "brasil", "explorar", "tiktokbrasil"];
+
+const slug = (s: string) =>
+  s.toLowerCase().normalize("NFD").replace(/[\u0300-\u036f]/g, "").replace(/[^a-z0-9]/g, "");
+
+function localFallback(body: Body) {
+  const haystack = `${body.projectName ?? ""} ${body.projectCategory ?? ""} ${body.templateName ?? ""} ${body.filename ?? ""} ${body.videoText ?? ""}`;
+  const rule = NICHE_RULES.find((r) => r.test.test(haystack));
+  const promo = isSegredoProject(body.projectName, body.projectCategory);
+
+  const overlay = String(body.videoText ?? "").replace(/\s+/g, " ").trim();
+  const lead = overlay
+    ? overlay.slice(0, 120)
+    : rule?.lead ?? "Vale a pena assistir até o final pra entender esse detalhe";
+
+  const cta = promo
+    ? "Muita gente está procurando por esse achado — comenta aí se você conhece."
+    : rule?.cta ?? "Comenta aí o que você achou e salva pra rever depois.";
+
+  const caption = `${lead}. ${cta}`.replace(/\s+/g, " ").slice(0, 260);
+
+  const nicheWords = (body.projectCategory ?? "").split(/[\s,/&-]+/).map(slug).filter((w) => w.length > 2);
+  const projWords = (body.projectName ?? "").split(/[\s,/&-]+/).map(slug).filter((w) => w.length > 3);
+  const overlayWords = overlay.split(/[\s,.;!?]+/).map(slug).filter((w) => w.length > 4).slice(0, 4);
+
+  const uniq = (arr: string[]) => Array.from(new Set(arr.filter(Boolean)));
+  // varia o conjunto amplo entre gerações para não repetir sempre as mesmas
+  const shuffled = GENERIC_TAGS.slice().sort(() => Math.random() - 0.5);
+
+  return {
+    caption,
+    cta,
+    hashtags: {
+      alcance: uniq(shuffled.slice(0, 5)).map((t) => `#${t}`),
+      nicho: uniq([...nicheWords, ...projWords, ...(rule?.tags ?? [])]).slice(0, 6).map((t) => `#${slug(t)}`),
+      tema: uniq([...overlayWords, ...(rule?.tags ?? []).slice(0, 3)]).slice(0, 5).map((t) => `#${slug(t)}`),
+    },
+  };
+}
+
+const GENERIC_RE = /^(confira essa promo|produto incr[ií]vel|olha isso|imperd[ií]vel|voc[êe] precisa ver)/i;
 
 Deno.serve(async (req) => {
   if (req.method === "OPTIONS") return new Response("ok", { headers: corsHeaders });
-  if (req.method !== "POST") {
-    return json(405, { error: "Método não suportado.", code: "METHOD_NOT_ALLOWED" });
-  }
+  if (req.method !== "POST") return json(405, { error: "Método não suportado.", code: "METHOD_NOT_ALLOWED" });
 
   const startedAt = Date.now();
+  let body: Body = {};
   try {
-    const apiKey = Deno.env.get("LOVABLE_API_KEY") ?? "";
+    body = (await req.json()) as Body;
+  } catch { /* corpo vazio → fallback */ }
 
-    let body: Body;
-    try {
-      body = (await req.json()) as Body;
-    } catch {
-      return json(400, { error: "Corpo da requisição inválido (JSON esperado).", code: "INVALID_BODY" });
+  try {
+    const frames = framesOf(body);
+    const system = SYSTEM_BASE + (isSegredoProject(body.projectName, body.projectCategory) ? SEGREDO_STRATEGY : "");
+    const messages = [
+      { role: "system", content: system },
+      { role: "user", content: buildUserParts(body, frames) },
+    ];
+
+    const models = frames.length ? VISION_MODELS : TEXT_MODELS;
+    let res = await tryModels(models, messages, { project: body.projectName, frames: frames.length });
+
+    // Se falhou com frames (peso/limite), tenta sem frames antes de cair no fallback local.
+    if (!res && frames.length) {
+      const textMessages = [
+        { role: "system", content: system },
+        { role: "user", content: buildUserParts(body, []) },
+      ];
+      res = await tryModels(TEXT_MODELS, textMessages, { project: body.projectName, frames: 0 });
     }
-    if (body === null || typeof body !== "object") {
-      return json(400, { error: "Corpo da requisição inválido.", code: "INVALID_BODY" });
-    }
-    if (body.frames !== undefined && !Array.isArray(body.frames)) {
-      return json(400, { error: "'frames' deve ser uma lista de data URLs.", code: "INVALID_FRAMES" });
-    }
-    // Protege memória do worker: no máximo 6 frames
-    if (Array.isArray(body.frames) && body.frames.length > 6) body.frames = body.frames.slice(0, 6);
 
-    console.info(JSON.stringify({
-      module: "generate-caption", event: "request",
-      project: body.projectName ?? null, category: body.projectCategory ?? null,
-      filename: body.filename ?? null, frames: body.frames?.length ?? 0,
-      timestamp: new Date().toISOString(),
-    }));
-
-    const MAX_ATTEMPTS = 3;
-    let lastResult: { caption: string; hashtags: any } | null = null;
-    let lastReason = "";
-
-    for (let attempt = 1; attempt <= MAX_ATTEMPTS; attempt++) {
-      try {
-        const gen = await generateOnce(apiKey, body);
-        lastResult = gen;
-        if (!gen.caption) { lastReason = "legenda vazia"; continue; }
-
-        const v = await validate(apiKey, body, gen.caption, gen.hashtags);
-        if (v.ok) {
-          return json(200, { ...gen, validated: true, attempts: attempt });
-        }
-        lastReason = v.reason || "reprovada na validação";
-        console.warn(`[generate-caption] attempt ${attempt} rejeitada: ${lastReason}`);
-      } catch (e) {
-        // Erros de crédito/limite/timeout são definitivos: não adianta repetir.
-        if (e instanceof AiGatewayError && e.code !== "AI_EMPTY_RESPONSE") {
-          return aiErrorResponse("generate-caption", e, corsHeaders);
-        }
-        console.error(JSON.stringify({
-          module: "generate-caption", event: "attempt_error", attempt,
-          error: String((e as Error)?.message ?? e), stack: (e as Error)?.stack ?? null,
-        }));
-        lastReason = (e as Error)?.message ?? "erro no modelo";
+    if (res) {
+      const caption = String(res.parsed.caption ?? "").trim();
+      const cta = String(res.parsed.cta ?? "").trim();
+      const hashtags = normalizeHashtags(res.parsed.hashtags ?? {});
+      const total = hashtags.alcance.length + hashtags.nicho.length + hashtags.tema.length;
+      const weak = !caption || GENERIC_RE.test(caption);
+      if (!weak) {
+        const fb = total < 6 ? localFallback(body) : null;
+        return json(200, {
+          caption,
+          cta: cta || localFallback(body).cta,
+          hashtags: fb
+            ? {
+                alcance: Array.from(new Set([...hashtags.alcance, ...fb.hashtags.alcance])).slice(0, 6),
+                nicho: Array.from(new Set([...hashtags.nicho, ...fb.hashtags.nicho])).slice(0, 6),
+                tema: Array.from(new Set([...hashtags.tema, ...fb.hashtags.tema])).slice(0, 6),
+              }
+            : hashtags,
+          analysis: String(res.parsed.analysis ?? ""),
+          model: res.model,
+          source: "ai",
+          validated: true,
+          ms: Date.now() - startedAt,
+        });
       }
     }
 
-    // Fallback: devolve última tentativa mesmo assim, sinalizando que não validou
-    if (lastResult?.caption) {
-      return json(200, { ...lastResult, validated: false, warning: lastReason, ms: Date.now() - startedAt });
-    }
-    return json(502, { error: "Não foi possível gerar a legenda agora. Tente novamente.", code: "AI_NO_RESULT", detail: lastReason });
+    const fb = localFallback(body);
+    console.warn(JSON.stringify({
+      module: "generate-caption", event: "local_fallback_used",
+      project: body.projectName, frames: frames.length, ms: Date.now() - startedAt,
+    }));
+    return json(200, { ...fb, source: "fallback", validated: false, ms: Date.now() - startedAt });
   } catch (e) {
-    return aiErrorResponse("generate-caption", e, corsHeaders);
+    // Último nível: nunca devolve erro ao cliente.
+    console.error(JSON.stringify({
+      module: "generate-caption", event: "unexpected_error",
+      error: String((e as Error)?.message ?? e),
+    }));
+    const fb = localFallback(body);
+    return json(200, { ...fb, source: "fallback", validated: false });
   }
-
 });

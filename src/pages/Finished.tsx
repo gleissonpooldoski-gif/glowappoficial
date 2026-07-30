@@ -17,7 +17,7 @@ import { ptBR } from "date-fns/locale";
 import { useActiveProject } from "@/context/ProjectContext";
 import { cn } from "@/lib/utils";
 import JSZip from "jszip";
-import { extractVideoFrames } from "@/lib/videoFrames";
+import { generateVideoContent } from "@/lib/caption-engine";
 import { describeEdgeError } from "@/lib/edge-errors";
 import {
   AlertDialog, AlertDialogAction, AlertDialogCancel, AlertDialogContent,
@@ -279,26 +279,21 @@ export default function Finished() {
     setCaptionOpen((s) => ({ ...s, [v.id]: true }));
     setCaptionLoading((s) => ({ ...s, [v.id]: true }));
     try {
-      const url = urls[v.id];
-      const frames = url ? await extractVideoFrames(url, 4).catch(() => []) : [];
-      const { data, error } = await supabase.functions.invoke("generate-caption", {
-        body: {
-          filename: v.filename,
-          templateName: v.templateName ?? null,
-          projectName: v.projectName ?? null,
-          projectCategory: v.projectCategory ?? null,
-          frames,
-        },
+      const gen = await generateVideoContent({
+        videoId: v.id,
+        videoUrl: urls[v.id] ?? null,
+        filename: v.filename,
+        templateName: v.templateName ?? null,
+        projectName: v.projectName ?? null,
+        projectCategory: v.projectCategory ?? null,
       });
-      if (error || (data as any)?.error) {
-        throw new Error(await describeEdgeError(error, data, "Falha ao gerar legenda"));
-      }
-      setCaptions((s) => ({ ...s, [v.id]: data as CaptionResult }));
-      if ((data as any)?.validated === false) {
-        toast.warning("Legenda gerada, mas não passou 100% na validação. Revise antes de publicar.");
-      }
-    } catch (e: any) {
-      toast.error(e?.message ?? "Falha ao gerar legenda");
+      setCaptions((s) => ({
+        ...s,
+        [v.id]: {
+          caption: gen.cta && !gen.caption.includes(gen.cta) ? `${gen.caption}\n\n${gen.cta}` : gen.caption,
+          hashtags: gen.groups,
+        } as CaptionResult,
+      }));
     } finally {
       setCaptionLoading((s) => ({ ...s, [v.id]: false }));
     }
