@@ -476,22 +476,33 @@ function localFallback(body: Body, a: Analysis) {
   const overlay = arr(a.ocr)[0] ?? String(body.videoText ?? "").trim();
   const subject = String(a.assunto ?? a.tema ?? a.narrativa ?? "").trim();
 
-  const lead = subject
-    ? subject.replace(/[.!?]+$/, "")
-    : overlay
-      ? overlay.slice(0, 120).replace(/[.!?]+$/, "")
-      : "Tem um detalhe nesse vídeo que muda tudo se você assistir até o fim";
+  const HOOKS = [
+    "O que você faria numa situação dessas? 😳",
+    "Você teria coragem de passar por isso?",
+    "Olha o que aconteceu logo depois...",
+    "Imagina se isso acontecesse com você...",
+    "Repara no detalhe que aparece no fim 👀",
+    "Ninguém esperava esse desfecho...",
+  ];
+  const hook = pickOne(HOOKS, seed >> 3);
 
-  const develop = [
-    a.acoes ? String(a.acoes).slice(0, 140) : null,
-    a.contexto ? String(a.contexto).slice(0, 140) : null,
-    a.emocoes ? `A cena entrega ${String(a.emocoes).toLowerCase()} do começo ao fim.` : null,
-    "Repara nos detalhes: faz mais sentido vendo até o fim.",
+  const subject = String(a.assunto ?? a.tema ?? a.narrativa ?? "").trim();
+  const contextParts = [
+    subject ? subject.replace(/[.!?]+$/, "") + "." : null,
+    a.acoes ? String(a.acoes).replace(/[.!?]+$/, "").slice(0, 140) + "." : null,
+    a.emocoes ? `A reação diz tudo: ${String(a.emocoes).toLowerCase()}.` : null,
+    overlay ? `Na tela: "${overlay.slice(0, 80)}".` : null,
+    a.contexto ? String(a.contexto).replace(/[.!?]+$/, "").slice(0, 140) + "." : null,
   ].filter(Boolean) as string[];
 
-  const caption = `${lead}. ${pickOne(develop, seed >> 2)}`.replace(/\s+/g, " ").slice(0, 280);
+  const context = (contextParts.length
+    ? contextParts.slice(0, 3).join(" ")
+    : "Tem um detalhe nessa cena que só faz sentido quando você assiste até o fim.");
+
+  const caption = `${hook} ${context}`.replace(/\s+/g, " ").slice(0, 420);
   const cta = pickOne(CTA_POOL, seed);
   const title = pickOne(FALLBACK_TITLES, seed >> 5);
+
 
   const recent = new Set((body.recentHashtags ?? []).map((t) => normalizeTag(t).toLowerCase()));
   const fresh = (tags: string[]) => {
