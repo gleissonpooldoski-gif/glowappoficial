@@ -531,9 +531,10 @@ function localFallback(body: Body, a: Analysis) {
     return out;
   };
   const used = new Set<string>();
-  const alcance = take(fresh(bank), 5, used);
-  const nicho = take(fresh([...nicheWords, ...bank]), 6, used);
-  const tema = take(fresh([...specific, ...bank]), 7, used);
+  const alcance = take(fresh(bank), 7, used);
+  const nicho = take(fresh([...nicheWords, ...bank]), 9, used);
+  const tema = take(fresh([...specific, ...bank]), 10, used);
+
 
   return {
     title,
