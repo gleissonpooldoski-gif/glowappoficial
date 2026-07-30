@@ -134,7 +134,7 @@ export async function generateVideoContent(input: GenerateInput): Promise<Genera
   let frames: string[] = [];
   try {
     const url = await resolveVideoUrl(input);
-    if (url) frames = await extractVideoFrames(url, input.frameCount ?? 4).catch(() => []);
+    if (url) frames = await extractVideoFrames(url, input.frameCount ?? 6).catch(() => []);
   } catch { /* segue sem frames */ }
 
   const history = await loadHistory();
@@ -149,10 +149,13 @@ export async function generateVideoContent(input: GenerateInput): Promise<Genera
         videoText: input.videoText ?? null,
         style: input.style ?? null,
         frames,
-        history,
+        history: history.captions,
+        recentHashtags: history.hashtags,
+        variationSeed: Math.floor(Math.random() * 1e6),
       },
     });
     if (error) throw error;
+
 
     const caption = String((data as any)?.caption ?? "").trim();
     const cta = String((data as any)?.cta ?? "").trim();
