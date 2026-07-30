@@ -499,7 +499,7 @@ function localFallback(body: Body, a: Analysis) {
     uniq(a.acoes ? String(a.acoes).replace(/[.!?]+$/, "").slice(0, 140) + "." : null),
     uniq(a.contexto ? String(a.contexto).replace(/[.!?]+$/, "").slice(0, 140) + "." : null),
     uniq(a.emocoes ? `A reação diz tudo: ${String(a.emocoes).toLowerCase()}.` : null),
-    uniq(overlay ? `Na tela: "${overlay.slice(0, 80)}".` : null),
+    uniq(overlay && !slug(subject).includes(slug(overlay)) ? `Na tela: "${overlay.slice(0, 80)}".` : null),
   ].filter(Boolean) as string[];
 
 
