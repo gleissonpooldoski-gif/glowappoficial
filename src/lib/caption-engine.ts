@@ -134,7 +134,7 @@ export async function generateVideoContent(input: GenerateInput): Promise<Genera
   let frames: string[] = [];
   try {
     const url = await resolveVideoUrl(input);
-    if (url) frames = await extractVideoFrames(url, input.frameCount ?? 6).catch(() => []);
+    if (url) frames = await extractVideoFrames(url, input.frameCount ?? 8).catch(() => []);
   } catch { /* segue sem frames */ }
 
   const history = await loadHistory();
