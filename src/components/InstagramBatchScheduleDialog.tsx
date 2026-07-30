@@ -12,7 +12,7 @@ import { publishInstagram, friendlyError } from "@/lib/instagram";
 import { getYoutubeChannelForProject, type YoutubeCredential } from "@/lib/youtube";
 import { getFacebookAccountForProject, createFacebookPost, isFacebookAccountReady, type FacebookAccount } from "@/lib/facebook";
 import { findProjectSlots, getProjectSchedule, refreshProjectSlotTracking, DEFAULT_PROJECT_TIMES, type ProjectScheduleSettings } from "@/lib/project-schedules";
-import { extractVideoFrames } from "@/lib/videoFrames";
+import { generateVideoContent } from "@/lib/caption-engine";
 import { describeEdgeError } from "@/lib/edge-errors";
 
 type VideoMeta = {
