@@ -184,31 +184,25 @@ export default function InstagramPublishDialog({
     }
   };
 
+  const runEngine = () =>
+    generateVideoContent({
+      videoId: videoId ?? null,
+      videoUrl: videoMeta?.videoUrl ?? null,
+      filename: videoMeta?.filename ?? null,
+      templateName: videoMeta?.templateName ?? null,
+      projectId: activeProject?.id ?? null,
+      projectName: videoMeta?.projectName ?? null,
+      projectCategory: videoMeta?.projectCategory ?? null,
+    });
+
   const generate = async (silent = false) => {
     if (!videoMeta) return;
     setGenBusy(true);
     try {
-      const frames = videoMeta.videoUrl ? await extractVideoFrames(videoMeta.videoUrl, 4).catch(() => []) : [];
-      const { data, error } = await supabase.functions.invoke("generate-caption", {
-        body: {
-          filename: videoMeta.filename,
-          templateName: videoMeta.templateName ?? null,
-          projectName: videoMeta.projectName ?? null,
-          projectCategory: videoMeta.projectCategory ?? null,
-          frames,
-        },
-      });
-      if (error || (data as any)?.error) {
-        throw new Error(await describeEdgeError(error, data, "Falha ao gerar legenda"));
-      }
-      setCaption(String((data as any)?.caption ?? ""));
-      setHashtags(flattenHashtags((data as any)?.hashtags));
-      if (!silent) {
-        if ((data as any)?.validated === false) toast.warning("Gerada, mas revise: validação apontou possíveis inconsistências.");
-        else toast.success("Nova opção gerada");
-      }
-    } catch (e: any) {
-      if (!silent) toast.error(e?.message ?? "Falha ao gerar legenda");
+      const gen = await runEngine();
+      setCaption(gen.cta && !gen.caption.includes(gen.cta) ? `${gen.caption}\n\n${gen.cta}` : gen.caption);
+      setHashtags(gen.hashtagsText);
+      if (!silent) toast.success("Nova opção gerada");
     } finally {
       setGenBusy(false);
     }
@@ -218,23 +212,9 @@ export default function InstagramPublishDialog({
     if (!videoMeta) return;
     setGenBusy(true);
     try {
-      const frames = videoMeta.videoUrl ? await extractVideoFrames(videoMeta.videoUrl, 4).catch(() => []) : [];
-      const { data, error } = await supabase.functions.invoke("generate-caption", {
-        body: {
-          filename: videoMeta.filename,
-          templateName: videoMeta.templateName ?? null,
-          projectName: videoMeta.projectName ?? null,
-          projectCategory: videoMeta.projectCategory ?? null,
-          frames,
-        },
-      });
-      if (error || (data as any)?.error) {
-        throw new Error(await describeEdgeError(error, data, "Falha ao gerar hashtags"));
-      }
-      setHashtags(flattenHashtags((data as any)?.hashtags));
+      const gen = await runEngine();
+      setHashtags(gen.hashtagsText);
       if (!silent) toast.success("Novas hashtags geradas");
-    } catch (e: any) {
-      if (!silent) toast.error(e?.message ?? "Falha ao gerar hashtags");
     } finally {
       setGenBusy(false);
     }
