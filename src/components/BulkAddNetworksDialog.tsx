@@ -14,6 +14,7 @@ import { buildTiktokCaptionFromBase } from "@/lib/tiktok-meta";
 import { createFacebookPost } from "@/lib/facebook";
 import { listYoutubeChannels, type YoutubeCredential } from "@/lib/youtube";
 import type { InstagramPost } from "@/lib/instagram";
+import { ensurePostContent } from "@/lib/caption-engine";
 
 type NetId = "instagram" | "youtube" | "tiktok" | "facebook";
 
@@ -50,9 +51,9 @@ async function ensureYoutubeForChannel(post: InstagramPost, channelAcc: string) 
     .maybeSingle();
   if (existing) return { skipped: "já vinculado" };
 
-  const { title, description, tags } = await buildYoutubeMetaFromCaption(
-    post.caption ?? "", post.hashtags ?? "",
-  );
+  // Garante que a publicação tenha legenda/CTA/hashtags antes de derivar o texto do YouTube.
+  const base = await ensurePostContent(post as any);
+  const { title, description, tags } = await buildYoutubeMetaFromCaption(base.caption, base.hashtags);
 
   const { error } = await supabase.from("youtube_posts" as any).insert({
     video_id: post.video_id, account: channelAcc,
@@ -75,7 +76,8 @@ async function ensureTiktok(post: InstagramPost) {
     .maybeSingle();
   if (existing) return { skipped: "já vinculado" };
 
-  const tt = await buildTiktokCaptionFromBase(post.caption ?? "", post.hashtags ?? "");
+  const base = await ensurePostContent(post as any);
+  const tt = await buildTiktokCaptionFromBase(base.caption, base.hashtags);
 
   const { error } = await supabase.from("tiktok_posts" as any).insert({
     video_id: post.video_id,
@@ -141,7 +143,8 @@ async function ensureFacebook(
     return { skipped: "já vinculado" };
   }
 
-  const description = [post.caption ?? "", post.hashtags ?? ""].filter(Boolean).join("\n\n");
+  const base = await ensurePostContent(post as any);
+  const description = [base.caption, base.hashtags].filter(Boolean).join("\n\n");
 
   console.log("FACEBOOK PAYLOAD", {
     project_id: projectId,

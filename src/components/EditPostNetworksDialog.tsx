@@ -16,6 +16,7 @@ import { getYoutubeChannelForProject } from "@/lib/youtube";
 import { getFacebookAccountForProject, createFacebookPost, friendlyFacebookError, isFacebookAccountReady, type FacebookAccount } from "@/lib/facebook";
 import YoutubeTagsEditor from "./YoutubeTagsEditor";
 import type { InstagramPost } from "@/lib/instagram";
+import { ensurePostContent } from "@/lib/caption-engine";
 
 type FbAccount = FacebookAccount;
 type LinkedFB = { id: string; status: string; scheduled_at: string | null };
@@ -116,8 +117,9 @@ export default function EditPostNetworksDialog({ post, open, onOpenChange, onSav
     let cancelled = false;
     (async () => {
       try {
+        const base = await ensurePostContent(post as any);
         const meta = await buildYoutubeMetaFromCaption(
-          post.caption ?? "", post.hashtags ?? "", { videoId: post.video_id ?? null },
+          base.caption, base.hashtags, { videoId: post.video_id ?? null },
         );
         if (cancelled) return;
         if (meta.tags.length) setYtTags(meta.tags);
@@ -166,8 +168,9 @@ export default function EditPostNetworksDialog({ post, open, onOpenChange, onSav
 
       if (wantYT && ytAccount) {
         console.info("[edit-networks] Criando agendamento YouTube", { account: ytAccount });
+        const base = await ensurePostContent(post as any);
         const meta = await buildYoutubeMetaFromCaption(
-          post.caption ?? "", post.hashtags ?? "", { videoId: post.video_id ?? null },
+          base.caption, base.hashtags, { videoId: post.video_id ?? null },
         );
         const finalTags = ytTags.length ? ytTags : meta.tags;
         const existing = linkedByAcc.get(ytAccount);
@@ -214,7 +217,8 @@ export default function EditPostNetworksDialog({ post, open, onOpenChange, onSav
             scheduled_at: post.scheduled_at,
           });
           try {
-            const description = [post.caption ?? "", post.hashtags ?? ""].filter(Boolean).join("\n\n");
+            const base = await ensurePostContent(post as any);
+            const description = [base.caption, base.hashtags].filter(Boolean).join("\n\n");
             const res: any = await createFacebookPost({
               project_id: projectId,
               video_id: post.video_id!,
