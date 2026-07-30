@@ -178,31 +178,18 @@ export default function InstagramBatchScheduleDialog({ open, onOpenChange, video
   };
 
   const genCaption = async (v: VideoMeta & { project_id: string | null }, projMeta: { name: string | null; category: string | null }) => {
-    let frames: string[] = [];
-    try {
-      const { data: row } = await supabase.from("videos").select("processed_path").eq("id", v.id).maybeSingle();
-      const path = (row as any)?.processed_path as string | null;
-      if (path) {
-        const { data: s } = await supabase.storage.from("videos-processed").createSignedUrl(path, 60 * 30);
-        if (s?.signedUrl) frames = await extractVideoFrames(s.signedUrl, 3).catch(() => []);
-      }
-    } catch { /* ignore */ }
-    const { data, error } = await supabase.functions.invoke("generate-caption", {
-      body: {
-        filename: v.filename,
-        templateName: v.templateName ?? null,
-        projectName: v.projectName ?? projMeta.name,
-        projectCategory: v.projectCategory ?? projMeta.category,
-        frames,
-      },
+    // Motor central: nunca falha, sempre devolve legenda + CTA + hashtags.
+    const gen = await generateVideoContent({
+      videoId: v.id,
+      filename: v.filename,
+      templateName: v.templateName ?? null,
+      projectId: v.project_id ?? null,
+      projectName: v.projectName ?? projMeta.name,
+      projectCategory: v.projectCategory ?? projMeta.category,
+      frameCount: 3,
     });
-    if (error || (data as any)?.error) {
-      throw new Error(await describeEdgeError(error, data, "Falha ao gerar legenda"));
-    }
-    const caption = String((data as any)?.caption ?? "").trim();
-    const hashtags = flattenHashtags((data as any)?.hashtags);
-    if (!caption) throw new Error("IA retornou legenda vazia");
-    return { caption, hashtags };
+    const caption = gen.cta && !gen.caption.includes(gen.cta) ? `${gen.caption}\n\n${gen.cta}` : gen.caption;
+    return { caption, hashtags: gen.hashtagsText };
   };
 
   const scheduleOne = async (
