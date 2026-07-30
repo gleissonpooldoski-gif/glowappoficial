@@ -314,7 +314,16 @@ function localFallback(body: Body) {
       )
     : pick(FALLBACK_CTAS, seed);
 
-  const caption = `${lead}.`.replace(/\s+/g, " ").slice(0, 260);
+  const bodies = [
+    "Repara nos detalhes: é o tipo de coisa que só faz sentido vendo até o fim.",
+    "Parece bobagem, mas resolve um problema que quase todo mundo tem.",
+    "O melhor vem depois dos primeiros segundos.",
+    "Vale prestar atenção em como isso funciona na prática.",
+    "Simples assim — e o resultado fala por si.",
+  ];
+  const cleanLead = lead.replace(/[.!?]+$/, "");
+  const caption = `${cleanLead}. ${pick(bodies, seed >> 2)}`.replace(/\s+/g, " ").slice(0, 260);
+
 
   const nicheWords = (body.projectCategory ?? "").split(/[\s,/&-]+/).map(slug).filter((w) => w.length > 2);
   const projWords = (body.projectName ?? "").split(/[\s,/&-]+/).map(slug).filter((w) => w.length > 3);
