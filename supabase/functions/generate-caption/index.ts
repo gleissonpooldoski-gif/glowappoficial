@@ -504,9 +504,10 @@ function localFallback(body: Body, a: Analysis) {
     )),
   );
 
-  const dedupe = (list: string[], used: Set<string>) => {
+  const take = (list: string[], n: number, used: Set<string>) => {
     const out: string[] = [];
     for (const t of list) {
+      if (out.length >= n) break;
       const k = t.toLowerCase();
       if (used.has(k)) continue;
       used.add(k);
@@ -515,9 +516,9 @@ function localFallback(body: Body, a: Analysis) {
     return out;
   };
   const used = new Set<string>();
-  const alcance = dedupe(fresh(bank), used).slice(0, 5);
-  const nicho = dedupe(fresh([...nicheWords, ...bank]), used).slice(0, 6);
-  const tema = dedupe(fresh([...specific, ...bank]), used).slice(0, 7);
+  const alcance = take(fresh(bank), 5, used);
+  const nicho = take(fresh([...nicheWords, ...bank]), 6, used);
+  const tema = take(fresh([...specific, ...bank]), 7, used);
 
   return {
     title,
