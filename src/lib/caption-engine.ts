@@ -65,25 +65,19 @@ async function resolveVideoUrl(input: GenerateInput): Promise<string | null> {
 }
 
 /** Últimas legendas/hashtags usadas — evita repetição de estrutura e de tags. */
-async function loadHistory(projectId?: string | null): Promise<{ captions: string[]; hashtags: string[] }> {
-  const run = async (scoped: boolean) => {
-    let q = supabase
+async function loadHistory(): Promise<{ captions: string[]; hashtags: string[] }> {
+  let rows: any[] = [];
+  try {
+    const { data } = await supabase
       .from("instagram_posts")
       .select("caption, hashtags")
       .order("created_at", { ascending: false })
       .limit(12);
-    if (scoped && projectId) q = q.eq("project_id", projectId);
-    const { data, error } = await q;
-    if (error) throw error;
-    return data ?? [];
-  };
-
-  let rows: any[] = [];
-  try {
-    rows = await run(Boolean(projectId));
+    rows = data ?? [];
   } catch {
-    try { rows = await run(false); } catch { rows = []; }
+    rows = [];
   }
+
 
   const captions = rows
     .map((r: any) => String(r?.caption ?? "").split("\n")[0].trim())
