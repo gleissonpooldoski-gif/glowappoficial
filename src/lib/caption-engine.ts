@@ -8,12 +8,13 @@ import { extractVideoFrames } from "@/lib/videoFrames";
 export type HashtagGroups = { alcance: string[]; nicho: string[]; tema: string[] };
 
 export type GeneratedContent = {
+  title: string;          // título curto e chamativo
   caption: string;        // legenda (sem hashtags)
   cta: string;            // chamada para ação
   hashtags: string[];     // lista plana, já com "#"
   hashtagsText: string;   // hashtags separadas por espaço
   groups: HashtagGroups;
-  captionFull: string;    // legenda + CTA + hashtags (pronto para publicar)
+  captionFull: string;    // título + legenda + CTA + hashtags (pronto para publicar)
   source: "ai" | "fallback";
   analysis?: string;
 };
@@ -100,30 +101,31 @@ async function loadHistory(): Promise<{ captions: string[]; hashtags: string[] }
 /** Fallback local no cliente — só usado se a Edge Function estiver totalmente fora. */
 function clientFallback(input: GenerateInput): GeneratedContent {
   const cat = (input.projectCategory ?? "").trim();
-  const cta = "Comenta aí o que você achou e salva pra rever depois.";
-  const caption = [
-    input.videoText?.trim() || "Vale assistir até o final pra entender esse detalhe",
-    cta,
-  ].join(". ").replace(/\s+/g, " ");
+  const title = "Repara no detalhe que aparece no fim";
+  const cta = "Conta aqui nos comentários o que você achou.";
+  const caption = (input.videoText?.trim() ||
+    "Tem um detalhe nesse vídeo que só faz sentido quando você assiste até o fim").replace(/\s+/g, " ");
   const slug = (s: string) =>
     s.toLowerCase().normalize("NFD").replace(/[\u0300-\u036f]/g, "").replace(/[^a-z0-9]/g, "");
-  const nicho = cat.split(/[\s,/&-]+/).map(slug).filter((w) => w.length > 2).slice(0, 4);
+  const nicho = cat.split(/[\s,/&-]+/).map(slug).filter((w) => w.length > 2).slice(0, 6);
   const groups: HashtagGroups = {
-    alcance: ["#reels", "#viral", "#paravoce"],
+    alcance: [],
     nicho: nicho.map((t) => `#${t}`),
     tema: [],
   };
   const hashtags = flattenGroups(groups);
   return {
+    title,
     caption,
     cta,
     hashtags,
     hashtagsText: hashtags.join(" "),
     groups,
-    captionFull: [caption, hashtags.join(" ")].filter(Boolean).join("\n\n"),
+    captionFull: [title, caption, cta, hashtags.join(" ")].filter(Boolean).join("\n\n"),
     source: "fallback",
   };
 }
+
 
 /**
  * Geração automática única para TODOS os fluxos.
@@ -157,6 +159,7 @@ export async function generateVideoContent(input: GenerateInput): Promise<Genera
     if (error) throw error;
 
 
+    const title = String((data as any)?.title ?? "").trim();
     const caption = String((data as any)?.caption ?? "").trim();
     const cta = String((data as any)?.cta ?? "").trim();
     const groupsRaw = (data as any)?.hashtags;
@@ -171,17 +174,21 @@ export async function generateVideoContent(input: GenerateInput): Promise<Genera
 
     if (!caption) return clientFallback(input);
 
-    const body = cta && !caption.toLowerCase().includes(cta.toLowerCase().slice(0, 18))
+    const withCta = cta && !caption.toLowerCase().includes(cta.toLowerCase().slice(0, 18))
       ? `${caption}\n\n${cta}`
       : caption;
+    const head = title && !caption.toLowerCase().startsWith(title.toLowerCase().slice(0, 16))
+      ? `${title}\n\n${withCta}`
+      : withCta;
 
     return {
+      title,
       caption,
       cta,
       hashtags,
       hashtagsText: hashtags.join(" "),
       groups,
-      captionFull: [body, hashtags.join(" ")].filter(Boolean).join("\n\n"),
+      captionFull: [head, hashtags.join(" ")].filter(Boolean).join("\n\n"),
       source: ((data as any)?.source === "fallback" ? "fallback" : "ai"),
       analysis: String((data as any)?.analysis ?? "") || undefined,
     };

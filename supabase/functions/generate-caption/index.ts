@@ -177,35 +177,117 @@ function textOnlyAnalysis(body: Body): Analysis {
 
 // ---------------------------------------------------------------- ETAPA 2: copy
 
+const TITLE_MODELS_HINT = [
+  "Será que isso termina bem?",
+  "Ninguém esperava esse final...",
+  "Olha o que aconteceu logo depois...",
+  "Você teria coragem?",
+  "O detalhe que quase ninguém percebeu...",
+  "Isso quase terminou em tragédia...",
+];
+
 const HOOK_FORMULAS = [
   "contraste (expectativa vs. o que realmente aparece)",
   "curiosidade (revele parte do detalhe e segure a explicação)",
-  "problema concreto que o vídeo resolve ou expõe",
+  "tensão (algo está prestes a acontecer e o leitor precisa ver)",
   "detalhe específico que quase ninguém percebe",
   "afirmação forte e defensável sobre o que aparece",
-  "pergunta específica sobre a cena, fácil de responder nos comentários",
   "começo no meio da ação, como quem conta um caso",
-  "utilidade imediata prometida logo na primeira linha",
+  "pergunta direta que só o vídeo responde",
 ];
 
-const CTA_INTENTS = [
-  "pedir um comentário respondendo uma pergunta específica sobre o vídeo",
-  "incentivar salvar para usar/rever depois",
-  "incentivar compartilhar ou marcar alguém ligado ao tema",
-  "convidar a rever o detalhe específico da cena",
-  "convidar a seguir para mais conteúdos desse assunto",
-  "provocar uma escolha entre duas opções vistas no vídeo",
+const CTA_POOL = [
+  "Você faria o mesmo?",
+  "O que você acha disso?",
+  "Qual seria a sua reação?",
+  "Conta aqui nos comentários.",
+  "Marca alguém que precisa ver.",
+  "Salva esse vídeo pra rever depois.",
+  "Você tinha percebido esse detalhe?",
+  "Comenta o que você faria no lugar dele.",
+  "Assiste de novo e repara no final.",
 ];
 
 const TONES = [
   "conversacional e direto",
-  "entusiasmado sem exagero",
+  "tenso e envolvente quando o conteúdo permitir",
   "curioso e investigativo",
   "prático e objetivo",
   "leve e bem-humorado quando o conteúdo permitir",
 ];
 
 const pickOne = <T,>(a: T[], seed: number) => a[Math.abs(seed) % a.length];
+
+// ------------------------------------------------- banco interno de hashtags
+
+/** Hashtags proibidas por padrão (só entram se a IA justificar pelo tema). */
+const BANNED_TAGS = new Set([
+  "fyp", "viral", "paravoce", "reels", "explore", "explorar", "trending", "trend",
+  "shorts", "tiktokbrasil", "descobrindo", "dicas", "conteudo", "foryou", "foryoupage",
+]);
+
+/** Banco de hashtags por assunto — a escolha é feita pelo tema detectado. */
+const HASHTAG_BANK: Array<{ keys: string[]; tags: string[] }> = [
+  { keys: ["favela", "comunidade", "quebrada", "periferia"], tags: ["#favela","#comunidade","#quebrada","#realidade","#cotidiano","#acontecimentos","#periferia","#brasil","#historia","#momento"] },
+  { keys: ["crime", "policial", "policia", "assalto", "roubo", "violencia"], tags: ["#crime","#plantao","#policial","#ocorrencia","#noticias","#seguranca","#casoreal","#investigacao","#justica"] },
+  { keys: ["noticia", "noticias", "acontecimento", "jornal", "urgente"], tags: ["#noticias","#plantao","#informacao","#acontecimentos","#atualidades","#brasil","#urgente","#imprensa"] },
+  { keys: ["curiosidade", "curiosidades", "fato", "fatos", "voce sabia"], tags: ["#curiosidades","#fatoscuriosos","#vocesabia","#descobertas","#conhecimento","#aprender","#informacao","#mundoafora"] },
+  { keys: ["ciencia", "biologia", "natureza", "animal", "animais", "experimento"], tags: ["#ciencia","#biologia","#natureza","#mundoanimal","#experimento","#descobertas","#conhecimento","#curiosidades"] },
+  { keys: ["astronomia", "espaco", "universo", "planeta", "nasa"], tags: ["#astronomia","#espaco","#universo","#planetas","#cosmos","#ciencia","#nasa","#estrelas"] },
+  { keys: ["filme", "filmes", "cinema", "serie", "series", "cena"], tags: ["#filmes","#cinema","#series","#cenas","#filmedodia","#movie","#cinemabr","#recomendacao"] },
+  { keys: ["suspense", "terror", "acao", "drama", "comedia"], tags: ["#suspense","#terror","#acao","#drama","#comedia","#cinema","#filmes"] },
+  { keys: ["promocao", "oferta", "desconto", "cupom", "achadinho", "shopee", "amazon", "mercado livre", "marketplace"], tags: ["#promocao","#oferta","#desconto","#achadinhos","#ofertadodia","#cupom","#economizar","#produto","#shopee","#amazon","#mercadolivre"] },
+  { keys: ["maquiagem", "make", "beleza", "skincare", "cabelo"], tags: ["#maquiagem","#beleza","#make","#skincare","#autocuidado","#cabelo","#resenha"] },
+  { keys: ["moda", "look", "roupa", "estilo"], tags: ["#moda","#look","#estilo","#lookdodia","#tendencia","#roupas"] },
+  { keys: ["tecnologia", "celular", "gadget", "computador", "app", "ia"], tags: ["#tecnologia","#gadgets","#celular","#inovacao","#techbr","#novidades"] },
+  { keys: ["fitness", "treino", "academia", "musculacao", "corrida"], tags: ["#fitness","#treino","#academia","#musculacao","#saude","#disciplina"] },
+  { keys: ["maternidade", "bebe", "filho", "gravidez"], tags: ["#maternidade","#bebe","#maternidadereal","#filhos","#gravidez","#familia"] },
+  { keys: ["pet", "pets", "cachorro", "gato"], tags: ["#pets","#cachorro","#gatos","#petlovers","#animais","#fofura"] },
+  { keys: ["decoracao", "casa", "organizacao", "reforma"], tags: ["#decoracao","#casa","#organizacao","#interiores","#reforma","#lardocelar"] },
+  { keys: ["cozinha", "receita", "comida", "culinaria"], tags: ["#receita","#culinaria","#comida","#cozinha","#receitafacil","#gastronomia"] },
+  { keys: ["carro", "carros", "automovel", "moto"], tags: ["#carros","#automoveis","#motor","#velocidade","#carroslegais","#moto"] },
+  { keys: ["educacao", "estudo", "escola", "concurso"], tags: ["#educacao","#estudos","#aprender","#conhecimento","#escola","#dicasdeestudo"] },
+  { keys: ["saude", "medicina", "medico", "doenca"], tags: ["#saude","#medicina","#bemestar","#cuidados","#prevencao"] },
+  { keys: ["financas", "dinheiro", "investimento", "economia"], tags: ["#financas","#dinheiro","#investimentos","#educacaofinanceira","#economia"] },
+  { keys: ["esporte", "futebol", "jogo", "time"], tags: ["#futebol","#esporte","#jogo","#torcida","#lance","#brasileirao"] },
+  { keys: ["humor", "meme", "engracado", "piada"], tags: ["#humor","#memes","#engracado","#risadas","#comedia"] },
+  { keys: ["historia", "historias", "relato", "caso"], tags: ["#historiareal","#relato","#caso","#historias","#acontecimentos","#emocionante"] },
+  { keys: ["game", "games", "jogo eletronico", "gameplay"], tags: ["#games","#gameplay","#gamer","#jogos","#gamingbr"] },
+];
+
+function bankTagsFor(a: Analysis, seed: number): string[] {
+  const hay = slug([
+    a.nicho, a.subnicho, a.tema, a.assunto, a.contexto, a.narrativa, a.ambiente,
+    arr(a.palavras_chave).join(" "), arr(a.objetos).join(" "), arr(a.produtos).join(" "),
+  ].filter(Boolean).join(" "));
+
+  const matched: string[] = [];
+  for (const entry of HASHTAG_BANK) {
+    if (entry.keys.some((k) => hay.includes(slug(k)))) {
+      const rot = entry.tags.slice(seed % entry.tags.length).concat(entry.tags.slice(0, seed % entry.tags.length));
+      matched.push(...rot);
+    }
+  }
+  return Array.from(new Set(matched));
+}
+
+/** Hashtags derivadas diretamente do conteúdo observado. */
+function contentTags(a: Analysis): string[] {
+  const words = [
+    ...arr(a.palavras_chave),
+    ...arr(a.produtos),
+    ...arr(a.objetos),
+    ...String(a.subnicho ?? "").split(/[\s,/&-]+/),
+    ...String(a.nicho ?? "").split(/[\s,/&-]+/),
+  ];
+  return Array.from(
+    new Set(words.map(slug).filter((w) => w.length > 3 && !BANNED_TAGS.has(w)).map((w) => `#${w}`)),
+  );
+}
+
+function stripBanned(tags: string[]) {
+  return tags.filter((t) => !BANNED_TAGS.has(slug(t)));
+}
 
 function analysisBlock(a: Analysis) {
   const line = (k: string, v: unknown) => {
@@ -245,46 +327,55 @@ function toneBlock(body: Body) {
   ].filter(Boolean).join("\n");
 }
 
-function copySystem(seed: number, strict: boolean) {
+function copySystem(seed: number, strict: boolean, bank: string[]) {
   const hook = pickOne(HOOK_FORMULAS, seed);
-  const ctaIntent = pickOne(CTA_INTENTS, seed >> 3);
+  const ctaExamples = [pickOne(CTA_POOL, seed), pickOne(CTA_POOL, seed >> 2), pickOne(CTA_POOL, seed >> 4)];
   const tone = pickOne(TONES, seed >> 6);
+  const titleExample = pickOne(TITLE_MODELS_HINT, seed >> 1);
 
-  return `Você é um social media brasileiro sênior. Você acabou de assistir a um vídeo e recebeu a ANÁLISE detalhada dele.
+  return `Você é um social media brasileiro que cuida de páginas com milhões de visualizações. Você acabou de assistir ao vídeo e recebeu a ANÁLISE dele.
 
-REGRA CENTRAL: o ASSUNTO da legenda nasce SEMPRE da análise do vídeo.
-A página/projeto serve APENAS para calibrar linguagem, formalidade e tom de voz — nunca para definir o assunto.
-O nicho já foi identificado a partir do conteúdo: use-o para escolher vocabulário e hashtags de comunidade.
+Antes de escrever, pergunte-se: "se esse vídeo fosse publicado por uma página gigante, como seria o texto?" Escreva assim.
+
+REGRA CENTRAL: o assunto nasce SEMPRE da análise do vídeo. A página/projeto só calibra linguagem e tom de voz — nunca define o assunto.
+
+TÍTULO:
+- Uma frase curta (até ~60 caracteres), altamente chamativa, que crie tensão ou curiosidade sobre ESTE vídeo.
+- Estilo (apenas referência de energia, não copie): "${titleExample}".
+- Deve variar conforme o vídeo. Nunca genérico, nunca descritivo do tipo "vídeo mostra...".
 
 LEGENDA:
-- Deve provar que quem escreveu assistiu ao vídeo: cite elementos concretos da análise (objeto, ação, cena, texto lido, detalhe do ambiente).
-- Gancho na primeira frase, usando a fórmula: ${hook}.
-- Depois 1 ou 2 frases de desenvolvimento com informação concreta, benefício ou curiosidade real.
-- 2 a 4 frases curtas, até ~300 caracteres, linguagem natural, tom ${tone}.
-- Sem clickbait enganoso. Sem hashtags, links, URLs ou @menções dentro da legenda.
-- Nunca invente marcas, preços, nomes, títulos ou falas que não estejam na análise.
-- PROIBIDO clichê: "Confira essa promoção", "Produto incrível", "Olha isso", "Imperdível", "Você precisa ver", "Corre lá", "Simplesmente perfeito", "conteúdo incrível", "vale a pena conferir".
+- NÃO é descrição do vídeo. É um texto que cria curiosidade e faz a pessoa assistir até o fim.
+- Gancho na primeira frase usando a fórmula: ${hook}.
+- 2 a 4 frases curtas, até ~300 caracteres, tom ${tone}, conversando com quem assiste.
+- Cite pelo menos um elemento concreto e real da análise (objeto, ação, cena, texto lido, detalhe do ambiente).
+- Nunca invente informação, marca, nome, preço ou fala. Nunca exagere além do que aparece.
+- Sem hashtags, links, URLs ou @menções dentro da legenda. No máximo 1 emoji, e só se somar.
+- PROIBIDO escrever como IA: "Confira isso", "Olha esse vídeo", "Produto incrível", "Imperdível", "Veja essa promoção", "Você precisa ver", "Corre lá", "Simplesmente perfeito", "vale a pena conferir", "conteúdo incrível".
 
-CTA (campo separado, não repetir dentro da legenda):
-- Uma frase curta, específica ao conteúdo do vídeo, com intenção: ${ctaIntent}.
+CTA (campo separado, curto, natural, nunca repetido):
+- Uma frase que puxe comentário de forma natural. Varie sempre. Exemplos de energia: ${ctaExamples.join(" / ")}.
 
-HASHTAGS (12 a 18 no total, todas derivadas do conteúdo do vídeo + nicho identificado):
-- "alcance": 3 a 5 amplas/de descoberta.
-- "nicho": 4 a 6 do nicho e da comunidade detectada.
-- "tema": 4 a 7 específicas do que aparece no vídeo (produto, cena, assunto, palavras-chave).
-- Troque a maior parte das hashtags recentes informadas. Cada hashtag começa com # e não tem espaços.
+HASHTAGS (12 a 18 no total, TODAS relacionadas ao conteúdo e ao nicho identificado):
+- PROIBIDO usar hashtags vazias: #fyp, #viral, #paravoce, #reels, #explore, #trending, #shorts, #dicas, #descobrindo, #conteudo.
+- Misture tamanhos: grandes (do assunto), médias (do nicho) e específicas/nichadas (do que aparece no vídeo).
+- "alcance": 3 a 5 amplas MAS do tema (ex.: #noticias, #cinema, #promocao) — nunca genéricas de plataforma.
+- "nicho": 4 a 6 da comunidade do nicho detectado.
+- "tema": 4 a 7 específicas do que aparece (produto, cena, assunto, palavras-chave).
+- Troque a maior parte das hashtags recentes informadas.
+${bank.length ? `- Banco sugerido para este tema (use as que fizerem sentido e acrescente outras específicas): ${bank.slice(0, 24).join(" ")}` : ""}
 
-TESTE FINAL OBRIGATÓRIO (faça mentalmente antes de responder):
-"Essa legenda poderia servir para qualquer outro vídeo?" Se sim, reescreva até que não sirva.
-${strict ? "\nATENÇÃO: a tentativa anterior foi rejeitada por ser genérica. Cite obrigatoriamente pelo menos DOIS elementos concretos e específicos da análise (nomes de objetos, texto lido na tela, ação exata, detalhe do cenário) dentro da legenda." : ""}
+TESTE FINAL OBRIGATÓRIO: "Esse título/legenda/hashtags serviriam para qualquer outro vídeo?" Se sim, reescreva.
+${strict ? "\nATENÇÃO: a tentativa anterior foi rejeitada por ser genérica. Cite obrigatoriamente DOIS elementos concretos da análise no texto e use hashtags específicas do assunto." : ""}
 
 Responda SOMENTE JSON válido:
-{"nicho":"nicho identificado","caption":"...","cta":"...","hashtags":{"alcance":["#..."],"nicho":["#..."],"tema":["#..."]}}`;
+{"nicho":"nicho identificado","title":"...","caption":"...","cta":"...","hashtags":{"alcance":["#..."],"nicho":["#..."],"tema":["#..."]}}`;
 }
 
 async function writeCopy(body: Body, a: Analysis, seed: number, strict: boolean) {
+  const bank = bankTagsFor(a, seed);
   const messages = [
-    { role: "system", content: copySystem(seed, strict) },
+    { role: "system", content: copySystem(seed, strict, bank) },
     {
       role: "user",
       content: `ANÁLISE DO VÍDEO (fonte única do assunto):\n${analysisBlock(a) || "(análise pobre — seja o mais concreto possível com o que houver)"}\n\nIDENTIDADE DA PÁGINA (apenas tom de voz):\n${toneBlock(body) || "(sem informação — use tom neutro)"}`,
@@ -315,10 +406,11 @@ async function writeCopy(body: Body, a: Analysis, seed: number, strict: boolean)
 // ------------------------------------------------- validação anti-genérico
 
 const CLICHES = [
-  "confira essa promo", "produto incrivel", "produto incrível", "olha isso",
+  "confira essa promo", "confira isso", "produto incrivel", "produto incrível", "olha isso",
+  "olha esse video", "olha esse vídeo", "veja essa promocao", "veja essa promoção",
   "imperdivel", "imperdível", "voce precisa ver", "você precisa ver", "corre la",
   "corre lá", "simplesmente perfeito", "conteudo incrivel", "conteúdo incrível",
-  "vale a pena conferir", "nao vai acreditar", "não vai acreditar",
+  "vale a pena conferir", "nao vai acreditar", "não vai acreditar", "nesse video voce ve",
 ];
 
 /** Termos concretos extraídos da análise para verificar ancoragem da legenda. */
@@ -354,26 +446,23 @@ function isGeneric(caption: string, a: Analysis): boolean {
 function hashtagsCoherent(groups: { alcance: string[]; nicho: string[]; tema: string[] }, a: Analysis) {
   const total = groups.alcance.length + groups.nicho.length + groups.tema.length;
   if (total < 8) return false;
-  const terms = anchorTerms(a);
+  const all = groups.alcance.concat(groups.nicho, groups.tema);
+  if (all.some((t) => BANNED_TAGS.has(slug(t)))) return false;
+  const terms = anchorTerms(a).concat(bankTagsFor(a, 0).map((t) => slug(t)));
   if (terms.length < 2) return true;
-  const flat = groups.tema.concat(groups.nicho).map((t) => slug(t)).join(" ");
+  const flat = all.map((t) => slug(t)).join(" ");
   return terms.some((t) => flat.includes(t.slice(0, Math.min(t.length, 8))));
 }
 
 // ---------------------------------------------------------------- fallback local
 
-const GENERIC_TAGS = [
-  "reels", "viral", "fyp", "paravoce", "explorar", "tiktokbrasil",
-  "shorts", "trend", "conteudo", "brasil", "descobrindo", "dicas",
-];
-
-const FALLBACK_CTAS = [
-  "Comenta aí o que você achou disso.",
-  "Salva pra não perder esse detalhe depois.",
-  "Marca alguém que precisa ver isso.",
-  "Assiste de novo e repara no final.",
-  "Me conta nos comentários se você faria igual.",
-  "Segue aqui pra ver mais sobre esse assunto.",
+const FALLBACK_TITLES = [
+  "Ninguém esperava esse final...",
+  "Repara no detalhe que aparece no fim",
+  "Isso muda tudo quando você entende",
+  "Você teria coragem?",
+  "O detalhe que quase ninguém percebeu",
+  "Olha o que aconteceu logo depois...",
 ];
 
 /** Fallback construído a partir da ANÁLISE (não do projeto). */
@@ -396,35 +485,47 @@ function localFallback(body: Body, a: Analysis) {
   ].filter(Boolean) as string[];
 
   const caption = `${lead}. ${pickOne(develop, seed >> 2)}`.replace(/\s+/g, " ").slice(0, 280);
-  const cta = pickOne(FALLBACK_CTAS, seed);
-
-  const nicheWords = [a.nicho, a.subnicho].filter(Boolean).flatMap((s) => String(s).split(/[\s,/&-]+/));
-  const themeWords = [
-    ...arr(a.palavras_chave),
-    ...arr(a.produtos),
-    ...arr(a.objetos),
-  ];
+  const cta = pickOne(CTA_POOL, seed);
+  const title = pickOne(FALLBACK_TITLES, seed >> 5);
 
   const recent = new Set((body.recentHashtags ?? []).map((t) => normalizeTag(t).toLowerCase()));
   const fresh = (tags: string[]) => {
     const kept = tags.filter((t) => !recent.has(t.toLowerCase()));
     return kept.length >= 3 ? kept : tags;
   };
-  const tag = (list: string[]) =>
-    Array.from(new Set(list.map(slug).filter((w) => w.length > 2).map((w) => `#${w}`)));
 
-  const rotated = GENERIC_TAGS.slice(seed % GENERIC_TAGS.length)
-    .concat(GENERIC_TAGS.slice(0, seed % GENERIC_TAGS.length));
+  const bank = stripBanned(bankTagsFor(a, seed));
+  const specific = stripBanned(contentTags(a));
+  const nicheWords = stripBanned(
+    Array.from(new Set(
+      [a.nicho, a.subnicho].filter(Boolean)
+        .flatMap((s) => String(s).split(/[\s,/&-]+/))
+        .map(slug).filter((w) => w.length > 2).map((w) => `#${w}`),
+    )),
+  );
+
+  const take = (list: string[], n: number, used: Set<string>) => {
+    const out: string[] = [];
+    for (const t of list) {
+      if (out.length >= n) break;
+      const k = t.toLowerCase();
+      if (used.has(k)) continue;
+      used.add(k);
+      out.push(t);
+    }
+    return out;
+  };
+  const used = new Set<string>();
+  const alcance = take(fresh(bank), 5, used);
+  const nicho = take(fresh([...nicheWords, ...bank]), 6, used);
+  const tema = take(fresh([...specific, ...bank]), 7, used);
 
   return {
+    title,
     caption,
     cta,
     nicho: a.nicho ?? null,
-    hashtags: {
-      alcance: fresh(tag(rotated)).slice(0, 5),
-      nicho: fresh(tag(nicheWords)).slice(0, 6),
-      tema: fresh(tag(themeWords)).slice(0, 7),
-    },
+    hashtags: { alcance, nicho, tema },
   };
 }
 
@@ -456,7 +557,12 @@ Deno.serve(async (req) => {
 
       const caption = String(res.parsed.caption ?? "").trim();
       const cta = String(res.parsed.cta ?? "").trim();
-      const hashtags = normalizeHashtags(res.parsed.hashtags ?? {});
+      const raw = normalizeHashtags(res.parsed.hashtags ?? {});
+      const hashtags = {
+        alcance: stripBanned(raw.alcance),
+        nicho: stripBanned(raw.nicho),
+        tema: stripBanned(raw.tema),
+      };
       const generic = isGeneric(caption, analysis);
       const coherent = hashtagsCoherent(hashtags, analysis);
 
@@ -468,18 +574,18 @@ Deno.serve(async (req) => {
         if (attempt === 0) continue;
       }
 
-      const fb = (hashtags.alcance.length + hashtags.nicho.length + hashtags.tema.length) < 10
-        ? localFallback(body, analysis)
-        : null;
+      const fbLocal = localFallback(body, analysis);
+      const needsTags = (hashtags.alcance.length + hashtags.nicho.length + hashtags.tema.length) < 10;
 
       return json(200, {
+        title: String(res.parsed.title ?? "").trim() || fbLocal.title,
         caption,
-        cta: cta || localFallback(body, analysis).cta,
-        hashtags: fb
+        cta: cta || fbLocal.cta,
+        hashtags: needsTags
           ? {
-              alcance: Array.from(new Set([...hashtags.alcance, ...fb.hashtags.alcance])).slice(0, 5),
-              nicho: Array.from(new Set([...hashtags.nicho, ...fb.hashtags.nicho])).slice(0, 6),
-              tema: Array.from(new Set([...hashtags.tema, ...fb.hashtags.tema])).slice(0, 7),
+              alcance: Array.from(new Set([...hashtags.alcance, ...fbLocal.hashtags.alcance])).slice(0, 5),
+              nicho: Array.from(new Set([...hashtags.nicho, ...fbLocal.hashtags.nicho])).slice(0, 6),
+              tema: Array.from(new Set([...hashtags.tema, ...fbLocal.hashtags.tema])).slice(0, 7),
             }
           : hashtags,
         niche: String(res.parsed.nicho ?? analysis.nicho ?? "") || undefined,
@@ -517,3 +623,4 @@ Deno.serve(async (req) => {
     return json(200, { ...fb, source: "fallback", validated: false });
   }
 });
+
