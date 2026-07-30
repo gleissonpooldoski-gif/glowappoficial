@@ -768,8 +768,9 @@ Deno.serve(async (req) => {
       module: "generate-caption", event: "unexpected_error",
       error: String((e as Error)?.message ?? e),
     }));
-    const fb = localFallback(body, textOnlyAnalysis(body));
+    const fb = smartFallback(body, heuristicAnalysis(body));
     return json(200, { ...fb, source: "fallback", validated: false });
+
   }
 });
 
