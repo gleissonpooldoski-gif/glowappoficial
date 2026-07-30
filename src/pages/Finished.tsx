@@ -17,7 +17,7 @@ import { ptBR } from "date-fns/locale";
 import { useActiveProject } from "@/context/ProjectContext";
 import { cn } from "@/lib/utils";
 import JSZip from "jszip";
-import { extractVideoFrames } from "@/lib/videoFrames";
+import { generateVideoContent } from "@/lib/caption-engine";
 import { describeEdgeError } from "@/lib/edge-errors";
 import {
   AlertDialog, AlertDialogAction, AlertDialogCancel, AlertDialogContent,
