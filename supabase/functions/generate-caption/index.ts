@@ -195,7 +195,12 @@ async function analyzeVideo(body: Body, frames: string[]): Promise<Analysis | nu
         context: { stage: "vision", model, frames: frames.length },
       });
       const parsed = parseModelJson<Analysis>(raw);
-      if (parsed && (parsed.assunto || parsed.tema || parsed.narrativa)) return parsed;
+      if (parsed && (parsed.assunto || parsed.tema || parsed.narrativa)) {
+        (parsed as any).ocr = cleanOcr((parsed as any).ocr);
+        const n = String((parsed as any).nicho ?? "").trim();
+        if (!n || /^[@#]/.test(n)) (parsed as any).nicho = "geral";
+        return parsed;
+      }
     } catch (e) {
       console.warn(JSON.stringify({
         module: "generate-caption", event: "vision_failed", model,
