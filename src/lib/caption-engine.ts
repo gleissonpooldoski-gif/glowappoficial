@@ -64,21 +64,44 @@ async function resolveVideoUrl(input: GenerateInput): Promise<string | null> {
   }
 }
 
-/** Últimas legendas usadas — evita que a IA repita estruturas. */
-async function loadHistory(): Promise<string[]> {
-  try {
-    const { data } = await supabase
+/** Últimas legendas/hashtags usadas — evita repetição de estrutura e de tags. */
+async function loadHistory(projectId?: string | null): Promise<{ captions: string[]; hashtags: string[] }> {
+  const run = async (scoped: boolean) => {
+    let q = supabase
       .from("instagram_posts")
-      .select("caption")
+      .select("caption, hashtags")
       .order("created_at", { ascending: false })
-      .limit(8);
-    return (data ?? [])
-      .map((r: any) => String(r?.caption ?? "").split("\n")[0].trim())
-      .filter((c: string) => c.length > 10);
+      .limit(12);
+    if (scoped && projectId) q = q.eq("project_id", projectId);
+    const { data, error } = await q;
+    if (error) throw error;
+    return data ?? [];
+  };
+
+  let rows: any[] = [];
+  try {
+    rows = await run(Boolean(projectId));
   } catch {
-    return [];
+    try { rows = await run(false); } catch { rows = []; }
   }
+
+  const captions = rows
+    .map((r: any) => String(r?.caption ?? "").split("\n")[0].trim())
+    .filter((c: string) => c.length > 10)
+    .slice(0, 8);
+
+  const hashtags = Array.from(
+    new Set(
+      rows
+        .flatMap((r: any) => String(r?.hashtags ?? "").split(/\s+/))
+        .map((t: string) => t.trim())
+        .filter((t: string) => t.startsWith("#") && t.length > 2),
+    ),
+  ).slice(0, 40);
+
+  return { captions, hashtags };
 }
+
 
 /** Fallback local no cliente — só usado se a Edge Function estiver totalmente fora. */
 function clientFallback(input: GenerateInput): GeneratedContent {
