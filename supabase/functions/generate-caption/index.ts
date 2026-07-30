@@ -474,7 +474,6 @@ const FALLBACK_TITLES = [
 function localFallback(body: Body, a: Analysis) {
   const seed = Number.isFinite(body.variationSeed) ? Number(body.variationSeed) : Date.now();
   const overlay = arr(a.ocr)[0] ?? String(body.videoText ?? "").trim();
-  const subject = String(a.assunto ?? a.tema ?? a.narrativa ?? "").trim();
 
   const HOOKS = [
     "O que você faria numa situação dessas? 😳",
