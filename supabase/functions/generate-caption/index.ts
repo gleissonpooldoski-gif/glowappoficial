@@ -591,7 +591,7 @@ Deno.serve(async (req) => {
       }
 
       const fbLocal = localFallback(body, analysis);
-      const needsTags = (hashtags.alcance.length + hashtags.nicho.length + hashtags.tema.length) < 10;
+      const needsTags = (hashtags.alcance.length + hashtags.nicho.length + hashtags.tema.length) < 16;
 
       return json(200, {
         title: String(res.parsed.title ?? "").trim() || fbLocal.title,
@@ -599,9 +599,10 @@ Deno.serve(async (req) => {
         cta: cta || fbLocal.cta,
         hashtags: needsTags
           ? {
-              alcance: Array.from(new Set([...hashtags.alcance, ...fbLocal.hashtags.alcance])).slice(0, 5),
-              nicho: Array.from(new Set([...hashtags.nicho, ...fbLocal.hashtags.nicho])).slice(0, 6),
-              tema: Array.from(new Set([...hashtags.tema, ...fbLocal.hashtags.tema])).slice(0, 7),
+              alcance: Array.from(new Set([...hashtags.alcance, ...fbLocal.hashtags.alcance])).slice(0, 7),
+              nicho: Array.from(new Set([...hashtags.nicho, ...fbLocal.hashtags.nicho])).slice(0, 9),
+              tema: Array.from(new Set([...hashtags.tema, ...fbLocal.hashtags.tema])).slice(0, 10),
+
             }
           : hashtags,
         niche: String(res.parsed.nicho ?? analysis.nicho ?? "") || undefined,
