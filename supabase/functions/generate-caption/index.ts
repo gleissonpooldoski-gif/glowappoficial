@@ -676,7 +676,14 @@ Deno.serve(async (req) => {
 
     // ETAPA 1 — assistir ao vídeo
     const vision = await analyzeVideo(body, frames);
-    const analysis: Analysis = vision ?? textOnlyAnalysis(body);
+    const analysis: Analysis = vision ?? heuristicAnalysis(body);
+    console.info(JSON.stringify({
+      module: "generate-caption", event: "analysis_ready",
+      vision: Boolean(vision), source: vision ? "ai_vision" : "heuristic",
+      frames: frames.length, nicho: analysis.nicho ?? null,
+      keywords: arr(analysis.palavras_chave).slice(0, 10),
+      confianca: analysis.confianca ?? null,
+    }));
 
     // ETAPA 2 — escrever a partir da análise, com rejeição de genérico
     for (let attempt = 0; attempt < 2; attempt++) {
@@ -702,8 +709,16 @@ Deno.serve(async (req) => {
         if (attempt === 0) continue;
       }
 
-      const fbLocal = localFallback(body, analysis);
+      const fbLocal = smartFallback(body, analysis);
       const needsTags = (hashtags.alcance.length + hashtags.nicho.length + hashtags.tema.length) < 16;
+
+      console.info(JSON.stringify({
+        module: "generate-caption", event: "caption_delivered",
+        version: "ai", model: res.model, attempt, generic, coherent,
+        vision: Boolean(vision), chars: caption.length,
+        tags: hashtags.alcance.length + hashtags.nicho.length + hashtags.tema.length,
+        ms: Date.now() - startedAt,
+      }));
 
       return json(200, {
         title: String(res.parsed.title ?? "").trim() || fbLocal.title,
@@ -728,10 +743,14 @@ Deno.serve(async (req) => {
       });
     }
 
-    const fb = localFallback(body, analysis);
+    const fb = smartFallback(body, analysis);
     console.warn(JSON.stringify({
       module: "generate-caption", event: "local_fallback_used",
-      vision: Boolean(vision), frames: frames.length, ms: Date.now() - startedAt,
+      version: "fallback_inteligente",
+      reason: vision ? "copy_stage_unavailable" : "vision_and_copy_unavailable",
+      analysis_source: vision ? "ai_vision" : "heuristic",
+      quality: fb.quality, nicho: analysis.nicho ?? null,
+      frames: frames.length, ms: Date.now() - startedAt,
     }));
     return json(200, {
       ...fb,
@@ -740,9 +759,10 @@ Deno.serve(async (req) => {
       analysisJson: analysis,
       source: "fallback",
       vision: Boolean(vision),
-      validated: false,
+      validated: !fb.quality.generic && fb.quality.coherent,
       ms: Date.now() - startedAt,
     });
+
   } catch (e) {
     console.error(JSON.stringify({
       module: "generate-caption", event: "unexpected_error",
