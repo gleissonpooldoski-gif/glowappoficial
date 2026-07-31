@@ -566,7 +566,9 @@ VALIDAÇÃO ANTES DE RESPONDER — se qualquer resposta for "não", reescreva an
 - O texto parece escrito à mão por um social media profissional (e não por IA)?
 - Essa legenda poderia ser usada em OUTRO vídeo? Se sim, está errada.
 
-PROIBIDO: descrições técnicas, textos institucionais, "Confira", "Olha esse vídeo", "Imperdível", "Você precisa ver", "Vale a pena conferir", "Produto incrível".
+PROIBIDO — descrição visual em vez de copywriting. Nunca escreva: "o vídeo mostra...", "é possível ver...", "na imagem...", "há um homem...", "aparece uma...", nem descrever cores, enquadramento, iluminação ou posição de objetos.
+PROIBIDO também: descrições técnicas, textos institucionais, "Confira", "Olha esse vídeo", "Imperdível", "Você precisa ver", "Vale a pena conferir", "Produto incrível".
+Se houver transcrição do áudio, o assunto da legenda deve nascer do que foi DITO no vídeo.
 ${strict ? "\nATENÇÃO: a tentativa anterior foi rejeitada por ser genérica. Cite obrigatoriamente DOIS elementos concretos da análise no texto e use hashtags específicas do assunto." : ""}
 
 Responda SOMENTE JSON válido:
