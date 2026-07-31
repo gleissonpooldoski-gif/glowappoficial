@@ -63,30 +63,18 @@ type Ctx = {
 const RenderQueueContext = createContext<Ctx | undefined>(undefined);
 
 /**
- * Detecta a capacidade do ambiente (CPU lógica + memória do dispositivo) e
- * define quantas renderizações podem correr em paralelo sem saturar a máquina.
- * Máquina pequena -> 2, média -> 4, robusta -> 6+.
+ * Modo "tudo junto": toda exportação começa a renderizar imediatamente,
+ * em paralelo com as demais — sem limite de fila.
  */
-function detectConcurrency(): number {
-  const nav = navigator as Navigator & { deviceMemory?: number };
-  const cpus = Math.max(1, nav.hardwareConcurrency || 4);
-  const memGb = nav.deviceMemory ?? 4; // Chrome expõe 0.25..8
-
-  // Cada render usa ~1 thread de encode + decode de vídeo: metade dos núcleos.
-  const byCpu = Math.floor(cpus / 2);
-  // ~1.5 GB por renderização simultânea, deixando margem para o editor.
-  const byMem = Math.floor(memGb / 1.5);
-
-  const capacity = Math.min(byCpu, byMem);
-  return Math.max(2, Math.min(8, capacity || 2));
-}
+const UNLIMITED_CONCURRENCY = Number.POSITIVE_INFINITY;
 
 export function RenderQueueProvider({ children }: { children: ReactNode }) {
   const [jobs, setJobs] = useState<RenderJob[]>([]);
   const jobsRef = useRef<RenderJob[]>([]);
   jobsRef.current = jobs;
 
-  const [concurrency] = useState(() => detectConcurrency());
+  const [concurrency] = useState(() => UNLIMITED_CONCURRENCY);
+
   const concurrencyRef = useRef(concurrency);
   concurrencyRef.current = concurrency;
 

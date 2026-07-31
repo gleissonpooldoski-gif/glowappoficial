@@ -52,7 +52,7 @@ export default function RenderQueueIndicator() {
           <Rocket size={13} className="text-gold" />
           Renderizações
           <span className="ml-auto rounded-full bg-gold/20 px-2 py-0.5 text-[10px] text-gold">
-            {activeCount}/{concurrency} ativos
+            {activeCount} ativos
           </span>
           <button
             onClick={() => setCollapsed(true)}
@@ -63,9 +63,10 @@ export default function RenderQueueIndicator() {
           </button>
         </div>
         <div className="mt-1 text-[10px] text-muted-foreground">
-          {pendingCount > 0 ? `${pendingCount} aguardando na fila · ` : ""}
-          capacidade detectada: {concurrency} simultâneas
+          {pendingCount > 0 ? `${pendingCount} iniciando · ` : ""}
+          modo paralelo total: tudo renderiza junto
         </div>
+
       </div>
       <div className="pointer-events-auto max-h-[50vh] space-y-1.5 overflow-y-auto rounded-b-lg border border-t-0 border-border/60 bg-background/95 p-2 backdrop-blur">
         {jobs.map((j) => {
