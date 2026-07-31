@@ -547,13 +547,14 @@ CTA (campo separado): uma frase curta e natural que puxe comentário/compartilha
 
 TÍTULO (campo "title"): frase curta (até ~60 caracteres) usada internamente. Chamativa, específica deste vídeo, nunca descritiva.
 
-HASHTAGS — 18 a 26 no total, TODAS nascidas do conteúdo identificado (assunto, contexto, objeto, ação, categoria, emoção, nicho):
-- PROIBIDO usar hashtags vazias de plataforma: #fyp, #viral, #paravoce, #reels, #explore, #trending, #shorts, #foryou, #dicas, #conteudo.
-- Misture tamanhos: amplas (do tema), médias (do nicho/comunidade) e específicas (do que literalmente aparece no vídeo).
-- "alcance": 5 a 7 amplas do TEMA (ex.: #humor, #noticias, #cinema, #promocao).
-- "nicho": 6 a 9 da comunidade do nicho detectado.
-- "tema": 7 a 10 específicas do que aparece (objeto, ação, reação, cena, palavras-chave, emoção).
+HASHTAGS — 12 a 20 no total, TODAS nascidas do conteúdo identificado (áudio/narração, assunto, contexto, objeto, ação, categoria, emoção, nicho):
+- NÃO use por padrão hashtags vazias de plataforma (#fyp, #viral, #paravoce, #reels, #explore, #trending, #shorts, #foryou, #dicas, #conteudo) — somente se fizerem sentido real para este conteúdo.
+- Misture tamanhos: amplas (do tema), médias (do nicho/comunidade) e específicas (do que literalmente acontece no vídeo).
+- "alcance": 3 a 5 amplas do TEMA (ex.: #humor, #noticias, #cinema, #promocao).
+- "nicho": 4 a 7 da comunidade do nicho detectado.
+- "tema": 5 a 8 específicas do conteúdo (assunto falado, objeto, ação, reação, palavras-chave, emoção).
 - Podem ser em CamelCase quando ficar natural (ex.: #ReacaoInesperada, #SituacaoEngracada).
+- Devem parecer escolhidas por um social media experiente, nunca genéricas.
 - Troque a maior parte das hashtags usadas recentemente.
 ${bank.length ? `- Banco sugerido para este tema (use as que fizerem sentido e acrescente outras específicas): ${bank.slice(0, 28).join(" ")}` : ""}
 
