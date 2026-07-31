@@ -26,39 +26,6 @@ async function resolveProjectFromVideo(videoId?: string | null): Promise<Project
   } catch { return { name: null, category: null }; }
 }
 
-// Retorna instruções específicas de nicho para geração das TAGS.
-function categoryTagGuidance(projectName?: string | null, projectCategory?: string | null): string {
-  const name = (projectName ?? "").toLowerCase();
-  const cat = (projectCategory ?? "").toLowerCase();
-
-  if (name.includes("frame") || cat.includes("cinema") || cat.includes("filme")) {
-    return [
-      "NICHO: Cinema / Filmes e Séries.",
-      "Gere tags relacionadas a: filmes, séries, cinema, streaming, curiosidades,",
-      "cenas, personagens, atores, diretores, lançamentos, trailers, entretenimento.",
-      "Inclua nomes de personagens/filmes/séries quando forem citados na legenda.",
-      "NUNCA misturar memes, humor viral ou produtos.",
-    ].join(" ");
-  }
-  if (name.includes("resenha") || cat.includes("meme") || cat.includes("humor") || cat.includes("comedia")) {
-    return [
-      "NICHO: Memes / Humor.",
-      "Gere tags relacionadas a: memes, humor, vídeos engraçados, internet, viral,",
-      "piadas, comédia, tiktoks, reels engraçados, zoeira, entretenimento.",
-      "NUNCA usar termos de cinema/filmes/séries neste projeto.",
-    ].join(" ");
-  }
-  if (name.includes("promo") || name.includes("segredo") || cat.includes("produto") || cat.includes("achad")) {
-    return [
-      "NICHO: Produtos / Achadinhos / Ofertas.",
-      "Gere tags relacionadas ao produto apresentado: achadinhos, ofertas, promoção,",
-      "desconto, Shopee, Amazon, AliExpress, Mercado Livre, utilidades, gadgets,",
-      "casa, cozinha, review. Inclua o nome do produto quando aparecer na legenda.",
-    ].join(" ");
-  }
-  return "Adapte as tags ao tema real do vídeo. Priorize relevância e especificidade.";
-}
-
 Deno.serve(async (req) => {
   if (req.method === "OPTIONS") return new Response("ok", { headers: corsHeaders });
 
