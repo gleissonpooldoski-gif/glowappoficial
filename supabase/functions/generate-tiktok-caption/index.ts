@@ -1,7 +1,8 @@
 // Gera legenda + hashtags otimizadas para TikTok a partir da legenda base.
 // Foco: gancho inicial forte, texto curto, hashtags de descoberta.
 import { corsHeaders } from "npm:@supabase/supabase-js@2/cors";
-import { aiErrorResponse, callAi, parseModelJson } from "../_shared/ai-gateway.ts";
+import { aiErrorResponse } from "../_shared/ai-gateway.ts";
+import { callGeminiWithFallback, parseGeminiJson } from "../_shared/gemini.ts";
 
 Deno.serve(async (req) => {
   if (req.method === "OPTIONS") return new Response("ok", { headers: corsHeaders });
@@ -60,16 +61,16 @@ Deno.serve(async (req) => {
       (projectCategory ? `\nNicho: ${projectCategory}` : "") +
       "\n\nGere caption + hashtags adaptadas para TikTok.";
 
-    const raw = await callAi({
+    const { text: raw } = await callGeminiWithFallback({
       module: "generate-tiktok-caption",
-      messages: [
-        { role: "system", content: system },
-        { role: "user", content: user },
-      ],
+      stage: "copy",
+      system,
+      parts: [{ text: user }],
+      json: true,
       context: { project: projectName },
     });
 
-    const parsed = parseModelJson<{ caption?: string; hashtags?: string[] }>(raw);
+    const parsed = parseGeminiJson<{ caption?: string; hashtags?: string[] }>(raw);
 
     let outCaption = String(parsed.caption ?? "").trim();
     outCaption = outCaption.replace(/#[\p{L}\p{N}_]+/gu, "").replace(/\s+/g, " ").trim();
