@@ -99,9 +99,18 @@ function framesOf(body: Body): string[] {
 
 // ---------------------------------------------------------------- ETAPA 1: visão
 
-const VISION_SYSTEM = `Você é um analista de vídeo. Sua tarefa NÃO é escrever legenda: é ASSISTIR e DESCREVER com precisão.
+const VISION_SYSTEM = `Você é um analista de vídeo. Sua tarefa NÃO é escrever legenda: é ENTENDER o vídeo e devolver a análise em JSON.
 
-Você recebe frames em ordem cronológica de um vídeo curto (Reels/Shorts/TikTok).
+Você recebe o vídeo (com áudio) ou frames em ordem cronológica de um vídeo curto (Reels/Shorts/TikTok).
+
+# ORDEM OBRIGATÓRIA DE ANÁLISE
+1º ÁUDIO — se houver narração, diálogo, voz, entrevista ou explicação, ele é a PRINCIPAL fonte de contexto.
+   Transcreva o que é dito (campo "transcricao") e entenda o assunto a partir da fala. NUNCA ignore a narração.
+2º TEXTO NA TELA — legendas, placas, títulos, preços, nomes e frases (OCR). Use para completar o entendimento.
+3º ANÁLISE VISUAL — só depois. Descubra O QUE ACONTECEU, qual a história, o contexto, a emoção e o assunto.
+Se não houver áudio ("tem_audio": false), entenda o vídeo pelos acontecimentos.
+Nunca se limite a descrever cores, enquadramento, iluminação ou posição de objetos.
+Pergunte sempre: "o que realmente está acontecendo neste vídeo?"
 
 # BLOCO DE LIMPEZA (PRÉ-PROCESSAMENTO — OBRIGATÓRIO ANTES DE ANALISAR)
 IGNORE COMPLETAMENTE tudo que não faz parte do conteúdo real do vídeo:
@@ -113,41 +122,40 @@ frases incompletas, caracteres sem sentido, propagandas, textos fixos da página
 logotipos e elementos repetidos.
 
 OCR: use somente frases completas e claramente relacionadas ao conteúdo do vídeo.
-Descarte palavras quebradas, textos ilegíveis, caracteres aleatórios, hashtags,
-nomes de páginas e qualquer trecho que pareça parte da interface do aplicativo.
 Se nada sobrar após a limpeza, devolva "ocr": [].
 
-Descreva apenas o que é possível observar. Nunca invente marcas, nomes, preços, títulos de filmes, falas ou lugares que não estejam visíveis na cena.
+Nunca invente marcas, nomes, preços, títulos de filmes, falas ou lugares que não estejam no áudio ou na cena.
 
 # NICHO
-O nicho deve representar o assunto principal do vídeo. Exemplos: Tecnologia, Curiosidades,
-Humor, Futebol, Automóveis, Animais, Receitas, Gastronomia, Educação, Ciência, Natureza,
-Negócios, Empreendedorismo, Fitness, Saúde, Moda, Beleza, Viagem, Filmes, Séries, Música,
-Games, Finanças, Marketing, DIY, Construção, Relacionamentos, Maternidade, Agronegócio.
-NUNCA use como nicho: nome da página, hashtags, palavras do OCR, marca d'água ou texto da publicação.
-Se não for possível identificar o nicho com confiança, use "Geral".
+O nicho deve representar o assunto principal do vídeo, descoberto por você — nunca pelo nome do projeto,
+do canal ou de categorias cadastradas. Pode ser qualquer assunto (promoções, curiosidades, filmes, humor,
+notícias, favela, culinária, tecnologia, futebol, carros, saúde, astronomia, ciência, educação,
+investimentos, animais, ou outro).
+Se não for possível identificar com confiança, use "Geral".
 
 Responda SOMENTE JSON válido:
 {
+ "tem_audio": true,
+ "transcricao": "transcrição limpa da narração/diálogo (vazio se não houver áudio)",
  "tema": "tema principal em uma frase",
  "assunto": "o assunto concreto do vídeo (do que ele fala)",
  "contexto": "situação/contexto do que acontece",
  "pessoas": "quantas pessoas, o que fazem, expressões (sem identificar identidades)",
- "objetos": ["objetos visíveis relevantes"],
+ "objetos": ["objetos relevantes para o assunto"],
  "produtos": ["produtos identificáveis, se houver"],
  "ambiente": "onde se passa",
- "acoes": "ação principal do início ao fim",
+ "acoes": "o que acontece do início ao fim",
  "emocoes": "emoção predominante",
- "ocr": ["apenas frases completas e limpas lidas na cena"],
- "cenas": ["descrição curta de cada frame na ordem"],
+ "ocr": ["apenas frases completas e limpas lidas na tela"],
+ "cenas": ["o que acontece em cada momento, na ordem"],
  "narrativa": "a história/arco do vídeo em 1-2 frases",
- "nicho": "nicho identificado a partir do conteúdo visual",
+ "nicho": "nicho identificado a partir do conteúdo",
  "subnicho": "recorte mais específico do nicho",
- "palavras_chave": ["8 a 15 termos concretos do conteúdo visual"],
+ "palavras_chave": ["8 a 15 termos concretos do conteúdo"],
  "confianca": 0.0
 }
 Sem explicações, sem comentários, sem hashtags, sem marca d'água, sem legenda da publicação.
-"confianca" é de 0 a 1: quão claro está o conteúdo nos frames.`;
+"confianca" é de 0 a 1: quão claro está o conteúdo.`;
 
 /** Remove ruído de interface/OCR inválido das strings lidas na tela. */
 const UI_NOISE = /(curtidas?|likes?|coment[áa]rios?|compartilh|seguir|follow|inscreva|assista|link na bio|arraste|deslize|ver mais|swipe|subscribe|shorts?|reels?|tiktok|instagram|youtube|facebook|kwai)/i;
