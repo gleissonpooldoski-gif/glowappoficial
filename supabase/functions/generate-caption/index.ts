@@ -930,8 +930,13 @@ Deno.serve(async (req) => {
 
     // ETAPA 2 — escrever a partir da análise, com rejeição de genérico
     for (let attempt = 0; attempt < 2; attempt++) {
+      console.info(JSON.stringify({
+        module: "generate-caption", event: "copy_started",
+        attempt, video_id: body.videoId ?? null, project: body.projectName ?? null,
+      }));
       const res = await writeCopy(body, analysis, seed + attempt * 977, attempt > 0);
       if (!res) break;
+
 
       const caption = String(res.parsed.caption ?? "").trim();
       const cta = String(res.parsed.cta ?? "").trim();
