@@ -179,13 +179,17 @@ function cleanOcr(list: unknown): string[] {
 }
 
 
-function visionUserParts(body: Body, frames: string[]): GeminiPart[] {
-  const hints = [
+function hintsBlock(body: Body): string {
+  return [
     body.videoText ? `Texto sobreposto informado pelo editor: ${body.videoText}` : null,
     body.filename ? `Nome do arquivo: ${body.filename}` : null,
   ].filter(Boolean).join("\n");
+}
+
+function visionUserParts(body: Body, frames: string[]): GeminiPart[] {
+  const hints = hintsBlock(body);
   const parts: GeminiPart[] = [{
-    text: `Analise os frames abaixo, em ordem cronológica, e devolva a análise em JSON.${hints ? `\n\nPistas auxiliares (use apenas se coerentes com as imagens):\n${hints}` : ""}`,
+    text: `Analise os frames abaixo, em ordem cronológica, e devolva a análise em JSON. Este vídeo veio sem áudio disponível: entenda pelos acontecimentos e pelos textos na tela.${hints ? `\n\nPistas auxiliares (use apenas se coerentes com as imagens):\n${hints}` : ""}`,
   }];
   for (const f of frames) {
     const part = dataUrlToPart(f);
@@ -194,28 +198,100 @@ function visionUserParts(body: Body, frames: string[]): GeminiPart[] {
   return parts;
 }
 
-/** AGENTE 1 — Analista de Vídeo (Gemini, visão). Só descreve, nunca escreve copy. */
-async function analyzeVideo(body: Body, frames: string[]): Promise<Analysis | null> {
-  if (!frames.length) return null;
+const MAX_INLINE_VIDEO = 18 * 1024 * 1024; // limite seguro para inline_data
+
+function toBase64(bytes: Uint8Array): string {
+  let bin = "";
+  const chunk = 0x8000;
+  for (let i = 0; i < bytes.length; i += chunk) {
+    bin += String.fromCharCode(...bytes.subarray(i, i + chunk));
+  }
+  return btoa(bin);
+}
+
+/** Baixa o vídeo processado para enviar ao Gemini COM ÁUDIO. Null se inviável. */
+async function fetchVideoPart(url: string): Promise<GeminiPart | null> {
   try {
+    const ctrl = new AbortController();
+    const timer = setTimeout(() => ctrl.abort(), 25_000);
+    const res = await fetch(url, { signal: ctrl.signal }).finally(() => clearTimeout(timer));
+    if (!res.ok) return null;
+    const len = Number(res.headers.get("content-length") ?? 0);
+    if (len && len > MAX_INLINE_VIDEO) {
+      console.info(JSON.stringify({ module: "generate-caption", event: "video_too_large", bytes: len }));
+      return null;
+    }
+    const buf = new Uint8Array(await res.arrayBuffer());
+    if (!buf.length || buf.length > MAX_INLINE_VIDEO) return null;
+    const mime = (res.headers.get("content-type") ?? "video/mp4").split(";")[0] || "video/mp4";
+    return { inline_data: { mime_type: mime.startsWith("video/") ? mime : "video/mp4", data: toBase64(buf) } };
+  } catch (e) {
+    console.warn(JSON.stringify({ module: "generate-caption", event: "video_fetch_failed", error: String(e) }));
+    return null;
+  }
+}
+
+function normalizeAnalysis(parsed: any): Analysis | null {
+  if (!parsed || !(parsed.assunto || parsed.tema || parsed.narrativa)) return null;
+  parsed.ocr = cleanOcr(parsed.ocr);
+  parsed.transcricao = String(parsed.transcricao ?? "").replace(/\s+/g, " ").trim();
+  parsed.tem_audio = Boolean(parsed.tem_audio) && parsed.transcricao.length > 0;
+  const n = String(parsed.nicho ?? "").trim();
+  if (!n || /^[@#]/.test(n)) parsed.nicho = "geral";
+  return parsed as Analysis;
+}
+
+/**
+ * AGENTE 1 — Analista de Vídeo (Gemini).
+ * Prioridade: vídeo completo (áudio + imagem). Se o arquivo for grande ou
+ * indisponível, cai para os frames enviados pelo cliente.
+ */
+async function analyzeVideo(body: Body, frames: string[]): Promise<Analysis | null> {
+  const run = async (parts: GeminiPart[], mode: "video_audio" | "frames") => {
     const { text } = await callGeminiWithFallback({
       module: "generate-caption",
       stage: "vision",
       models: VISION_MODELS,
       system: VISION_SYSTEM,
-      parts: visionUserParts(body, frames),
+      parts,
       json: true,
       temperature: 0.4,
-      timeoutMs: 60_000,
-      context: { frames: frames.length },
+      timeoutMs: mode === "video_audio" ? 120_000 : 60_000,
+      context: { mode, frames: frames.length },
     });
-    const parsed = parseGeminiJson<Analysis>(text);
-    if (parsed && (parsed.assunto || parsed.tema || parsed.narrativa)) {
-      (parsed as any).ocr = cleanOcr((parsed as any).ocr);
-      const n = String((parsed as any).nicho ?? "").trim();
-      if (!n || /^[@#]/.test(n)) (parsed as any).nicho = "geral";
-      return parsed;
+    return normalizeAnalysis(parseGeminiJson<any>(text));
+  };
+
+  // 1) vídeo completo com áudio
+  if (body.videoUrl) {
+    try {
+      const videoPart = await fetchVideoPart(String(body.videoUrl));
+      if (videoPart) {
+        const hints = hintsBlock(body);
+        const parsed = await run([
+          { text: `Assista ao vídeo abaixo. Comece pelo ÁUDIO (transcreva a narração/diálogo), depois os textos na tela e só então os acontecimentos visuais. Devolva a análise em JSON.${hints ? `\n\nPistas auxiliares:\n${hints}` : ""}` },
+          videoPart,
+        ], "video_audio");
+        if (parsed) {
+          console.info(JSON.stringify({
+            module: "generate-caption", event: "vision_ok", mode: "video_audio",
+            tem_audio: parsed.tem_audio ?? false, transcricao_chars: (parsed.transcricao ?? "").length,
+          }));
+          return parsed;
+        }
+      }
+    } catch (e) {
+      console.warn(JSON.stringify({
+        module: "generate-caption", event: "vision_video_failed",
+        error: String((e as Error)?.message ?? e),
+      }));
     }
+  }
+
+  // 2) fallback: frames
+  if (!frames.length) return null;
+  try {
+    return await run(visionUserParts(body, frames), "frames");
   } catch (e) {
     console.warn(JSON.stringify({
       module: "generate-caption", event: "vision_failed",
