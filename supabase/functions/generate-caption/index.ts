@@ -510,10 +510,15 @@ function analysisBlock(a: Analysis) {
   ].filter(Boolean).join("\n");
 }
 
+/** Identidade da página: SOMENTE tom de voz e marca. Nunca define o assunto. */
 function toneBlock(body: Body) {
+  const identity = [body.projectName, body.projectCategory].filter(Boolean).join(" · ");
   return [
-    body.projectName ? `Página/canal: ${body.projectName}` : null,
-    body.projectCategory ? `Linha editorial da página: ${body.projectCategory}` : null,
+    identity
+      ? `IDENTIDADE DA PÁGINA (apenas tom de voz / marca): ${identity}\n` +
+        `ATENÇÃO: essa identidade NÃO é o assunto do vídeo. O assunto vem exclusivamente da análise do vídeo (áudio, textos na tela, cenas). ` +
+        `Nunca escreva sobre a página, o projeto ou a categoria.`
+      : null,
     body.style ? `Tom pedido: ${body.style}` : null,
     Array.isArray(body.history) && body.history.length
       ? `Legendas recentes desta página (NÃO repita estrutura nem frases):\n- ${body.history.slice(0, 8).join("\n- ")}`
@@ -523,6 +528,7 @@ function toneBlock(body: Body) {
       : null,
   ].filter(Boolean).join("\n");
 }
+
 
 function copySystem(seed: number, strict: boolean, bank: string[]) {
   const hook = pickOne(HOOK_FORMULAS, seed);
