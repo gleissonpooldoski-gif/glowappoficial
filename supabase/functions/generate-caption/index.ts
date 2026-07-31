@@ -930,13 +930,38 @@ Deno.serve(async (req) => {
       }
 
       const fbLocal = smartFallback(body, analysis);
-      const needsTags = (hashtags.alcance.length + hashtags.nicho.length + hashtags.tema.length) < 16;
+      const needsTags = (hashtags.alcance.length + hashtags.nicho.length + hashtags.tema.length) < 12;
+
+      // 12 a 20 hashtags no total, sem duplicatas entre os grupos.
+      const merged = needsTags
+        ? {
+            alcance: Array.from(new Set([...hashtags.alcance, ...fbLocal.hashtags.alcance])),
+            nicho: Array.from(new Set([...hashtags.nicho, ...fbLocal.hashtags.nicho])),
+            tema: Array.from(new Set([...hashtags.tema, ...fbLocal.hashtags.tema])),
+          }
+        : hashtags;
+      const seenTag = new Set<string>();
+      const capGroup = (list: string[], max: number) => {
+        const out: string[] = [];
+        for (const t of list) {
+          const k = slug(t);
+          if (!k || seenTag.has(k) || out.length >= max) continue;
+          seenTag.add(k);
+          out.push(t);
+        }
+        return out;
+      };
+      const finalTags = {
+        alcance: capGroup(merged.alcance, 5),
+        nicho: capGroup(merged.nicho, 7),
+        tema: capGroup(merged.tema, 8),
+      };
 
       console.info(JSON.stringify({
         module: "generate-caption", event: "caption_delivered",
         version: "ai", model: res.model, attempt, generic, coherent,
-        vision: Boolean(vision), chars: caption.length,
-        tags: hashtags.alcance.length + hashtags.nicho.length + hashtags.tema.length,
+        vision: Boolean(vision), audio: Boolean(analysis.tem_audio), chars: caption.length,
+        tags: finalTags.alcance.length + finalTags.nicho.length + finalTags.tema.length,
         ms: Date.now() - startedAt,
       }));
 
@@ -944,14 +969,7 @@ Deno.serve(async (req) => {
         title: String(res.parsed.title ?? "").trim() || fbLocal.title,
         caption,
         cta: cta || fbLocal.cta,
-        hashtags: needsTags
-          ? {
-              alcance: Array.from(new Set([...hashtags.alcance, ...fbLocal.hashtags.alcance])).slice(0, 7),
-              nicho: Array.from(new Set([...hashtags.nicho, ...fbLocal.hashtags.nicho])).slice(0, 9),
-              tema: Array.from(new Set([...hashtags.tema, ...fbLocal.hashtags.tema])).slice(0, 10),
-
-            }
-          : hashtags,
+        hashtags: finalTags,
         niche: String(res.parsed.nicho ?? analysis.nicho ?? "") || undefined,
         analysis: analysisBlock(analysis),
         analysisJson: analysis,
