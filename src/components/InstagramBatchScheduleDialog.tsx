@@ -177,20 +177,30 @@ export default function InstagramBatchScheduleDialog({ open, onOpenChange, video
     return map;
   };
 
-  const genCaption = async (v: VideoMeta & { project_id: string | null }, projMeta: { name: string | null; category: string | null }) => {
-    // Motor central: nunca falha, sempre devolve legenda + CTA + hashtags.
+  const genCaption = async (
+    v: VideoMeta & { project_id: string | null },
+    projMeta: { name: string | null; category: string | null },
+  ) => {
+    // Motor central e ÚNICO: roda para todo vídeo, de qualquer projeto.
+    console.info("[caption-engine] geração iniciada", {
+      videoId: v.id, filename: v.filename, projectId: v.project_id ?? null, project: projMeta.name ?? null,
+    });
     const gen = await generateVideoContent({
       videoId: v.id,
       filename: v.filename,
       templateName: v.templateName ?? null,
       projectId: v.project_id ?? null,
+      // Projeto = apenas identidade/tom de voz.
       projectName: v.projectName ?? projMeta.name,
       projectCategory: v.projectCategory ?? projMeta.category,
-      frameCount: 3,
     });
     const caption = gen.cta && !gen.caption.includes(gen.cta) ? `${gen.caption}\n\n${gen.cta}` : gen.caption;
+    console.info("[caption-engine] geração concluída", {
+      videoId: v.id, source: gen.source, chars: caption.length, hashtags: gen.hashtags.length,
+    });
     return { caption, hashtags: gen.hashtagsText };
   };
+
 
   const scheduleOne = async (
     v: VideoMeta, slot: Date, caption: string, hashtags: string, nets: NetId[], bundle: ProjectBundle,
