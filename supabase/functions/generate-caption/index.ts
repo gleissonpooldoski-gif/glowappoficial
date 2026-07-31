@@ -338,7 +338,8 @@ function inferNiche(hay: string): { nicho?: string; subnicho?: string } {
   return { nicho: hits[0], subnicho: hits[1] };
 }
 
-/** Análise derivada de OCR/arquivo/contexto quando não há visão de IA disponível. */
+/** Análise derivada de OCR/arquivo quando não há visão de IA disponível.
+ *  O PROJETO nunca entra aqui: ele é identidade (tom/marca), nunca o assunto. */
 function heuristicAnalysis(body: Body): Analysis {
   const overlay = String(body.videoText ?? "").replace(/\s+/g, " ").trim();
   const fileWords = String(body.filename ?? "")
@@ -347,17 +348,16 @@ function heuristicAnalysis(body: Body): Analysis {
     .replace(/\b\d{4,}\b/g, " ")
     .trim();
 
-  const hay = [overlay, fileWords, body.templateName, body.projectCategory, body.projectName]
-    .filter(Boolean).join(" ");
+  const hay = [overlay, fileWords].filter(Boolean).join(" ");
   const { nicho, subnicho } = inferNiche(hay);
 
   const kws = Array.from(new Set([
     ...keywordsFrom(overlay, 12),
     ...keywordsFrom(fileWords, 6),
-    ...keywordsFrom(String(body.projectCategory ?? ""), 4),
   ])).slice(0, 15);
 
-  const assunto = overlay || (fileWords ? fileWords : "") || String(body.projectCategory ?? "");
+  const assunto = overlay || fileWords || "";
+
 
   return {
     tema: assunto || undefined,
