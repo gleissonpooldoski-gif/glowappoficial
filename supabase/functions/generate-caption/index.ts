@@ -33,6 +33,7 @@ type Body = {
   projectCategory?: string | null;
   videoText?: string | null;
   frames?: string[];
+  videoUrl?: string | null;
   style?: string | null;
   history?: string[];
   recentHashtags?: string[];
@@ -59,6 +60,8 @@ type Analysis = {
   subnicho?: string;
   palavras_chave?: string[];
   confianca?: number;
+  tem_audio?: boolean;
+  transcricao?: string;
 };
 
 // Motor exclusivo: Google Gemini (API oficial). 2.5 Flash + sucessores compatíveis.
