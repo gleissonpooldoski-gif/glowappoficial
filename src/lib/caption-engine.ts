@@ -136,7 +136,7 @@ export async function generateVideoContent(input: GenerateInput): Promise<Genera
   let frames: string[] = [];
   try {
     const url = await resolveVideoUrl(input);
-    if (url) frames = await extractVideoFrames(url, input.frameCount ?? 8).catch(() => []);
+    if (url) frames = await extractVideoFrames(url, input.frameCount ?? 16).catch(() => []);
   } catch { /* segue sem frames */ }
 
   const history = await loadHistory();
@@ -144,6 +144,7 @@ export async function generateVideoContent(input: GenerateInput): Promise<Genera
   try {
     const { data, error } = await supabase.functions.invoke("generate-caption", {
       body: {
+        videoId: input.videoId ?? null,
         filename: input.filename ?? undefined,
         templateName: input.templateName ?? null,
         projectName: input.projectName ?? null,
