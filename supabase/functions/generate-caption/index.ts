@@ -33,6 +33,7 @@ type Body = {
   projectCategory?: string | null;
   videoText?: string | null;
   frames?: string[];
+  videoUrl?: string | null;
   style?: string | null;
   history?: string[];
   recentHashtags?: string[];
@@ -59,6 +60,8 @@ type Analysis = {
   subnicho?: string;
   palavras_chave?: string[];
   confianca?: number;
+  tem_audio?: boolean;
+  transcricao?: string;
 };
 
 // Motor exclusivo: Google Gemini (API oficial). 2.5 Flash + sucessores compatíveis.
@@ -96,9 +99,18 @@ function framesOf(body: Body): string[] {
 
 // ---------------------------------------------------------------- ETAPA 1: visão
 
-const VISION_SYSTEM = `Você é um analista de vídeo. Sua tarefa NÃO é escrever legenda: é ASSISTIR e DESCREVER com precisão.
+const VISION_SYSTEM = `Você é um analista de vídeo. Sua tarefa NÃO é escrever legenda: é ENTENDER o vídeo e devolver a análise em JSON.
 
-Você recebe frames em ordem cronológica de um vídeo curto (Reels/Shorts/TikTok).
+Você recebe o vídeo (com áudio) ou frames em ordem cronológica de um vídeo curto (Reels/Shorts/TikTok).
+
+# ORDEM OBRIGATÓRIA DE ANÁLISE
+1º ÁUDIO — se houver narração, diálogo, voz, entrevista ou explicação, ele é a PRINCIPAL fonte de contexto.
+   Transcreva o que é dito (campo "transcricao") e entenda o assunto a partir da fala. NUNCA ignore a narração.
+2º TEXTO NA TELA — legendas, placas, títulos, preços, nomes e frases (OCR). Use para completar o entendimento.
+3º ANÁLISE VISUAL — só depois. Descubra O QUE ACONTECEU, qual a história, o contexto, a emoção e o assunto.
+Se não houver áudio ("tem_audio": false), entenda o vídeo pelos acontecimentos.
+Nunca se limite a descrever cores, enquadramento, iluminação ou posição de objetos.
+Pergunte sempre: "o que realmente está acontecendo neste vídeo?"
 
 # BLOCO DE LIMPEZA (PRÉ-PROCESSAMENTO — OBRIGATÓRIO ANTES DE ANALISAR)
 IGNORE COMPLETAMENTE tudo que não faz parte do conteúdo real do vídeo:
@@ -110,41 +122,40 @@ frases incompletas, caracteres sem sentido, propagandas, textos fixos da página
 logotipos e elementos repetidos.
 
 OCR: use somente frases completas e claramente relacionadas ao conteúdo do vídeo.
-Descarte palavras quebradas, textos ilegíveis, caracteres aleatórios, hashtags,
-nomes de páginas e qualquer trecho que pareça parte da interface do aplicativo.
 Se nada sobrar após a limpeza, devolva "ocr": [].
 
-Descreva apenas o que é possível observar. Nunca invente marcas, nomes, preços, títulos de filmes, falas ou lugares que não estejam visíveis na cena.
+Nunca invente marcas, nomes, preços, títulos de filmes, falas ou lugares que não estejam no áudio ou na cena.
 
 # NICHO
-O nicho deve representar o assunto principal do vídeo. Exemplos: Tecnologia, Curiosidades,
-Humor, Futebol, Automóveis, Animais, Receitas, Gastronomia, Educação, Ciência, Natureza,
-Negócios, Empreendedorismo, Fitness, Saúde, Moda, Beleza, Viagem, Filmes, Séries, Música,
-Games, Finanças, Marketing, DIY, Construção, Relacionamentos, Maternidade, Agronegócio.
-NUNCA use como nicho: nome da página, hashtags, palavras do OCR, marca d'água ou texto da publicação.
-Se não for possível identificar o nicho com confiança, use "Geral".
+O nicho deve representar o assunto principal do vídeo, descoberto por você — nunca pelo nome do projeto,
+do canal ou de categorias cadastradas. Pode ser qualquer assunto (promoções, curiosidades, filmes, humor,
+notícias, favela, culinária, tecnologia, futebol, carros, saúde, astronomia, ciência, educação,
+investimentos, animais, ou outro).
+Se não for possível identificar com confiança, use "Geral".
 
 Responda SOMENTE JSON válido:
 {
+ "tem_audio": true,
+ "transcricao": "transcrição limpa da narração/diálogo (vazio se não houver áudio)",
  "tema": "tema principal em uma frase",
  "assunto": "o assunto concreto do vídeo (do que ele fala)",
  "contexto": "situação/contexto do que acontece",
  "pessoas": "quantas pessoas, o que fazem, expressões (sem identificar identidades)",
- "objetos": ["objetos visíveis relevantes"],
+ "objetos": ["objetos relevantes para o assunto"],
  "produtos": ["produtos identificáveis, se houver"],
  "ambiente": "onde se passa",
- "acoes": "ação principal do início ao fim",
+ "acoes": "o que acontece do início ao fim",
  "emocoes": "emoção predominante",
- "ocr": ["apenas frases completas e limpas lidas na cena"],
- "cenas": ["descrição curta de cada frame na ordem"],
+ "ocr": ["apenas frases completas e limpas lidas na tela"],
+ "cenas": ["o que acontece em cada momento, na ordem"],
  "narrativa": "a história/arco do vídeo em 1-2 frases",
- "nicho": "nicho identificado a partir do conteúdo visual",
+ "nicho": "nicho identificado a partir do conteúdo",
  "subnicho": "recorte mais específico do nicho",
- "palavras_chave": ["8 a 15 termos concretos do conteúdo visual"],
+ "palavras_chave": ["8 a 15 termos concretos do conteúdo"],
  "confianca": 0.0
 }
 Sem explicações, sem comentários, sem hashtags, sem marca d'água, sem legenda da publicação.
-"confianca" é de 0 a 1: quão claro está o conteúdo nos frames.`;
+"confianca" é de 0 a 1: quão claro está o conteúdo.`;
 
 /** Remove ruído de interface/OCR inválido das strings lidas na tela. */
 const UI_NOISE = /(curtidas?|likes?|coment[áa]rios?|compartilh|seguir|follow|inscreva|assista|link na bio|arraste|deslize|ver mais|swipe|subscribe|shorts?|reels?|tiktok|instagram|youtube|facebook|kwai)/i;
@@ -168,13 +179,17 @@ function cleanOcr(list: unknown): string[] {
 }
 
 
-function visionUserParts(body: Body, frames: string[]): GeminiPart[] {
-  const hints = [
+function hintsBlock(body: Body): string {
+  return [
     body.videoText ? `Texto sobreposto informado pelo editor: ${body.videoText}` : null,
     body.filename ? `Nome do arquivo: ${body.filename}` : null,
   ].filter(Boolean).join("\n");
+}
+
+function visionUserParts(body: Body, frames: string[]): GeminiPart[] {
+  const hints = hintsBlock(body);
   const parts: GeminiPart[] = [{
-    text: `Analise os frames abaixo, em ordem cronológica, e devolva a análise em JSON.${hints ? `\n\nPistas auxiliares (use apenas se coerentes com as imagens):\n${hints}` : ""}`,
+    text: `Analise os frames abaixo, em ordem cronológica, e devolva a análise em JSON. Este vídeo veio sem áudio disponível: entenda pelos acontecimentos e pelos textos na tela.${hints ? `\n\nPistas auxiliares (use apenas se coerentes com as imagens):\n${hints}` : ""}`,
   }];
   for (const f of frames) {
     const part = dataUrlToPart(f);
@@ -183,28 +198,100 @@ function visionUserParts(body: Body, frames: string[]): GeminiPart[] {
   return parts;
 }
 
-/** AGENTE 1 — Analista de Vídeo (Gemini, visão). Só descreve, nunca escreve copy. */
-async function analyzeVideo(body: Body, frames: string[]): Promise<Analysis | null> {
-  if (!frames.length) return null;
+const MAX_INLINE_VIDEO = 18 * 1024 * 1024; // limite seguro para inline_data
+
+function toBase64(bytes: Uint8Array): string {
+  let bin = "";
+  const chunk = 0x8000;
+  for (let i = 0; i < bytes.length; i += chunk) {
+    bin += String.fromCharCode(...bytes.subarray(i, i + chunk));
+  }
+  return btoa(bin);
+}
+
+/** Baixa o vídeo processado para enviar ao Gemini COM ÁUDIO. Null se inviável. */
+async function fetchVideoPart(url: string): Promise<GeminiPart | null> {
   try {
+    const ctrl = new AbortController();
+    const timer = setTimeout(() => ctrl.abort(), 25_000);
+    const res = await fetch(url, { signal: ctrl.signal }).finally(() => clearTimeout(timer));
+    if (!res.ok) return null;
+    const len = Number(res.headers.get("content-length") ?? 0);
+    if (len && len > MAX_INLINE_VIDEO) {
+      console.info(JSON.stringify({ module: "generate-caption", event: "video_too_large", bytes: len }));
+      return null;
+    }
+    const buf = new Uint8Array(await res.arrayBuffer());
+    if (!buf.length || buf.length > MAX_INLINE_VIDEO) return null;
+    const mime = (res.headers.get("content-type") ?? "video/mp4").split(";")[0] || "video/mp4";
+    return { inline_data: { mime_type: mime.startsWith("video/") ? mime : "video/mp4", data: toBase64(buf) } };
+  } catch (e) {
+    console.warn(JSON.stringify({ module: "generate-caption", event: "video_fetch_failed", error: String(e) }));
+    return null;
+  }
+}
+
+function normalizeAnalysis(parsed: any): Analysis | null {
+  if (!parsed || !(parsed.assunto || parsed.tema || parsed.narrativa)) return null;
+  parsed.ocr = cleanOcr(parsed.ocr);
+  parsed.transcricao = String(parsed.transcricao ?? "").replace(/\s+/g, " ").trim();
+  parsed.tem_audio = Boolean(parsed.tem_audio) && parsed.transcricao.length > 0;
+  const n = String(parsed.nicho ?? "").trim();
+  if (!n || /^[@#]/.test(n)) parsed.nicho = "geral";
+  return parsed as Analysis;
+}
+
+/**
+ * AGENTE 1 — Analista de Vídeo (Gemini).
+ * Prioridade: vídeo completo (áudio + imagem). Se o arquivo for grande ou
+ * indisponível, cai para os frames enviados pelo cliente.
+ */
+async function analyzeVideo(body: Body, frames: string[]): Promise<Analysis | null> {
+  const run = async (parts: GeminiPart[], mode: "video_audio" | "frames") => {
     const { text } = await callGeminiWithFallback({
       module: "generate-caption",
       stage: "vision",
       models: VISION_MODELS,
       system: VISION_SYSTEM,
-      parts: visionUserParts(body, frames),
+      parts,
       json: true,
       temperature: 0.4,
-      timeoutMs: 60_000,
-      context: { frames: frames.length },
+      timeoutMs: mode === "video_audio" ? 120_000 : 60_000,
+      context: { mode, frames: frames.length },
     });
-    const parsed = parseGeminiJson<Analysis>(text);
-    if (parsed && (parsed.assunto || parsed.tema || parsed.narrativa)) {
-      (parsed as any).ocr = cleanOcr((parsed as any).ocr);
-      const n = String((parsed as any).nicho ?? "").trim();
-      if (!n || /^[@#]/.test(n)) (parsed as any).nicho = "geral";
-      return parsed;
+    return normalizeAnalysis(parseGeminiJson<any>(text));
+  };
+
+  // 1) vídeo completo com áudio
+  if (body.videoUrl) {
+    try {
+      const videoPart = await fetchVideoPart(String(body.videoUrl));
+      if (videoPart) {
+        const hints = hintsBlock(body);
+        const parsed = await run([
+          { text: `Assista ao vídeo abaixo. Comece pelo ÁUDIO (transcreva a narração/diálogo), depois os textos na tela e só então os acontecimentos visuais. Devolva a análise em JSON.${hints ? `\n\nPistas auxiliares:\n${hints}` : ""}` },
+          videoPart,
+        ], "video_audio");
+        if (parsed) {
+          console.info(JSON.stringify({
+            module: "generate-caption", event: "vision_ok", mode: "video_audio",
+            tem_audio: parsed.tem_audio ?? false, transcricao_chars: (parsed.transcricao ?? "").length,
+          }));
+          return parsed;
+        }
+      }
+    } catch (e) {
+      console.warn(JSON.stringify({
+        module: "generate-caption", event: "vision_video_failed",
+        error: String((e as Error)?.message ?? e),
+      }));
     }
+  }
+
+  // 2) fallback: frames
+  if (!frames.length) return null;
+  try {
+    return await run(visionUserParts(body, frames), "frames");
   } catch (e) {
     console.warn(JSON.stringify({
       module: "generate-caption", event: "vision_failed",
@@ -404,6 +491,7 @@ function analysisBlock(a: Analysis) {
     return s ? `${k}: ${s}` : null;
   };
   return [
+    line("Transcrição do áudio (fonte principal)", a.transcricao),
     line("Tema", a.tema),
     line("Assunto", a.assunto),
     line("Contexto", a.contexto),
@@ -460,13 +548,14 @@ CTA (campo separado): uma frase curta e natural que puxe comentário/compartilha
 
 TÍTULO (campo "title"): frase curta (até ~60 caracteres) usada internamente. Chamativa, específica deste vídeo, nunca descritiva.
 
-HASHTAGS — 18 a 26 no total, TODAS nascidas do conteúdo identificado (assunto, contexto, objeto, ação, categoria, emoção, nicho):
-- PROIBIDO usar hashtags vazias de plataforma: #fyp, #viral, #paravoce, #reels, #explore, #trending, #shorts, #foryou, #dicas, #conteudo.
-- Misture tamanhos: amplas (do tema), médias (do nicho/comunidade) e específicas (do que literalmente aparece no vídeo).
-- "alcance": 5 a 7 amplas do TEMA (ex.: #humor, #noticias, #cinema, #promocao).
-- "nicho": 6 a 9 da comunidade do nicho detectado.
-- "tema": 7 a 10 específicas do que aparece (objeto, ação, reação, cena, palavras-chave, emoção).
+HASHTAGS — 12 a 20 no total, TODAS nascidas do conteúdo identificado (áudio/narração, assunto, contexto, objeto, ação, categoria, emoção, nicho):
+- NÃO use por padrão hashtags vazias de plataforma (#fyp, #viral, #paravoce, #reels, #explore, #trending, #shorts, #foryou, #dicas, #conteudo) — somente se fizerem sentido real para este conteúdo.
+- Misture tamanhos: amplas (do tema), médias (do nicho/comunidade) e específicas (do que literalmente acontece no vídeo).
+- "alcance": 3 a 5 amplas do TEMA (ex.: #humor, #noticias, #cinema, #promocao).
+- "nicho": 4 a 7 da comunidade do nicho detectado.
+- "tema": 5 a 8 específicas do conteúdo (assunto falado, objeto, ação, reação, palavras-chave, emoção).
 - Podem ser em CamelCase quando ficar natural (ex.: #ReacaoInesperada, #SituacaoEngracada).
+- Devem parecer escolhidas por um social media experiente, nunca genéricas.
 - Troque a maior parte das hashtags usadas recentemente.
 ${bank.length ? `- Banco sugerido para este tema (use as que fizerem sentido e acrescente outras específicas): ${bank.slice(0, 28).join(" ")}` : ""}
 
@@ -478,7 +567,9 @@ VALIDAÇÃO ANTES DE RESPONDER — se qualquer resposta for "não", reescreva an
 - O texto parece escrito à mão por um social media profissional (e não por IA)?
 - Essa legenda poderia ser usada em OUTRO vídeo? Se sim, está errada.
 
-PROIBIDO: descrições técnicas, textos institucionais, "Confira", "Olha esse vídeo", "Imperdível", "Você precisa ver", "Vale a pena conferir", "Produto incrível".
+PROIBIDO — descrição visual em vez de copywriting. Nunca escreva: "o vídeo mostra...", "é possível ver...", "na imagem...", "há um homem...", "aparece uma...", nem descrever cores, enquadramento, iluminação ou posição de objetos.
+PROIBIDO também: descrições técnicas, textos institucionais, "Confira", "Olha esse vídeo", "Imperdível", "Você precisa ver", "Vale a pena conferir", "Produto incrível".
+Se houver transcrição do áudio, o assunto da legenda deve nascer do que foi DITO no vídeo.
 ${strict ? "\nATENÇÃO: a tentativa anterior foi rejeitada por ser genérica. Cite obrigatoriamente DOIS elementos concretos da análise no texto e use hashtags específicas do assunto." : ""}
 
 Responda SOMENTE JSON válido:
@@ -839,13 +930,38 @@ Deno.serve(async (req) => {
       }
 
       const fbLocal = smartFallback(body, analysis);
-      const needsTags = (hashtags.alcance.length + hashtags.nicho.length + hashtags.tema.length) < 16;
+      const needsTags = (hashtags.alcance.length + hashtags.nicho.length + hashtags.tema.length) < 12;
+
+      // 12 a 20 hashtags no total, sem duplicatas entre os grupos.
+      const merged = needsTags
+        ? {
+            alcance: Array.from(new Set([...hashtags.alcance, ...fbLocal.hashtags.alcance])),
+            nicho: Array.from(new Set([...hashtags.nicho, ...fbLocal.hashtags.nicho])),
+            tema: Array.from(new Set([...hashtags.tema, ...fbLocal.hashtags.tema])),
+          }
+        : hashtags;
+      const seenTag = new Set<string>();
+      const capGroup = (list: string[], max: number) => {
+        const out: string[] = [];
+        for (const t of list) {
+          const k = slug(t);
+          if (!k || seenTag.has(k) || out.length >= max) continue;
+          seenTag.add(k);
+          out.push(t);
+        }
+        return out;
+      };
+      const finalTags = {
+        alcance: capGroup(merged.alcance, 5),
+        nicho: capGroup(merged.nicho, 7),
+        tema: capGroup(merged.tema, 8),
+      };
 
       console.info(JSON.stringify({
         module: "generate-caption", event: "caption_delivered",
         version: "ai", model: res.model, attempt, generic, coherent,
-        vision: Boolean(vision), chars: caption.length,
-        tags: hashtags.alcance.length + hashtags.nicho.length + hashtags.tema.length,
+        vision: Boolean(vision), audio: Boolean(analysis.tem_audio), chars: caption.length,
+        tags: finalTags.alcance.length + finalTags.nicho.length + finalTags.tema.length,
         ms: Date.now() - startedAt,
       }));
 
@@ -853,14 +969,7 @@ Deno.serve(async (req) => {
         title: String(res.parsed.title ?? "").trim() || fbLocal.title,
         caption,
         cta: cta || fbLocal.cta,
-        hashtags: needsTags
-          ? {
-              alcance: Array.from(new Set([...hashtags.alcance, ...fbLocal.hashtags.alcance])).slice(0, 7),
-              nicho: Array.from(new Set([...hashtags.nicho, ...fbLocal.hashtags.nicho])).slice(0, 9),
-              tema: Array.from(new Set([...hashtags.tema, ...fbLocal.hashtags.tema])).slice(0, 10),
-
-            }
-          : hashtags,
+        hashtags: finalTags,
         niche: String(res.parsed.nicho ?? analysis.nicho ?? "") || undefined,
         analysis: analysisBlock(analysis),
         analysisJson: analysis,

@@ -134,9 +134,10 @@ function clientFallback(input: GenerateInput): GeneratedContent {
  */
 export async function generateVideoContent(input: GenerateInput): Promise<GeneratedContent> {
   let frames: string[] = [];
+  let videoUrl: string | null = null;
   try {
-    const url = await resolveVideoUrl(input);
-    if (url) frames = await extractVideoFrames(url, input.frameCount ?? 16).catch(() => []);
+    videoUrl = await resolveVideoUrl(input);
+    if (videoUrl) frames = await extractVideoFrames(videoUrl, input.frameCount ?? 16).catch(() => []);
   } catch { /* segue sem frames */ }
 
   const history = await loadHistory();
@@ -145,6 +146,7 @@ export async function generateVideoContent(input: GenerateInput): Promise<Genera
     const { data, error } = await supabase.functions.invoke("generate-caption", {
       body: {
         videoId: input.videoId ?? null,
+        videoUrl,
         filename: input.filename ?? undefined,
         templateName: input.templateName ?? null,
         projectName: input.projectName ?? null,
