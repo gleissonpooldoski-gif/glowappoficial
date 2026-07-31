@@ -872,6 +872,18 @@ Deno.serve(async (req) => {
 
   const seed = Number.isFinite(body.variationSeed) ? Number(body.variationSeed) : Date.now();
 
+  // LOG: toda requisição é processada, qualquer que seja o projeto.
+  console.info(JSON.stringify({
+    module: "generate-caption", event: "request_received",
+    project: body.projectName ?? null,
+    project_category: body.projectCategory ?? null,
+    video_id: body.videoId ?? null,
+    filename: body.filename ?? null,
+    has_video_url: Boolean(body.videoUrl),
+    frames: framesOf(body).length,
+    note: "projeto usado apenas como tom de voz; nunca condiciona a geração",
+  }));
+
   const cacheKey = cacheKeyOf(body);
   if (cacheKey) {
     const hit = await readCache(cacheKey);
@@ -901,8 +913,13 @@ Deno.serve(async (req) => {
     const frames = framesOf(body);
 
     // ETAPA 1 — assistir ao vídeo
+    console.info(JSON.stringify({
+      module: "generate-caption", event: "analysis_started",
+      video_id: body.videoId ?? null, project: body.projectName ?? null, frames: frames.length,
+    }));
     const vision = await analyzeVideo(body, frames);
     const analysis: Analysis = vision ?? heuristicAnalysis(body);
+
     console.info(JSON.stringify({
       module: "generate-caption", event: "analysis_ready",
       vision: Boolean(vision), source: vision ? "ai_vision" : "heuristic",
