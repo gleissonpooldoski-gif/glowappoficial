@@ -25,10 +25,11 @@ Deno.serve(async (req) => {
     const originalHashtags = Array.from(new Set([...captionHashtags, ...fieldHashtags]));
 
 
-    const isSegredo = (() => {
-      const s = `${projectName ?? ""} ${projectCategory ?? ""}`.toLowerCase();
-      return s.includes("segredo") || s.includes("promo") || s.includes("achad");
-    })();
+    console.info(JSON.stringify({
+      module: "generate-tiktok-caption", event: "request_received",
+      project: projectName ?? null, project_category: projectCategory ?? null,
+      note: "projeto usado apenas como tom de voz",
+    }));
 
     const system =
       "Você é especialista no algoritmo do TikTok (PT-BR). " +
@@ -40,26 +41,20 @@ Deno.serve(async (req) => {
       "- Linguagem informal, direta, conversacional.\n" +
       "- 0 a 2 emojis (só se agregarem).\n" +
       "- Sem hashtags no corpo da caption (irão em hashtags separadamente).\n" +
-      "- Pode terminar com CTA curto (ex: 'comenta aí', 'salva pra depois').\n" +
+      "- Termine com CTA curto e variado (ex: 'comenta aí', 'salva pra depois', 'link na bio' quando fizer sentido).\n" +
+      "- PROIBIDO incluir links, URLs, domínios ou @menções.\n" +
       "Regras das hashtags:\n" +
       "- 5 a 8 hashtags, sem #, minúsculas, sem acentos.\n" +
-      "- Combine: nicho, tema do vídeo, tendências relacionadas ao assunto, termos de descoberta (fyp, foryou quando fizer sentido).\n" +
-      "- Preserve hashtags originais quando relevantes." +
-      (isSegredo
-        ? "\n\nMODO ESPECIAL — SEGREDO DAS PROMOÇÕES (CONVERSÃO):\n" +
-          "- Nunca faça texto meramente descritivo do produto — desperte CURIOSIDADE.\n" +
-          "- PROIBIDO incluir links, URLs, domínios ou @menções.\n" +
-          "- A caption DEVE terminar com CTA direcionando para a BIO ou pedindo o link nos comentários. Alterne naturalmente entre: 'link na bio', 'produto na bio', 'peça o link nos comentários', 'confira na bio', 'responda LINK', 'detalhes na bio', 'veja o preço na bio'.\n" +
-          "- Nunca repita o mesmo CTA duas vezes seguidas.\n" +
-          "- Ganchos como: 'o produto que todo mundo está procurando', 'esse achado está viralizando', 'você não vai acreditar no que ele faz'."
-        : "");
+      "- Combine: nicho detectado no conteúdo, tema do vídeo, tendências relacionadas ao assunto, termos de descoberta (fyp, foryou quando fizer sentido).\n" +
+      "- Preserve hashtags originais quando relevantes.\n" +
+      "O nome da página serve apenas como TOM DE VOZ — nunca como assunto do vídeo.";
 
     const user =
       `Conteúdo base:\n"""${cleanCaption || "(sem descrição)"}"""` +
       (originalHashtags.length ? `\nHashtags originais: ${originalHashtags.join(" ")}` : "") +
-      (projectName ? `\nProjeto: ${projectName}` : "") +
-      (projectCategory ? `\nNicho: ${projectCategory}` : "") +
-      "\n\nGere caption + hashtags adaptadas para TikTok.";
+      (projectName ? `\nIdentidade da página (só tom de voz): ${projectName}` : "") +
+      "\n\nGere caption + hashtags adaptadas para TikTok a partir do CONTEÚDO do vídeo.";
+
 
     const { text: raw } = await callGeminiWithFallback({
       module: "generate-tiktok-caption",
