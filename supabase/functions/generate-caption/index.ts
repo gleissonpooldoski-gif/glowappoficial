@@ -491,6 +491,7 @@ function analysisBlock(a: Analysis) {
     return s ? `${k}: ${s}` : null;
   };
   return [
+    line("Transcrição do áudio (fonte principal)", a.transcricao),
     line("Tema", a.tema),
     line("Assunto", a.assunto),
     line("Contexto", a.contexto),
