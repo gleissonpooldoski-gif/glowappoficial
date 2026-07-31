@@ -7,9 +7,10 @@ const BASE = "https://generativelanguage.googleapis.com/v1beta/models";
 /** Ordem de preferência: Gemini 2.5 Flash e sucessores/compatíveis. */
 export const GEMINI_MODELS = [
   "gemini-flash-latest", // alias oficial do Flash mais recente disponível na conta
-  "gemini-2.5-flash",
+  "gemini-flash-lite-latest", // alternativa com cota separada
   "gemini-2.0-flash",
 ];
+
 
 // Preço aproximado por 1M tokens (USD) — apenas para custo estimado nos logs.
 const PRICE_IN = 0.30;

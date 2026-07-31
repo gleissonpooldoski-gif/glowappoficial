@@ -338,7 +338,8 @@ function inferNiche(hay: string): { nicho?: string; subnicho?: string } {
   return { nicho: hits[0], subnicho: hits[1] };
 }
 
-/** Análise derivada de OCR/arquivo/contexto quando não há visão de IA disponível. */
+/** Análise derivada de OCR/arquivo quando não há visão de IA disponível.
+ *  O PROJETO nunca entra aqui: ele é identidade (tom/marca), nunca o assunto. */
 function heuristicAnalysis(body: Body): Analysis {
   const overlay = String(body.videoText ?? "").replace(/\s+/g, " ").trim();
   const fileWords = String(body.filename ?? "")
@@ -347,17 +348,16 @@ function heuristicAnalysis(body: Body): Analysis {
     .replace(/\b\d{4,}\b/g, " ")
     .trim();
 
-  const hay = [overlay, fileWords, body.templateName, body.projectCategory, body.projectName]
-    .filter(Boolean).join(" ");
+  const hay = [overlay, fileWords].filter(Boolean).join(" ");
   const { nicho, subnicho } = inferNiche(hay);
 
   const kws = Array.from(new Set([
     ...keywordsFrom(overlay, 12),
     ...keywordsFrom(fileWords, 6),
-    ...keywordsFrom(String(body.projectCategory ?? ""), 4),
   ])).slice(0, 15);
 
-  const assunto = overlay || (fileWords ? fileWords : "") || String(body.projectCategory ?? "");
+  const assunto = overlay || fileWords || "";
+
 
   return {
     tema: assunto || undefined,
@@ -510,10 +510,15 @@ function analysisBlock(a: Analysis) {
   ].filter(Boolean).join("\n");
 }
 
+/** Identidade da página: SOMENTE tom de voz e marca. Nunca define o assunto. */
 function toneBlock(body: Body) {
+  const identity = [body.projectName, body.projectCategory].filter(Boolean).join(" · ");
   return [
-    body.projectName ? `Página/canal: ${body.projectName}` : null,
-    body.projectCategory ? `Linha editorial da página: ${body.projectCategory}` : null,
+    identity
+      ? `IDENTIDADE DA PÁGINA (apenas tom de voz / marca): ${identity}\n` +
+        `ATENÇÃO: essa identidade NÃO é o assunto do vídeo. O assunto vem exclusivamente da análise do vídeo (áudio, textos na tela, cenas). ` +
+        `Nunca escreva sobre a página, o projeto ou a categoria.`
+      : null,
     body.style ? `Tom pedido: ${body.style}` : null,
     Array.isArray(body.history) && body.history.length
       ? `Legendas recentes desta página (NÃO repita estrutura nem frases):\n- ${body.history.slice(0, 8).join("\n- ")}`
@@ -523,6 +528,7 @@ function toneBlock(body: Body) {
       : null,
   ].filter(Boolean).join("\n");
 }
+
 
 function copySystem(seed: number, strict: boolean, bank: string[]) {
   const hook = pickOne(HOOK_FORMULAS, seed);
@@ -866,6 +872,18 @@ Deno.serve(async (req) => {
 
   const seed = Number.isFinite(body.variationSeed) ? Number(body.variationSeed) : Date.now();
 
+  // LOG: toda requisição é processada, qualquer que seja o projeto.
+  console.info(JSON.stringify({
+    module: "generate-caption", event: "request_received",
+    project: body.projectName ?? null,
+    project_category: body.projectCategory ?? null,
+    video_id: body.videoId ?? null,
+    filename: body.filename ?? null,
+    has_video_url: Boolean(body.videoUrl),
+    frames: framesOf(body).length,
+    note: "projeto usado apenas como tom de voz; nunca condiciona a geração",
+  }));
+
   const cacheKey = cacheKeyOf(body);
   if (cacheKey) {
     const hit = await readCache(cacheKey);
@@ -895,8 +913,13 @@ Deno.serve(async (req) => {
     const frames = framesOf(body);
 
     // ETAPA 1 — assistir ao vídeo
+    console.info(JSON.stringify({
+      module: "generate-caption", event: "analysis_started",
+      video_id: body.videoId ?? null, project: body.projectName ?? null, frames: frames.length,
+    }));
     const vision = await analyzeVideo(body, frames);
     const analysis: Analysis = vision ?? heuristicAnalysis(body);
+
     console.info(JSON.stringify({
       module: "generate-caption", event: "analysis_ready",
       vision: Boolean(vision), source: vision ? "ai_vision" : "heuristic",
@@ -907,8 +930,13 @@ Deno.serve(async (req) => {
 
     // ETAPA 2 — escrever a partir da análise, com rejeição de genérico
     for (let attempt = 0; attempt < 2; attempt++) {
+      console.info(JSON.stringify({
+        module: "generate-caption", event: "copy_started",
+        attempt, video_id: body.videoId ?? null, project: body.projectName ?? null,
+      }));
       const res = await writeCopy(body, analysis, seed + attempt * 977, attempt > 0);
       if (!res) break;
+
 
       const caption = String(res.parsed.caption ?? "").trim();
       const cta = String(res.parsed.cta ?? "").trim();

@@ -98,21 +98,15 @@ async function loadHistory(): Promise<{ captions: string[]; hashtags: string[] }
 }
 
 
-/** Fallback local no cliente — só usado se a Edge Function estiver totalmente fora. */
-function clientFallback(input: GenerateInput): GeneratedContent {
-  const cat = (input.projectCategory ?? "").trim();
+/** Fallback local no cliente — só usado se a Edge Function estiver totalmente fora.
+ *  Não usa projeto/categoria como assunto: o projeto é apenas identidade. */
+function clientFallback(input: GenerateInput, reason: string): GeneratedContent {
+  console.warn("[caption-engine] fallback local", { videoId: input.videoId ?? null, reason });
   const title = "Repara no detalhe que aparece no fim";
   const cta = "Conta aqui nos comentários o que você achou.";
   const caption = (input.videoText?.trim() ||
     "Tem um detalhe nesse vídeo que só faz sentido quando você assiste até o fim").replace(/\s+/g, " ");
-  const slug = (s: string) =>
-    s.toLowerCase().normalize("NFD").replace(/[\u0300-\u036f]/g, "").replace(/[^a-z0-9]/g, "");
-  const nicho = cat.split(/[\s,/&-]+/).map(slug).filter((w) => w.length > 2).slice(0, 6);
-  const groups: HashtagGroups = {
-    alcance: [],
-    nicho: nicho.map((t) => `#${t}`),
-    tema: [],
-  };
+  const groups: HashtagGroups = { alcance: [], nicho: [], tema: [] };
   const hashtags = flattenGroups(groups);
   return {
     title,
@@ -121,24 +115,35 @@ function clientFallback(input: GenerateInput): GeneratedContent {
     hashtags,
     hashtagsText: hashtags.join(" "),
     groups,
-    captionFull: [title, caption, cta, hashtags.join(" ")].filter(Boolean).join("\n\n"),
+    captionFull: [title, caption, cta].filter(Boolean).join("\n\n"),
     source: "fallback",
   };
 }
 
 
+
 /**
- * Geração automática única para TODOS os fluxos.
- * Analisa o vídeo (frames), combina com o contexto do projeto e devolve
- * legenda + CTA + hashtags. Nunca lança.
+ * Geração automática única para TODOS os fluxos e TODOS os projetos.
+ * O projeto entra apenas como identidade (tom de voz / marca) e NUNCA
+ * condiciona se a geração acontece. Nunca lança.
  */
 export async function generateVideoContent(input: GenerateInput): Promise<GeneratedContent> {
+  console.info("[caption-engine] início", {
+    videoId: input.videoId ?? null,
+    projectId: input.projectId ?? null,
+    project: input.projectName ?? null,
+    filename: input.filename ?? null,
+  });
+
   let frames: string[] = [];
   let videoUrl: string | null = null;
   try {
     videoUrl = await resolveVideoUrl(input);
     if (videoUrl) frames = await extractVideoFrames(videoUrl, input.frameCount ?? 16).catch(() => []);
   } catch { /* segue sem frames */ }
+  console.info("[caption-engine] análise preparada", {
+    videoId: input.videoId ?? null, temVideoUrl: Boolean(videoUrl), frames: frames.length,
+  });
 
   const history = await loadHistory();
 
@@ -149,6 +154,7 @@ export async function generateVideoContent(input: GenerateInput): Promise<Genera
         videoUrl,
         filename: input.filename ?? undefined,
         templateName: input.templateName ?? null,
+        // Identidade da página (tom de voz) — nunca o assunto do vídeo.
         projectName: input.projectName ?? null,
         projectCategory: input.projectCategory ?? null,
         videoText: input.videoText ?? null,
@@ -175,13 +181,21 @@ export async function generateVideoContent(input: GenerateInput): Promise<Genera
         };
     const hashtags = Array.from(new Set(flattenGroups(groups).map(withHash)));
 
-    if (!caption) return clientFallback(input);
+    if (!caption) return clientFallback(input, "edge_function_sem_legenda");
 
     // Estrutura final: gancho + contexto (caption) → CTA → hashtags.
     // O título é interno; não é prefixado na legenda publicada.
     const withCta = cta && !caption.toLowerCase().includes(cta.toLowerCase().slice(0, 18))
       ? `${caption}\n\n${cta}`
       : caption;
+
+    console.info("[caption-engine] concluído", {
+      videoId: input.videoId ?? null,
+      source: (data as any)?.source ?? "ai",
+      niche: (data as any)?.niche ?? null,
+      chars: caption.length,
+      hashtags: hashtags.length,
+    });
 
     return {
       title,
@@ -195,10 +209,11 @@ export async function generateVideoContent(input: GenerateInput): Promise<Genera
       source: ((data as any)?.source === "fallback" ? "fallback" : "ai"),
       analysis: String((data as any)?.analysis ?? "") || undefined,
     };
-  } catch {
-    return clientFallback(input);
+  } catch (e: any) {
+    return clientFallback(input, `edge_function_indisponivel: ${e?.message ?? "erro"}`);
   }
 }
+
 
 /**
  * Garante que uma publicação tenha legenda e hashtags.

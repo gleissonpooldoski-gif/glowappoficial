@@ -26,39 +26,6 @@ async function resolveProjectFromVideo(videoId?: string | null): Promise<Project
   } catch { return { name: null, category: null }; }
 }
 
-// Retorna instruções específicas de nicho para geração das TAGS.
-function categoryTagGuidance(projectName?: string | null, projectCategory?: string | null): string {
-  const name = (projectName ?? "").toLowerCase();
-  const cat = (projectCategory ?? "").toLowerCase();
-
-  if (name.includes("frame") || cat.includes("cinema") || cat.includes("filme")) {
-    return [
-      "NICHO: Cinema / Filmes e Séries.",
-      "Gere tags relacionadas a: filmes, séries, cinema, streaming, curiosidades,",
-      "cenas, personagens, atores, diretores, lançamentos, trailers, entretenimento.",
-      "Inclua nomes de personagens/filmes/séries quando forem citados na legenda.",
-      "NUNCA misturar memes, humor viral ou produtos.",
-    ].join(" ");
-  }
-  if (name.includes("resenha") || cat.includes("meme") || cat.includes("humor") || cat.includes("comedia")) {
-    return [
-      "NICHO: Memes / Humor.",
-      "Gere tags relacionadas a: memes, humor, vídeos engraçados, internet, viral,",
-      "piadas, comédia, tiktoks, reels engraçados, zoeira, entretenimento.",
-      "NUNCA usar termos de cinema/filmes/séries neste projeto.",
-    ].join(" ");
-  }
-  if (name.includes("promo") || name.includes("segredo") || cat.includes("produto") || cat.includes("achad")) {
-    return [
-      "NICHO: Produtos / Achadinhos / Ofertas.",
-      "Gere tags relacionadas ao produto apresentado: achadinhos, ofertas, promoção,",
-      "desconto, Shopee, Amazon, AliExpress, Mercado Livre, utilidades, gadgets,",
-      "casa, cozinha, review. Inclua o nome do produto quando aparecer na legenda.",
-    ].join(" ");
-  }
-  return "Adapte as tags ao tema real do vídeo. Priorize relevância e especificidade.";
-}
-
 Deno.serve(async (req) => {
   if (req.method === "OPTIONS") return new Response("ok", { headers: corsHeaders });
 
@@ -90,12 +57,11 @@ Deno.serve(async (req) => {
     const originalHashtags = Array.from(new Set([...captionHashtags, ...fieldHashtags]));
 
 
-    const tagGuidance = categoryTagGuidance(projectName, projectCategory);
-
-    const isSegredo = (() => {
-      const s = `${projectName ?? ""} ${projectCategory ?? ""}`.toLowerCase();
-      return s.includes("segredo") || s.includes("promo") || s.includes("achad");
-    })();
+    console.info(JSON.stringify({
+      module: "generate-youtube-title", event: "request_received",
+      project: projectName ?? null, project_category: projectCategory ?? null,
+      video_id: videoId ?? null, note: "projeto usado apenas como tom de voz",
+    }));
 
     const system =
       "Você é especialista em SEO e algoritmo do YouTube (PT-BR). " +
@@ -103,40 +69,28 @@ Deno.serve(async (req) => {
       "Retorne SOMENTE um JSON válido, sem markdown, sem comentários, no formato: " +
       `{"title": string, "description": string, "hashtags": string[], "tags": string[]}. ` +
       "Regras:\n" +
-      "- title: máx. 80 caracteres, chamativo mas honesto, sem clickbait exagerado, " +
-      "sem hashtags, sem aspas, sem emojis excessivos (0 ou 1), com palavras-chave relevantes.\n" +
+      "- title: máx. 80 caracteres, desperta CURIOSIDADE mas é honesto, sem hashtags, sem aspas, " +
+      "0 ou 1 emoji, com palavras-chave relevantes ao conteúdo real do vídeo.\n" +
       "- description: use a legenda original como base, adapte para YouTube mantendo a mensagem. " +
-      "Adicione UMA chamada para ação curta ao final quando fizer sentido. Máx. 800 caracteres. " +
+      "Termine com UMA chamada para ação curta e variada. Máx. 800 caracteres. " +
+      "PROIBIDO inserir links, URLs, domínios ou @menções. " +
       "Sem hashtags dentro do texto (elas serão anexadas no final).\n" +
       "- hashtags: array de 8 a 12 hashtags curtas (sem #), minúsculas, sem espaços, sem acentos, " +
-      "combinando nicho, tema do vídeo e termos de descoberta. Preserve as originais quando relevantes.\n" +
+      "combinando nicho detectado no conteúdo, tema do vídeo e termos de descoberta. Preserve as originais quando relevantes.\n" +
       "- tags: array de 15 a 30 palavras-chave SEO ESPECÍFICAS ao vídeo (campo snippet.tags do YouTube). " +
       "Podem conter espaços, acentos e maiúsculas. Misture: palavra-chave principal, secundárias, " +
-      "long-tail (frases de busca), sinônimos, termos relacionados, personagens/produtos citados, " +
-      "categoria do vídeo. Cada tag entre 2 e 60 caracteres. NUNCA repetir palavras. " +
-      "NUNCA usar tags genéricas sem relação (ex: 'viral', 'foryou' sozinhos). " +
-      "NUNCA usar tags enganosas. Priorize RELEVÂNCIA sobre quantidade.\n" +
-      `- ${tagGuidance}` +
-      (isSegredo
-        ? "\n\nMODO ESPECIAL — PROJETO SEGREDO DAS PROMOÇÕES (estratégia de CONVERSÃO):\n" +
-          "- O TÍTULO deve despertar CURIOSIDADE, nunca ser meramente descritivo. Evite genéricos. Use formatos como: " +
-          "'O produto que todo mundo está procurando', 'Você não vai acreditar no que esse produto faz', " +
-          "'Descobri um achado que vale muito a pena', 'Esse produto está viralizando', " +
-          "'Um dos produtos mais comentados do momento', 'Um achado que pode facilitar seu dia'. " +
-          "Crie VARIAÇÕES novas — não repita sempre os mesmos modelos.\n" +
-          "- A DESCRIÇÃO deve terminar OBRIGATORIAMENTE incentivando o usuário a acessar a BIO, conferir o produto ou comentar pedindo o LINK. " +
-          "Alterne CTAs como: 'produto disponível na bio', 'link na bio', 'peça o link nos comentários', " +
-          "'confira na bio', 'veja onde comprar na bio', 'responda LINK nos comentários', 'detalhes na bio', 'veja o preço na bio'.\n" +
-          "- PROIBIDO inserir links, URLs, domínios ou @menções na descrição.\n" +
-          "- Misture curiosidade + benefício + chamada para ação. Nunca repita exatamente o mesmo CTA."
-        : "");
+      "long-tail (frases de busca), sinônimos, termos relacionados, personagens/produtos citados. " +
+      "Cada tag entre 2 e 60 caracteres. NUNCA repetir palavras. " +
+      "NUNCA usar tags genéricas sem relação (ex: 'viral', 'foryou' sozinhos). Priorize RELEVÂNCIA.\n" +
+      "- O nicho deve ser deduzido do CONTEÚDO do vídeo (legenda/áudio/textos), nunca do nome do canal ou da categoria cadastrada.\n" +
+      "- O nome do canal serve apenas como TOM DE VOZ e identidade da marca.";
 
     const user =
       `Legenda original:\n"""${cleanCaption || "(sem legenda)"}"""` +
       (originalHashtags.length ? `\nHashtags originais: ${originalHashtags.join(" ")}` : "") +
-      (projectName ? `\nProjeto/Canal: ${projectName}` : "") +
-      (projectCategory ? `\nCategoria: ${projectCategory}` : "") +
-      "\n\nGere o JSON com title, description, hashtags e tags.";
+      (projectName ? `\nIdentidade do canal (só tom de voz): ${projectName}` : "") +
+      "\n\nGere o JSON com title, description, hashtags e tags a partir do CONTEÚDO do vídeo.";
+
 
     const { text: raw } = await callGeminiWithFallback({
       module: "generate-youtube-title",

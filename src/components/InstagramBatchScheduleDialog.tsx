@@ -177,20 +177,30 @@ export default function InstagramBatchScheduleDialog({ open, onOpenChange, video
     return map;
   };
 
-  const genCaption = async (v: VideoMeta & { project_id: string | null }, projMeta: { name: string | null; category: string | null }) => {
-    // Motor central: nunca falha, sempre devolve legenda + CTA + hashtags.
+  const genCaption = async (
+    v: VideoMeta & { project_id: string | null },
+    projMeta: { name: string | null; category: string | null },
+  ) => {
+    // Motor central e ÚNICO: roda para todo vídeo, de qualquer projeto.
+    console.info("[caption-engine] geração iniciada", {
+      videoId: v.id, filename: v.filename, projectId: v.project_id ?? null, project: projMeta.name ?? null,
+    });
     const gen = await generateVideoContent({
       videoId: v.id,
       filename: v.filename,
       templateName: v.templateName ?? null,
       projectId: v.project_id ?? null,
+      // Projeto = apenas identidade/tom de voz.
       projectName: v.projectName ?? projMeta.name,
       projectCategory: v.projectCategory ?? projMeta.category,
-      frameCount: 3,
     });
     const caption = gen.cta && !gen.caption.includes(gen.cta) ? `${gen.caption}\n\n${gen.cta}` : gen.caption;
+    console.info("[caption-engine] geração concluída", {
+      videoId: v.id, source: gen.source, chars: caption.length, hashtags: gen.hashtags.length,
+    });
     return { caption, hashtags: gen.hashtagsText };
   };
+
 
   const scheduleOne = async (
     v: VideoMeta, slot: Date, caption: string, hashtags: string, nets: NetId[], bundle: ProjectBundle,
@@ -333,20 +343,37 @@ export default function InstagramBatchScheduleDialog({ open, onOpenChange, video
     for (let i = 0; i < plan.length; i++) {
       const item = plan[i];
       const label = `Vídeo ${i + 1} (${item.video.filename ?? item.video.id})`;
+
+      // A GERAÇÃO É OBRIGATÓRIA para todo vídeo — não depende de projeto,
+      // de bundle nem de slot. Só o agendamento depende disso.
+      let caption = "";
+      let hashtags = "";
+      try {
+        const gen = await genCaption(
+          { ...item.video, project_id: item.projectId },
+          { name: item.bundle?.projectName ?? null, category: item.bundle?.projectCategory ?? null },
+        );
+        caption = gen.caption; hashtags = gen.hashtags;
+      } catch (e: any) {
+        console.warn("[caption-engine] falha na geração", { videoId: item.video.id, error: e?.message });
+        allErrs.push(`${label}: legenda não gerada — ${e?.message ?? "erro"}`);
+      }
+
       if (!item.slot || !item.bundle) {
-        allErrs.push(`${label}: ${item.reason ?? "sem slot"}`);
+        console.warn("[caption-engine] vídeo sem agendamento (legenda gerada mesmo assim)", {
+          videoId: item.video.id, projectId: item.projectId, motivo: item.reason ?? "sem slot",
+        });
+        allErrs.push(`${label}: ${item.reason ?? "sem slot"} (legenda gerada, agendamento pendente)`);
         setDone(i + 1); continue;
       }
+
       try {
-        const { caption, hashtags } = await genCaption(
-          { ...item.video, project_id: item.projectId },
-          { name: item.bundle.projectName, category: item.bundle.projectCategory },
-        );
         const errs = await scheduleOne(item.video, item.slot, caption, hashtags, nets, item.bundle);
         errs.forEach((e) => allErrs.push(`${label}: ${e}`));
       } catch (e: any) {
-        allErrs.push(`${label}: legenda não gerada — ${e?.message ?? "erro"}`);
+        allErrs.push(`${label}: ${e?.message ?? "erro ao agendar"}`);
       }
+
       setDone(i + 1);
     }
 
