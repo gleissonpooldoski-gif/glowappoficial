@@ -1405,6 +1405,60 @@ export type Database = {
           },
         ]
       }
+      video_ai_cache: {
+        Row: {
+          analysis: Json | null
+          cache_key: string
+          caption: string | null
+          created_at: string
+          cta: string | null
+          hashtags: Json | null
+          id: string
+          model: string | null
+          niche: string | null
+          objects: string[] | null
+          ocr: string[] | null
+          summary: string | null
+          title: string | null
+          updated_at: string
+          video_id: string | null
+        }
+        Insert: {
+          analysis?: Json | null
+          cache_key: string
+          caption?: string | null
+          created_at?: string
+          cta?: string | null
+          hashtags?: Json | null
+          id?: string
+          model?: string | null
+          niche?: string | null
+          objects?: string[] | null
+          ocr?: string[] | null
+          summary?: string | null
+          title?: string | null
+          updated_at?: string
+          video_id?: string | null
+        }
+        Update: {
+          analysis?: Json | null
+          cache_key?: string
+          caption?: string | null
+          created_at?: string
+          cta?: string | null
+          hashtags?: Json | null
+          id?: string
+          model?: string | null
+          niche?: string | null
+          objects?: string[] | null
+          ocr?: string[] | null
+          summary?: string | null
+          title?: string | null
+          updated_at?: string
+          video_id?: string | null
+        }
+        Relationships: []
+      }
       videos: {
         Row: {
           created_at: string

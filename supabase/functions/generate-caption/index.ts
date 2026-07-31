@@ -12,7 +12,14 @@
 // e regenerada (até 2 tentativas) com instruções mais estritas.
 //
 // NUNCA falha: sempre responde 200 com { caption, cta, hashtags:{...}, source }.
-import { callAi, parseModelJson } from "../_shared/ai-gateway.ts";
+import {
+  callGeminiWithFallback,
+  parseGeminiJson,
+  dataUrlToPart,
+  GEMINI_MODELS,
+  type GeminiPart,
+} from "../_shared/gemini.ts";
+import { createClient } from "https://esm.sh/@supabase/supabase-js@2.45.0";
 
 const corsHeaders = {
   "Access-Control-Allow-Origin": "*",
@@ -30,6 +37,9 @@ type Body = {
   history?: string[];
   recentHashtags?: string[];
   variationSeed?: number;
+  videoId?: string | null;
+  cacheKey?: string | null;
+  noCache?: boolean;
 };
 
 type Analysis = {
@@ -51,16 +61,9 @@ type Analysis = {
   confianca?: number;
 };
 
-const VISION_MODELS = [
-  "google/gemini-3.6-flash",
-  "google/gemini-2.5-flash",
-  "openai/gpt-5.4-mini",
-];
-const TEXT_MODELS = [
-  "google/gemini-3.6-flash",
-  "google/gemini-3.1-flash-lite",
-  "openai/gpt-5.4-nano",
-];
+// Motor exclusivo: Google Gemini (API oficial). 2.5 Flash + sucessores compatíveis.
+const VISION_MODELS = GEMINI_MODELS;
+const TEXT_MODELS = GEMINI_MODELS;
 
 function json(status: number, body: unknown) {
   return new Response(JSON.stringify(body), {
@@ -165,48 +168,48 @@ function cleanOcr(list: unknown): string[] {
 }
 
 
-function visionUserParts(body: Body, frames: string[]) {
+function visionUserParts(body: Body, frames: string[]): GeminiPart[] {
   const hints = [
     body.videoText ? `Texto sobreposto informado pelo editor: ${body.videoText}` : null,
     body.filename ? `Nome do arquivo: ${body.filename}` : null,
   ].filter(Boolean).join("\n");
-  const parts: any[] = [{
-    type: "text",
+  const parts: GeminiPart[] = [{
     text: `Analise os frames abaixo, em ordem cronológica, e devolva a análise em JSON.${hints ? `\n\nPistas auxiliares (use apenas se coerentes com as imagens):\n${hints}` : ""}`,
   }];
-  for (const f of frames) parts.push({ type: "image_url", image_url: { url: f } });
+  for (const f of frames) {
+    const part = dataUrlToPart(f);
+    if (part) parts.push(part);
+  }
   return parts;
 }
 
+/** AGENTE 1 — Analista de Vídeo (Gemini, visão). Só descreve, nunca escreve copy. */
 async function analyzeVideo(body: Body, frames: string[]): Promise<Analysis | null> {
   if (!frames.length) return null;
-  const messages = [
-    { role: "system", content: VISION_SYSTEM },
-    { role: "user", content: visionUserParts(body, frames) },
-  ];
-  for (const model of VISION_MODELS) {
-    try {
-      const raw = await callAi({
-        module: "generate-caption",
-        model,
-        messages,
-        jsonMode: true,
-        timeoutMs: 45_000,
-        context: { stage: "vision", model, frames: frames.length },
-      });
-      const parsed = parseModelJson<Analysis>(raw);
-      if (parsed && (parsed.assunto || parsed.tema || parsed.narrativa)) {
-        (parsed as any).ocr = cleanOcr((parsed as any).ocr);
-        const n = String((parsed as any).nicho ?? "").trim();
-        if (!n || /^[@#]/.test(n)) (parsed as any).nicho = "geral";
-        return parsed;
-      }
-    } catch (e) {
-      console.warn(JSON.stringify({
-        module: "generate-caption", event: "vision_failed", model,
-        error: String((e as Error)?.message ?? e),
-      }));
+  try {
+    const { text } = await callGeminiWithFallback({
+      module: "generate-caption",
+      stage: "vision",
+      models: VISION_MODELS,
+      system: VISION_SYSTEM,
+      parts: visionUserParts(body, frames),
+      json: true,
+      temperature: 0.4,
+      timeoutMs: 60_000,
+      context: { frames: frames.length },
+    });
+    const parsed = parseGeminiJson<Analysis>(text);
+    if (parsed && (parsed.assunto || parsed.tema || parsed.narrativa)) {
+      (parsed as any).ocr = cleanOcr((parsed as any).ocr);
+      const n = String((parsed as any).nicho ?? "").trim();
+      if (!n || /^[@#]/.test(n)) (parsed as any).nicho = "geral";
+      return parsed;
     }
+  } catch (e) {
+    console.warn(JSON.stringify({
+      module: "generate-caption", event: "vision_failed",
+      error: String((e as Error)?.message ?? e),
+    }));
   }
   return null;
 }
@@ -483,33 +486,36 @@ Responda SOMENTE JSON válido:
 }
 
 
+/** AGENTE 2 — Copywriter Viral (Gemini, texto). Recebe SÓ o JSON da análise. */
 async function writeCopy(body: Body, a: Analysis, seed: number, strict: boolean) {
   const bank = bankTagsFor(a, seed);
-  const messages = [
-    { role: "system", content: copySystem(seed, strict, bank) },
-    {
-      role: "user",
-      content: `ANÁLISE DO VÍDEO (fonte única do assunto):\n${analysisBlock(a) || "(análise pobre — seja o mais concreto possível com o que houver)"}\n\nIDENTIDADE DA PÁGINA (apenas tom de voz):\n${toneBlock(body) || "(sem informação — use tom neutro)"}`,
-    },
-  ];
-  for (const model of TEXT_MODELS) {
-    try {
-      const raw = await callAi({
-        module: "generate-caption",
-        model,
-        messages,
-        jsonMode: true,
-        timeoutMs: 40_000,
-        context: { stage: "copy", model, strict },
-      });
-      const parsed = parseModelJson<any>(raw);
-      if (parsed && String(parsed.caption ?? "").trim()) return { parsed, model };
-    } catch (e) {
-      console.warn(JSON.stringify({
-        module: "generate-caption", event: "copy_failed", model,
-        error: String((e as Error)?.message ?? e),
-      }));
-    }
+  const userText = `ANÁLISE DO VÍDEO EM JSON (fonte única do assunto — você NÃO viu o vídeo, confie apenas nisto):
+${JSON.stringify(a)}
+
+RESUMO LEGÍVEL:
+${analysisBlock(a) || "(análise pobre — seja o mais concreto possível com o que houver)"}
+
+IDENTIDADE DA PÁGINA (apenas tom de voz):
+${toneBlock(body) || "(sem informação — use tom neutro)"}`;
+  try {
+    const { text, model } = await callGeminiWithFallback({
+      module: "generate-caption",
+      stage: "copy",
+      models: TEXT_MODELS,
+      system: copySystem(seed, strict, bank),
+      parts: [{ text: userText }],
+      json: true,
+      temperature: strict ? 0.7 : 1.0,
+      timeoutMs: 45_000,
+      context: { strict },
+    });
+    const parsed = parseGeminiJson<any>(text);
+    if (parsed && String(parsed.caption ?? "").trim()) return { parsed, model };
+  } catch (e) {
+    console.warn(JSON.stringify({
+      module: "generate-caption", event: "copy_failed",
+      error: String((e as Error)?.message ?? e),
+    }));
   }
   return null;
 }
@@ -707,6 +713,56 @@ function smartFallback(body: Body, a: Analysis) {
 
 
 
+// ------------------------------------------------- CACHE inteligente por vídeo
+
+function db() {
+  const url = Deno.env.get("SUPABASE_URL");
+  const key = Deno.env.get("SUPABASE_SERVICE_ROLE_KEY");
+  if (!url || !key) return null;
+  return createClient(url, key, { auth: { persistSession: false } });
+}
+
+function cacheKeyOf(body: Body): string | null {
+  if (body.noCache) return null;
+  if (body.cacheKey) return String(body.cacheKey);
+  if (body.videoId) return `video:${body.videoId}`;
+  return null;
+}
+
+async function readCache(key: string) {
+  const c = db();
+  if (!c) return null;
+  try {
+    const { data } = await c.from("video_ai_cache").select("*").eq("cache_key", key).maybeSingle();
+    if (!data || !String((data as any).caption ?? "").trim()) return null;
+    return data as any;
+  } catch { return null; }
+}
+
+async function writeCache(key: string, body: Body, a: Analysis, payload: any, model: string) {
+  const c = db();
+  if (!c) return;
+  try {
+    await c.from("video_ai_cache").upsert({
+      cache_key: key,
+      video_id: body.videoId ?? null,
+      analysis: a as any,
+      summary: analysisBlock(a),
+      objects: arr(a.objetos).slice(0, 20),
+      ocr: arr(a.ocr).slice(0, 20),
+      niche: a.nicho ?? null,
+      title: payload.title ?? null,
+      caption: payload.caption ?? null,
+      cta: payload.cta ?? null,
+      hashtags: payload.hashtags ?? null,
+      model,
+      updated_at: new Date().toISOString(),
+    }, { onConflict: "cache_key" });
+  } catch (e) {
+    console.warn(JSON.stringify({ module: "generate-caption", event: "cache_write_failed", error: String(e) }));
+  }
+}
+
 Deno.serve(async (req) => {
   if (req.method === "OPTIONS") return new Response("ok", { headers: corsHeaders });
   if (req.method !== "POST") return json(405, { error: "Método não suportado.", code: "METHOD_NOT_ALLOWED" });
@@ -718,6 +774,31 @@ Deno.serve(async (req) => {
   } catch { /* corpo vazio → fallback */ }
 
   const seed = Number.isFinite(body.variationSeed) ? Number(body.variationSeed) : Date.now();
+
+  const cacheKey = cacheKeyOf(body);
+  if (cacheKey) {
+    const hit = await readCache(cacheKey);
+    if (hit) {
+      console.info(JSON.stringify({
+        module: "generate-caption", event: "cache_hit",
+        cache_key: cacheKey, model: hit.model ?? null, ms: Date.now() - startedAt,
+      }));
+      return json(200, {
+        title: hit.title ?? "",
+        caption: hit.caption,
+        cta: hit.cta ?? "",
+        hashtags: hit.hashtags ?? { alcance: [], nicho: [], tema: [] },
+        niche: hit.niche ?? undefined,
+        analysis: hit.summary ?? "",
+        analysisJson: hit.analysis ?? undefined,
+        model: hit.model ?? undefined,
+        source: "ai",
+        cached: true,
+        validated: true,
+        ms: Date.now() - startedAt,
+      });
+    }
+  }
 
   try {
     const frames = framesOf(body);
@@ -768,7 +849,7 @@ Deno.serve(async (req) => {
         ms: Date.now() - startedAt,
       }));
 
-      return json(200, {
+      const payload = {
         title: String(res.parsed.title ?? "").trim() || fbLocal.title,
         caption,
         cta: cta || fbLocal.cta,
@@ -788,7 +869,9 @@ Deno.serve(async (req) => {
         vision: Boolean(vision),
         validated: !generic && coherent,
         ms: Date.now() - startedAt,
-      });
+      };
+      if (cacheKey && !generic && coherent) await writeCache(cacheKey, body, analysis, payload, res.model);
+      return json(200, payload);
     }
 
     const fb = smartFallback(body, analysis);

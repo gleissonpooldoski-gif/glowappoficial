@@ -4,7 +4,8 @@
 // - tags: 15-30 palavras-chave SEO variadas (para o campo snippet.tags do YouTube).
 import { createClient } from "https://esm.sh/@supabase/supabase-js@2.45.4";
 import { corsHeaders } from "npm:@supabase/supabase-js@2/cors";
-import { aiErrorResponse, callAi, parseModelJson } from "../_shared/ai-gateway.ts";
+import { aiErrorResponse } from "../_shared/ai-gateway.ts";
+import { callGeminiWithFallback, parseGeminiJson } from "../_shared/gemini.ts";
 
 
 type ProjectCtx = { name: string | null; category: string | null };
@@ -137,17 +138,17 @@ Deno.serve(async (req) => {
       (projectCategory ? `\nCategoria: ${projectCategory}` : "") +
       "\n\nGere o JSON com title, description, hashtags e tags.";
 
-    const raw = await callAi({
+    const { text: raw } = await callGeminiWithFallback({
       module: "generate-youtube-title",
-      messages: [
-        { role: "system", content: system },
-        { role: "user", content: user },
-      ],
+      stage: "copy",
+      system,
+      parts: [{ text: user }],
+      json: true,
       context: { project: projectName, videoId },
     });
 
 
-    const parsed = parseModelJson<{ title?: string; description?: string; hashtags?: string[]; tags?: string[] }>(raw);
+    const parsed = parseGeminiJson<{ title?: string; description?: string; hashtags?: string[]; tags?: string[] }>(raw);
 
     let title = String(parsed.title ?? "").trim();
     title = title
