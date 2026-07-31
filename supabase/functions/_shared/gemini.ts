@@ -6,8 +6,8 @@ const BASE = "https://generativelanguage.googleapis.com/v1beta/models";
 
 /** Ordem de preferência: Gemini 2.5 Flash e sucessores/compatíveis. */
 export const GEMINI_MODELS = [
+  "gemini-flash-latest", // alias oficial do Flash mais recente disponível na conta
   "gemini-2.5-flash",
-  "gemini-flash-latest",
   "gemini-2.0-flash",
 ];
 
