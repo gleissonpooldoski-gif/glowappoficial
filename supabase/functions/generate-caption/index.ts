@@ -12,7 +12,14 @@
 // e regenerada (até 2 tentativas) com instruções mais estritas.
 //
 // NUNCA falha: sempre responde 200 com { caption, cta, hashtags:{...}, source }.
-import { callAi, parseModelJson } from "../_shared/ai-gateway.ts";
+import {
+  callGeminiWithFallback,
+  parseGeminiJson,
+  dataUrlToPart,
+  GEMINI_MODELS,
+  type GeminiPart,
+} from "../_shared/gemini.ts";
+import { createClient } from "https://esm.sh/@supabase/supabase-js@2.45.0";
 
 const corsHeaders = {
   "Access-Control-Allow-Origin": "*",
