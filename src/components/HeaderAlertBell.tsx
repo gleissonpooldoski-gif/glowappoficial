@@ -5,8 +5,13 @@ import { cn } from "@/lib/utils";
 
 export default function HeaderAlertBell() {
   const navigate = useNavigate();
-  const count = useHealthBadge();
-  const hasAlerts = count > 0;
+  const { posts, connections, total } = useHealthBadge();
+  const hasAlerts = total > 0;
+
+  const parts: string[] = [];
+  if (posts > 0) parts.push(`${posts} ${posts === 1 ? "publicação" : "publicações"}`);
+  if (connections > 0) parts.push(`${connections} ${connections === 1 ? "conta" : "contas"} a reconectar`);
+  const label = parts.join(" · ");
 
   return (
     <button
@@ -17,17 +22,15 @@ export default function HeaderAlertBell() {
           ? "border-red-500/50 bg-red-500/10 text-red-400 hover:bg-red-500/20"
           : "border-border/60 bg-card/60 text-muted-foreground hover:bg-card"
       )}
-      title={hasAlerts ? `${count} publicação(ões) precisam de atenção` : "Sem alertas"}
+      title={hasAlerts ? `Precisa de atenção: ${label}` : "Sem alertas"}
     >
       <Bell size={14} className={hasAlerts ? "animate-pulse" : ""} />
       {hasAlerts ? (
         <>
-          <span className="hidden sm:inline">
-            {count} {count === 1 ? "publicação precisa" : "publicações precisam"} de atenção
-          </span>
-          <span className="sm:hidden font-semibold">{count}</span>
+          <span className="hidden sm:inline">{label}</span>
+          <span className="sm:hidden font-semibold">{total}</span>
           <span className="absolute -top-1 -right-1 flex h-4 min-w-4 items-center justify-center rounded-full bg-red-500 px-1 text-[10px] font-bold text-white">
-            {count > 99 ? "99+" : count}
+            {total > 99 ? "99+" : total}
           </span>
         </>
       ) : (
