@@ -194,6 +194,19 @@ async function checkFacebook() {
     }
 
     if (isMetaAuthError(err)) {
+      // Tenta auto-renovar o page token antes de marcar como expirado
+      const fresh = await rederivePageToken(a.user_access_token ?? null, a.page_id);
+      if (fresh) {
+        await supabase.from("facebook_accounts").update({
+          page_access_token: fresh, connection_status: "connected",
+          token_error: null, token_checked_at: new Date().toISOString(),
+        }).eq("id", a.id);
+        await upsertHealth("facebook", a.page_id ?? a.id, a.project_id, {
+          status: "connected", error_reason: null, error_code: null,
+        });
+        results.push({ id: a.id, page: a.page_name, status: "auto_renewed" });
+        continue;
+      }
       await supabase.from("facebook_accounts").update({
         connection_status: "expired", token_error: err?.message ?? "Token inválido", token_checked_at: new Date().toISOString(),
       }).eq("id", a.id);
