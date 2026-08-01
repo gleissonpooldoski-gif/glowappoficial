@@ -84,6 +84,32 @@ async function recoverFacebookSchedules(supabase: any, projectId: string): Promi
   return recovered;
 }
 
+/**
+ * Troca um token curto (1-2h, típico do Graph Explorer) por um token de usuário
+ * de longa duração (60 dias). Os Page Access Tokens derivados de um token de
+ * usuário long-lived NÃO expiram — é isso que impede a desconexão constante.
+ */
+async function exchangeForLongLivedUserToken(token: string): Promise<{ token: string; exchanged: boolean; reason?: string }> {
+  const appId = Deno.env.get("FACEBOOK_APP_ID");
+  const appSecret = Deno.env.get("FACEBOOK_APP_SECRET");
+  if (!appId || !appSecret) {
+    return { token, exchanged: false, reason: "missing_app_credentials" };
+  }
+  try {
+    const url = `${FB_BASE}/oauth/access_token?grant_type=fb_exchange_token&client_id=${encodeURIComponent(appId)}&client_secret=${encodeURIComponent(appSecret)}&fb_exchange_token=${encodeURIComponent(token)}`;
+    const r = await fetch(url);
+    const { data } = await readMeta(r);
+    if (!r.ok || data?.error || !data?.access_token) {
+      console.error("[facebook-credentials] long-lived exchange failed", data?.error ?? data);
+      return { token, exchanged: false, reason: data?.error?.message ?? "exchange_failed" };
+    }
+    console.info("[facebook-credentials] long-lived token obtido", { expires_in: data?.expires_in ?? "never" });
+    return { token: sanitizeToken(data.access_token), exchanged: true };
+  } catch (e) {
+    return { token, exchanged: false, reason: (e as Error).message };
+  }
+}
+
 async function fetchMe(token: string): Promise<{ id: string; name: string }> {
   const r = await fetch(`${FB_BASE}/me?fields=id,name&access_token=${encodeURIComponent(token)}`);
   const { data } = await readMeta(r);
