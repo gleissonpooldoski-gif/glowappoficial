@@ -5,7 +5,6 @@ import {
   FolderKanban, ChevronsUpDown, Plus, Check, Instagram, Settings as SettingsIcon,
   MessageSquareText, Activity, AlertTriangle,
 } from "lucide-react";
-import { useHealthBadge } from "@/hooks/useHealthBadge";
 import HeaderAlertBell from "@/components/HeaderAlertBell";
 import { cn } from "@/lib/utils";
 import { useActiveProject } from "@/context/ProjectContext";
