@@ -143,10 +143,30 @@ function isMetaAuthError(err: any): boolean {
   return msg.includes("access token") && (msg.includes("expired") || msg.includes("invalid") || msg.includes("session"));
 }
 
+/**
+ * Auto-heal: tenta re-derivar o Page Access Token a partir do user token
+ * armazenado (long-lived). Retorna o novo page token ou null.
+ */
+async function rederivePageToken(userToken: string | null, pageId: string): Promise<string | null> {
+  if (!userToken || !pageId) return null;
+  const appId = Deno.env.get("FACEBOOK_APP_ID");
+  const appSecret = Deno.env.get("FACEBOOK_APP_SECRET");
+  let token = userToken;
+  if (appId && appSecret) {
+    const ex = await fetch(`https://graph.facebook.com/v21.0/oauth/access_token?grant_type=fb_exchange_token&client_id=${encodeURIComponent(appId)}&client_secret=${encodeURIComponent(appSecret)}&fb_exchange_token=${encodeURIComponent(userToken)}`);
+    const exBody = await ex.json().catch(() => ({}));
+    if (ex.ok && exBody?.access_token) token = exBody.access_token;
+  }
+  const r = await fetch(`https://graph.facebook.com/v21.0/${encodeURIComponent(pageId)}?fields=access_token&access_token=${encodeURIComponent(token)}`);
+  const body = await r.json().catch(() => ({}));
+  if (!r.ok || body?.error || !body?.access_token) return null;
+  return String(body.access_token);
+}
+
 async function checkFacebook() {
   const results: any[] = [];
   const { data: accts } = await supabase.from("facebook_accounts")
-    .select("id, page_id, page_name, page_access_token, project_id");
+    .select("id, page_id, page_name, page_access_token, user_access_token, project_id");
   for (const a of accts ?? []) {
     if (!a.page_access_token) continue;
     // Page tokens de longa duração não expiram: valida com /me (debug_token
