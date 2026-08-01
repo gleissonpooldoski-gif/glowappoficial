@@ -140,12 +140,23 @@ async function validateAccount(rawToken: string, rawIgId: string): Promise<Valid
     }
 
     if (!ig.data?.id) return { ok: false, status: "IG_ID_INVALID", message: "Instagram Business ID não retornou dados." };
+    // Guard: um Page ID do Facebook também responde a /{id}?fields=id,username, mas
+    // SEM username. Isso gerava credenciais "válidas" que falhavam ao publicar
+    // (code=100 subcode=33). Só aceitamos objetos que sejam de fato contas IG.
+    if (!ig.data?.username) {
+      return {
+        ok: false,
+        status: "IG_ID_INVALID",
+        message: `O ID ${igId} não é uma conta Instagram Business (parece ser um ID de Página do Facebook). Use o Instagram Business ID vinculado à Página.`,
+      };
+    }
     return {
       ok: true,
       status: "VALID",
-      message: `Conta @${ig.data.username ?? "?"} validada (IG ID ${ig.data.id}).`,
-      username: ig.data.username ?? null,
+      message: `Conta @${ig.data.username} validada (IG ID ${ig.data.id}).`,
+      username: ig.data.username,
     };
+
   } catch (e: any) {
     return { ok: false, status: "UNKNOWN_ERROR", message: e?.message ?? "Falha ao consultar o Business ID." };
   }
