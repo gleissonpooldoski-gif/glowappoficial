@@ -1,13 +1,15 @@
 import { useEffect, useState } from "react";
 import { supabase } from "@/integrations/supabase/client";
 
-// Conta exatamente o que a página /publications-issues mostra:
-// posts com status=ERRO em cada rede + contas com token expirado.
-// Assim, quando o usuário resolve (retry → AGENDADO) o sino zera.
+// Conta o que a página /publications-issues mostra (posts com status=ERRO)
+// e, separadamente, as contas com token expirado — para o sino descrever
+// exatamente o que precisa de ação.
 export function useHealthBadge() {
-  const [count, setCount] = useState(0);
+  const [posts, setPosts] = useState(0);
+  const [connections, setConnections] = useState(0);
 
   useEffect(() => {
+    let cancelled = false;
     const load = async () => {
       const head = { count: "exact" as const, head: true };
       const [ig, fb, yt, tt, hh] = await Promise.all([
@@ -17,23 +19,20 @@ export function useHealthBadge() {
         supabase.from("tiktok_posts").select("*", head).eq("status", "ERRO"),
         supabase.from("connection_health").select("*", head).eq("status", "expired"),
       ]);
-      const total =
-        (ig.count ?? 0) +
-        (fb.count ?? 0) +
-        (yt.count ?? 0) +
-        (tt.count ?? 0) +
-        (hh.count ?? 0);
-      setCount(total);
+      if (cancelled) return;
+      setPosts((ig.count ?? 0) + (fb.count ?? 0) + (yt.count ?? 0) + (tt.count ?? 0));
+      setConnections(hh.count ?? 0);
     };
     load();
     const t = setInterval(load, 30_000);
     const onFocus = () => load();
     window.addEventListener("focus", onFocus);
     return () => {
+      cancelled = true;
       clearInterval(t);
       window.removeEventListener("focus", onFocus);
     };
   }, []);
 
-  return count;
+  return { posts, connections, total: posts + connections };
 }
