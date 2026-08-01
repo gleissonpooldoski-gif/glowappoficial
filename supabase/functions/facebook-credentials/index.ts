@@ -205,22 +205,29 @@ Deno.serve(async (req) => {
 
     // === LIST_PAGES: given a user access token, returns pages the user manages ===
     if (action === "list_pages") {
-      const token = sanitizeToken(body.user_access_token);
-      if (!token) return json({ error: "Access token do Meta é obrigatório." }, 400);
+      const raw = sanitizeToken(body.user_access_token);
+      if (!raw) return json({ error: "Access token do Meta é obrigatório." }, 400);
+      const ll = await exchangeForLongLivedUserToken(raw);
+      const token = ll.token;
       const me = await fetchMe(token);
       const pages = await fetchPages(token);
-      return json({ success: true, me, pages });
+      return json({ success: true, me, pages, long_lived: ll.exchanged, long_lived_reason: ll.reason ?? null });
     }
 
     // === CONNECT: save a chosen page for a project ===
     if (action === "connect") {
       const project_id: string | null = body.project_id ?? null;
-      const user_token = sanitizeToken(body.user_access_token);
+      const raw_token = sanitizeToken(body.user_access_token);
       const page_id = String(body.page_id ?? "").trim();
       if (!project_id) return json({ error: "Projeto é obrigatório." }, 400);
-      if (!user_token) return json({ error: "Access token do Meta é obrigatório." }, 400);
+      if (!raw_token) return json({ error: "Access token do Meta é obrigatório." }, 400);
       if (!page_id) return json({ error: "Selecione uma Página." }, 400);
 
+      const ll = await exchangeForLongLivedUserToken(raw_token);
+      const user_token = ll.token;
+      if (!ll.exchanged) {
+        console.warn("[facebook-credentials] token curto (não trocado)", { project_id, reason: ll.reason });
+      }
       const me = await fetchMe(user_token);
       const pages = await fetchPages(user_token);
       const chosen = pages.find((p) => p.page_id === page_id);
