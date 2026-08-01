@@ -131,35 +131,64 @@ async function checkInstagram() {
   return { count: results.length, results };
 }
 
+function isMetaAuthError(err: any): boolean {
+  if (!err) return false;
+  const code = Number(err.code);
+  const sub = Number(err.error_subcode ?? 0);
+  if (err.is_transient === true) return false;
+  if ([1, 2, 4, 17, 32, 341, 613].includes(code)) return false;
+  if ([190, 102, 463, 467].includes(code)) return true;
+  if ([458, 459, 460, 463, 464, 467, 492, 493].includes(sub)) return true;
+  const msg = String(err.message ?? "").toLowerCase();
+  return msg.includes("access token") && (msg.includes("expired") || msg.includes("invalid") || msg.includes("session"));
+}
+
 async function checkFacebook() {
   const results: any[] = [];
   const { data: accts } = await supabase.from("facebook_accounts")
     .select("id, page_id, page_name, page_access_token, project_id");
   for (const a of accts ?? []) {
     if (!a.page_access_token) continue;
-    const info = await validateMetaWithExpiry(a.page_access_token);
-    const now = Date.now();
-    let status = "connected";
-    let reason: string | null = null;
-    if (!info.valid) {
-      status = "needs_reconnect";
-      reason = info.error ?? "invalid_token";
-    } else if (info.expires_at) {
-      const daysLeft = (new Date(info.expires_at).getTime() - now) / 86400000;
-      if (daysLeft < EARLY_WARNING_DAYS) {
-        status = "expiring_soon";
-        reason = `expira em ${Math.round(daysLeft)}d`;
-      }
+    // Page tokens de longa duração não expiram: valida com /me (debug_token
+    // com o próprio page token gera falsos negativos e desconectava a página).
+    let ok = false;
+    let err: any = null;
+    for (let attempt = 1; attempt <= 3; attempt++) {
+      const res = await fetch(`https://graph.facebook.com/v21.0/me?fields=id,name&access_token=${encodeURIComponent(a.page_access_token)}`);
+      const body = await res.json().catch(() => ({}));
+      err = body?.error ?? null;
+      ok = res.ok && !err;
+      if (ok || isMetaAuthError(err)) break;
+      await new Promise((r) => setTimeout(r, attempt * 1500));
     }
-    await supabase.from("facebook_accounts").update({
-      connection_status: status === "connected" ? "connected" : status,
-      token_error: reason,
-      token_checked_at: new Date().toISOString(),
-    }).eq("id", a.id);
+
+    if (ok) {
+      await supabase.from("facebook_accounts").update({
+        connection_status: "connected", token_error: null, token_checked_at: new Date().toISOString(),
+      }).eq("id", a.id);
+      await upsertHealth("facebook", a.page_id ?? a.id, a.project_id, {
+        status: "connected", error_reason: null, error_code: null,
+      });
+      results.push({ id: a.id, page: a.page_name, status: "connected" });
+      continue;
+    }
+
+    if (isMetaAuthError(err)) {
+      await supabase.from("facebook_accounts").update({
+        connection_status: "expired", token_error: err?.message ?? "Token inválido", token_checked_at: new Date().toISOString(),
+      }).eq("id", a.id);
+      await upsertHealth("facebook", a.page_id ?? a.id, a.project_id, {
+        status: "expired", error_reason: err?.message ?? "invalid_token", error_code: "META_INVALID",
+      });
+      results.push({ id: a.id, page: a.page_name, status: "expired" });
+      continue;
+    }
+
+    // Transitório: NÃO desconecta
     await upsertHealth("facebook", a.page_id ?? a.id, a.project_id, {
-      status, expires_at: info.expires_at, error_reason: reason, error_code: !info.valid ? "META_INVALID" : null,
+      status: "unknown", error_reason: `transitório: ${err?.message ?? "sem resposta"}`, error_code: null,
     });
-    results.push({ id: a.id, page: a.page_name, status, expires_at: info.expires_at });
+    results.push({ id: a.id, page: a.page_name, status: "transient" });
   }
   return { count: results.length, results };
 }
