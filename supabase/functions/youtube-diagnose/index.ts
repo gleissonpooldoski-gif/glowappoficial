@@ -22,7 +22,7 @@ Deno.serve(async (req) => {
       { headers: { Authorization: `Bearer ${token}` } },
     );
     out.channels_status = chRes.status;
-    out.channels_body = (await chRes.text()).slice(0, 1500);
+    out.channels_body = (await chRes.text()).slice(600, 4000);
 
     const initRes = await fetch(
       "https://www.googleapis.com/upload/youtube/v3/videos?uploadType=resumable&part=snippet,status",
