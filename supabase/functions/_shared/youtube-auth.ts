@@ -153,11 +153,47 @@ export async function ensureAccessToken(
 
 async function markCred(supabase: any, account: string, status: string, detail: string) {
   await supabase.from("youtube_credentials").update({
+    status: "expired",
     last_validated_at: new Date().toISOString(),
     last_validation_status: status,
     last_validation_detail: String(detail).slice(0, 400),
   }).eq("account", account);
+  await upsertYoutubeHealth(supabase, account, "expired", status, detail);
 }
+
+/** Espelha o estado do canal em connection_health (alimenta o sino de alertas). */
+export async function upsertYoutubeHealth(
+  supabase: any,
+  account: string,
+  status: "connected" | "expired" | "unknown",
+  code: string | null,
+  detail?: string | null,
+  projectId?: string | null,
+) {
+  try {
+    await supabase.from("connection_health").upsert({
+      platform: "youtube",
+      account_ref: account,
+      project_id: projectId ?? null,
+      status,
+      last_check: new Date().toISOString(),
+      error_code: code,
+      error_reason: detail ? String(detail).slice(0, 400) : null,
+    }, { onConflict: "platform,account_ref" });
+  } catch { /* saúde é best-effort */ }
+}
+
+/** Marca o canal como bloqueado para upload (403 forbidden da API). */
+export async function markUploadForbidden(supabase: any, cred: any, detail: string) {
+  await supabase.from("youtube_credentials").update({
+    status: "permission_denied",
+    last_validated_at: new Date().toISOString(),
+    last_validation_status: "PERMISSION_DENIED",
+    last_validation_detail: String(detail).slice(0, 400),
+  }).eq("account", cred.account);
+  await upsertYoutubeHealth(supabase, cred.account, "expired", "PERMISSION_DENIED", detail, cred.project_id ?? null);
+}
+
 
 /** Traduz uma resposta de erro da API do YouTube para a taxonomia padrão. */
 export function classifyYoutubeApiError(status: number, parsed: any, rawText: string): YtError {
