@@ -224,6 +224,15 @@ Deno.serve(async (req) => {
       throw new YtError("UPLOAD_FAILED", "Upload concluído sem ID de vídeo retornado pelo YouTube.");
     }
     log({ step: "youtube_upload_finished", youtube_video_id: finalJson.id });
+    await supabase.from("youtube_credentials").update({
+      status: "connected",
+      last_validated_at: new Date().toISOString(),
+      last_validation_status: "VALID",
+      last_validation_detail: "Upload concluído com sucesso.",
+    }).eq("account", cred.account);
+    await upsertYoutubeHealth(supabase, cred.account, "connected", null, null, cred.project_id ?? null);
+
+
 
     return json({
       success: true,
