@@ -128,14 +128,17 @@ async function checkFacebook(): Promise<Result[]> {
 }
 
 async function checkYouTube(): Promise<Result[]> {
-  const { data: creds } = await supabase.from("youtube_credentials").select("account, refresh_token, expires_at, channel_id, channel_title");
+  const { data: creds } = await supabase.from("youtube_credentials").select("account, refresh_token, expires_at, channel_id, channel_title, status, project_id");
   const results: Result[] = [];
   const clientId = Deno.env.get("YOUTUBE_CLIENT_ID");
   const clientSecret = Deno.env.get("YOUTUBE_CLIENT_SECRET");
 
   for (const c of creds ?? []) {
     if (!c.refresh_token || !clientId || !clientSecret) {
-      await upsertHealth({ platform: "youtube", account_ref: c.account, status: "expired", error: "Sem refresh_token" });
+      await supabase.from("youtube_credentials")
+        .update({ status: "expired", last_validation_status: "REFRESH_TOKEN_MISSING", last_validation_detail: "Sem refresh_token — reconecte o canal." })
+        .eq("account", c.account);
+      await upsertHealth({ platform: "youtube", account_ref: c.account, status: "expired", error: "Sem refresh_token", project_id: c.project_id });
       results.push({ platform: "youtube", account_ref: c.account, status: "expired", error: "Sem refresh_token" });
       continue;
     }
@@ -150,16 +153,36 @@ async function checkYouTube(): Promise<Result[]> {
       });
       const data = await r.json();
       if (!r.ok || data.error) {
-        await upsertHealth({ platform: "youtube", account_ref: c.account, status: "expired", error: data?.error_description || data?.error || `HTTP ${r.status}`, metadata: { channel_title: c.channel_title } });
+        const detail = data?.error_description || data?.error || `HTTP ${r.status}`;
+        await supabase.from("youtube_credentials").update({
+          status: "expired",
+          last_validated_at: new Date().toISOString(),
+          last_validation_status: data?.error === "invalid_grant" ? "REFRESH_TOKEN_INVALID" : "TOKEN_REFRESH_FAILED",
+          last_validation_detail: `Autorização revogada ou expirada (${detail}). Reconecte o canal em Integrações.`,
+        }).eq("account", c.account);
+        await upsertHealth({ platform: "youtube", account_ref: c.account, status: "expired", error: detail, project_id: c.project_id, metadata: { channel_title: c.channel_title } });
         results.push({ platform: "youtube", account_ref: c.account, status: "expired", error: data?.error });
       } else {
         const newExpiresAt = new Date(Date.now() + (Number(data.expires_in) || 3600) * 1000).toISOString();
+        // Um canal bloqueado para uploads (403) continua com token válido:
+        // não sobrescreve esse diagnóstico com "ok".
+        const blocked = c.status === "permission_denied";
         await supabase.from("youtube_credentials")
-          .update({ access_token: data.access_token, expires_at: newExpiresAt, last_validated_at: new Date().toISOString(), last_validation_status: "ok", last_validation_detail: null })
+          .update({
+            access_token: data.access_token,
+            expires_at: newExpiresAt,
+            ...(blocked ? {} : { status: "connected", last_validated_at: new Date().toISOString(), last_validation_status: "VALID", last_validation_detail: null }),
+          })
           .eq("account", c.account);
-        await upsertHealth({ platform: "youtube", account_ref: c.account, status: "connected", expires_at: newExpiresAt, metadata: { channel_title: c.channel_title } });
-        results.push({ platform: "youtube", account_ref: c.account, status: "connected", expires_at: newExpiresAt });
+        await upsertHealth({
+          platform: "youtube", account_ref: c.account,
+          status: blocked ? "expired" : "connected",
+          error: blocked ? "Canal bloqueado para novos uploads pelo YouTube." : undefined,
+          expires_at: newExpiresAt, project_id: c.project_id, metadata: { channel_title: c.channel_title },
+        });
+        results.push({ platform: "youtube", account_ref: c.account, status: blocked ? "expired" : "connected", expires_at: newExpiresAt });
       }
+
     } catch (e) {
       await upsertHealth({ platform: "youtube", account_ref: c.account, status: "unknown", error: String(e) });
       results.push({ platform: "youtube", account_ref: c.account, status: "unknown", error: String(e) });
