@@ -10,10 +10,13 @@ import { corsHeaders } from "npm:@supabase/supabase-js@2/cors";
 import {
   classifyYoutubeApiError,
   ensureAccessToken,
+  markUploadForbidden,
   resolveYoutubeCredential,
   sleep,
+  upsertYoutubeHealth,
   YtError,
 } from "../_shared/youtube-auth.ts";
+
 
 const RESUMABLE_INIT_ENDPOINT =
   "https://www.googleapis.com/upload/youtube/v3/videos?uploadType=resumable&part=snippet,status";
@@ -113,8 +116,42 @@ Deno.serve(async (req) => {
       const text = await initRes.text().catch(() => "");
       let parsed: any = null;
       try { parsed = JSON.parse(text); } catch { /* noop */ }
-      throw classifyYoutubeApiError(initRes.status, parsed, text);
+      const err = classifyYoutubeApiError(initRes.status, parsed, text);
+
+      // 403 "forbidden": o token é válido, mas o canal não pode receber uploads.
+      // Diagnostica o canal para devolver um motivo acionável ao usuário.
+      if (err.code === "PERMISSION_DENIED") {
+        let diag = "";
+        try {
+          const chRes = await fetch(
+            "https://www.googleapis.com/youtube/v3/channels?part=id,status&mine=true",
+            { headers: { Authorization: `Bearer ${accessToken}` } },
+          );
+          const chJson: any = await chRes.json().catch(() => ({}));
+          const item = chJson?.items?.[0];
+          if (!item) {
+            diag = "A conta Google autorizada não possui canal do YouTube acessível. Reconecte escolhendo a conta correta do canal.";
+          } else if (!(cred.scope ?? "").includes("youtube.upload")) {
+            diag = "A autorização atual não inclui a permissão de envio de vídeos. Reconecte o canal marcando todas as permissões solicitadas.";
+          } else if (item?.status?.isLinked === false) {
+            diag = "O canal não está vinculado a uma conta Google válida.";
+          } else {
+            diag =
+              "O canal está autorizado, mas o YouTube está recusando novos envios. " +
+              "Causas comuns: canal novo/não verificado por telefone, limite diário de uploads atingido ou restrição/strike aplicada ao canal. " +
+              "Verifique youtube.com/verify e o Painel do canal (Configurações → Canal → Elegibilidade de recursos).";
+          }
+        } catch { /* diagnóstico é best-effort */ }
+        await markUploadForbidden(supabase, cred, diag || err.message);
+        throw new YtError(
+          "PERMISSION_DENIED",
+          `Canal "${cred.channel_title ?? cred.account}" não está autorizado a enviar vídeos agora. ${diag}`,
+          { httpStatus: 403, detail: parsed?.error ?? text.slice(0, 400) },
+        );
+      }
+      throw err;
     }
+
     const uploadUrl = initRes.headers.get("location") ?? initRes.headers.get("Location");
     if (!uploadUrl) throw new YtError("UPLOAD_FAILED", "YouTube não retornou URL de upload resumable.");
     log({ step: "youtube_resumable_session_open", chunk_size: CHUNK_SIZE, chunks: Math.ceil(totalSize / CHUNK_SIZE) });
@@ -187,6 +224,15 @@ Deno.serve(async (req) => {
       throw new YtError("UPLOAD_FAILED", "Upload concluído sem ID de vídeo retornado pelo YouTube.");
     }
     log({ step: "youtube_upload_finished", youtube_video_id: finalJson.id });
+    await supabase.from("youtube_credentials").update({
+      status: "connected",
+      last_validated_at: new Date().toISOString(),
+      last_validation_status: "VALID",
+      last_validation_detail: "Upload concluído com sucesso.",
+    }).eq("account", cred.account);
+    await upsertYoutubeHealth(supabase, cred.account, "connected", null, null, cred.project_id ?? null);
+
+
 
     return json({
       success: true,

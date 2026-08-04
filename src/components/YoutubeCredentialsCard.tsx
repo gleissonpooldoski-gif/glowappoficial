@@ -137,7 +137,15 @@ export default function YoutubeCredentialsCard() {
         ) : (
           <div className="space-y-3">
             {channels.map((c) => {
-              const connected = !!c.channel_id;
+              const vs = (c.last_validation_status ?? "").toUpperCase();
+              const needsReconnect =
+                !c.channel_id ||
+                c.status === "expired" ||
+                vs === "REFRESH_TOKEN_INVALID" ||
+                vs === "REFRESH_TOKEN_MISSING" ||
+                vs === "TOKEN_REFRESH_FAILED";
+              const blocked = c.status === "permission_denied" || vs === "PERMISSION_DENIED";
+              const healthy = !needsReconnect && !blocked;
               const expiresSoon = c.expires_at ? new Date(c.expires_at).getTime() - Date.now() < 24 * 3600_000 : false;
               const isBusy = busy === c.account;
               const name = c.channel_title ?? c.label ?? c.account;
@@ -155,24 +163,44 @@ export default function YoutubeCredentialsCard() {
                       <div>
                         <p className="text-sm font-medium">▶️ {name}</p>
                         <p className="text-[11px] text-muted-foreground">
-                          {connected
-                            ? `Canal conectado${c.channel_id ? ` · ${c.channel_id.slice(0, 14)}…` : ""}`
+                          {c.channel_id
+                            ? `Canal conectado · ${c.channel_id.slice(0, 14)}…`
                             : "Sem informações do canal."}
                         </p>
                       </div>
                     </div>
-                    <div className={`flex items-center gap-1.5 text-xs font-medium ${connected ? "text-emerald-500" : "text-muted-foreground"}`}>
-                      {connected ? <CheckCircle2 size={14} /> : <XCircle size={14} />}
-                      {connected ? "Conectado" : "Não conectado"}
+                    <div
+                      className={`flex items-center gap-1.5 text-xs font-medium ${
+                        healthy ? "text-emerald-500" : blocked ? "text-amber-500" : "text-destructive"
+                      }`}
+                    >
+                      {healthy ? <CheckCircle2 size={14} /> : <XCircle size={14} />}
+                      {healthy ? "Conectado" : blocked ? "Uploads bloqueados" : "Reconexão necessária"}
                     </div>
                   </div>
 
-                  {connected && (
+                  {!healthy && (
+                    <div
+                      className={`rounded-md border px-3 py-2 text-[11px] ${
+                        blocked
+                          ? "border-amber-500/40 bg-amber-500/10 text-amber-600"
+                          : "border-destructive/40 bg-destructive/10 text-destructive"
+                      }`}
+                    >
+                      {c.last_validation_detail ||
+                        (blocked
+                          ? "O YouTube recusou novos envios neste canal."
+                          : "A autorização deste canal expirou. Clique em Reconectar.")}
+                    </div>
+                  )}
+
+                  {c.channel_id && (
                     <div className="grid gap-1 text-[11px] text-muted-foreground md:grid-cols-2">
                       <span>Access token expira: <b className={expiresSoon ? "text-amber-500" : ""}>{c.expires_at ? new Date(c.expires_at).toLocaleString() : "—"}</b></span>
                       <span>Última validação: <b>{c.last_validated_at ? new Date(c.last_validated_at).toLocaleString() : "—"}</b></span>
                     </div>
                   )}
+
 
                   <div className="flex items-center gap-2 rounded-md border border-border/40 bg-background/30 px-3 py-2">
                     <Link2 size={13} className="text-gold shrink-0" />
@@ -208,7 +236,7 @@ export default function YoutubeCredentialsCard() {
                     <Button variant="outline" size="sm" disabled={isBusy} onClick={() => disconnect(c)}>
                       <LogOut size={13} className="mr-1" /> Desconectar
                     </Button>
-                    {connected && (
+                    {healthy && (
                       <Button variant="outline" size="sm" onClick={() => setUploadFor(c.account)}>
                         <Upload size={13} className="mr-1" /> Enviar vídeo
                       </Button>
