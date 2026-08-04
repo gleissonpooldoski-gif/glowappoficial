@@ -236,7 +236,7 @@ export default function YoutubeCredentialsCard() {
                     <Button variant="outline" size="sm" disabled={isBusy} onClick={() => disconnect(c)}>
                       <LogOut size={13} className="mr-1" /> Desconectar
                     </Button>
-                    {connected && (
+                    {healthy && (
                       <Button variant="outline" size="sm" onClick={() => setUploadFor(c.account)}>
                         <Upload size={13} className="mr-1" /> Enviar vídeo
                       </Button>
