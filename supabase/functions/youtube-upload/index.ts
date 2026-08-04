@@ -10,10 +10,13 @@ import { corsHeaders } from "npm:@supabase/supabase-js@2/cors";
 import {
   classifyYoutubeApiError,
   ensureAccessToken,
+  markUploadForbidden,
   resolveYoutubeCredential,
   sleep,
+  upsertYoutubeHealth,
   YtError,
 } from "../_shared/youtube-auth.ts";
+
 
 const RESUMABLE_INIT_ENDPOINT =
   "https://www.googleapis.com/upload/youtube/v3/videos?uploadType=resumable&part=snippet,status";
