@@ -147,8 +147,10 @@ export async function ensureAccessToken(
     last_validation_detail: "Token renovado automaticamente.",
   }).eq("account", cred.account);
 
+  await upsertYoutubeHealth(supabase, cred.account, "connected", null, null, cred.project_id ?? null);
   log?.({ step: "youtube_token_refreshed", account: cred.account, expires_at: expires });
   return json.access_token;
+
 }
 
 async function markCred(supabase: any, account: string, status: string, detail: string) {
