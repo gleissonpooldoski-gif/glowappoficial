@@ -220,18 +220,35 @@ export default function Finished() {
 
   const downloadAll = async () => {
     if (!videos || videos.length === 0) return;
+    if (zipBusy) return; // evita reinício acidental do mesmo lote
     const targets = selected.size > 0
       ? videos.filter((v) => selected.has(v.id))
       : videos;
     if (targets.length === 0) return;
     if (targets.length === 1) return download(targets[0]);
+
+    // Confirmação antes de grande volume de transferência
+    if (targets.length > 3) {
+      const totalBytes = targets.reduce((s, v: any) => s + (v.size_bytes ?? 0), 0);
+      const sizeLabel = totalBytes > 0
+        ? ` (~${(totalBytes / 1024 / 1024).toFixed(0)} MB)`
+        : "";
+      const ok = window.confirm(
+        `Baixar ${targets.length} vídeos${sizeLabel} em um único ZIP?\n\nIsso vai transferir todos os arquivos selecionados.`,
+      );
+      if (!ok) return;
+    }
+
     setZipBusy(true);
     try {
       const zip = new JSZip();
       const usedNames = new Set<string>();
+      const fetchedPaths = new Set<string>(); // evita baixar o mesmo arquivo 2x
       let done = 0;
       for (const v of targets) {
         if (!v.processed_path) continue;
+        if (fetchedPaths.has(v.processed_path)) continue;
+        fetchedPaths.add(v.processed_path);
         const { data, error } = await supabase.storage.from(BUCKET)
           .createSignedUrl(v.processed_path, 60 * 10);
         if (error || !data?.signedUrl) continue;

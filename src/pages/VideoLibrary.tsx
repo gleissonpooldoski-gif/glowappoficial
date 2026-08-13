@@ -1103,7 +1103,11 @@ export default function VideoLibrary() {
                 key={playing.url}
                 src={playing.url}
                 controls
-                autoPlay
+                preload="metadata"
+                poster={
+                  (playing.video.thumbnail_path ? thumbs[playing.video.thumbnail_path] : playing.video.thumbnail_url) ??
+                  undefined
+                }
                 className="w-full max-h-[70vh] rounded-md bg-black"
               >
                 Seu navegador não suporta vídeo HTML5.

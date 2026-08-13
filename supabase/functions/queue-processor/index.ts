@@ -4,6 +4,7 @@
 import { createClient } from "https://esm.sh/@supabase/supabase-js@2.45.4";
 import { corsHeaders } from "npm:@supabase/supabase-js@2/cors";
 import { classifyPublishError, nextAttemptAt, type Platform } from "../_shared/publish-errors.ts";
+import { checkAccountReady } from "../_shared/account-preflight.ts";
 
 const supabase = createClient(
   Deno.env.get("SUPABASE_URL")!,
@@ -151,6 +152,21 @@ async function processOne(item: any) {
   const guard = await assetGuard(item);
   if (!guard.ok) {
     await moveToNeedsAttention(item, "ASSET_MISSING", guard.reason ?? "Arquivo indisponível.");
+    return;
+  }
+
+  // Pré-flight de credencial ANTES de qualquer transferência do vídeo.
+  // Conta inválida => nada é baixado/enviado (economia de egress).
+  const accountBlocker = await checkAccountReady(supabase, platform, {
+    projectId: item.project_id ?? null,
+    accountRef: item.account_ref ?? null,
+  });
+  if (accountBlocker) {
+    await moveToNeedsAttention(item, accountBlocker.code, accountBlocker.reason, {
+      preflight: true,
+      action: accountBlocker.action,
+      download_skipped: true,
+    });
     return;
   }
 
