@@ -130,6 +130,8 @@ const mediaErrorReason = (video: HTMLVideoElement) => {
   return video.error?.message || "Falha desconhecida no player de vídeo.";
 };
 
+// Validação leve: só metadata. O download completo fica a cargo do <video> do
+// palco (evita baixar o mesmo MP4 duas vezes por abertura do editor).
 const preloadVideo = (url: string) => new Promise<void>((resolve, reject) => {
   const el = document.createElement("video");
   const timeout = window.setTimeout(() => {
@@ -138,15 +140,15 @@ const preloadVideo = (url: string) => new Promise<void>((resolve, reject) => {
   }, 15000);
   const cleanup = () => {
     window.clearTimeout(timeout);
-    el.onloadeddata = null;
+    el.onloadedmetadata = null;
     el.onerror = null;
     el.removeAttribute("src");
     el.load();
   };
-  el.preload = "auto";
+  el.preload = "metadata";
   el.muted = true;
   el.playsInline = true;
-  el.onloadeddata = () => {
+  el.onloadedmetadata = () => {
     cleanup();
     resolve();
   };
