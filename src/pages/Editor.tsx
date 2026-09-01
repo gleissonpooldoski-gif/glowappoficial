@@ -1,5 +1,5 @@
 import { useEffect, useMemo, useRef, useState } from "react";
-import { useNavigate, useParams } from "react-router-dom";
+import { useNavigate, useParams, useSearchParams } from "react-router-dom";
 import {
   ArrowLeft, Save, Rocket, Type, Plus, Trash2, Loader2, Layers, Copy,
   Palette, Image as ImageIcon, ZoomIn, ZoomOut, Move, Play, Pause, Volume2, VolumeX, Maximize2, SkipBack, SkipForward,
@@ -27,7 +27,8 @@ import TextLibraryDialog from "@/components/TextLibraryDialog";
 import { cn } from "@/lib/utils";
 import { useRenderQueue } from "@/context/RenderQueueContext";
 import ChangeTemplateDialog, { type ChangeTemplateResult } from "@/components/ChangeTemplateDialog";
-import { RefreshCw } from "lucide-react";
+import { RefreshCw, RotateCcw, ListVideo } from "lucide-react";
+import { getProjectModel, saveProjectModel, applyModelToBatch, listBatchEdits } from "@/lib/project-model";
 
 type TextTransform = "none" | "uppercase" | "lowercase" | "capitalize";
 type TextAlign = "left" | "center" | "right";
@@ -185,6 +186,10 @@ const preloadImage = (url: string) => new Promise<void>((resolve, reject) => {
 
 export default function Editor() {
   const { id } = useParams<{ id: string }>();
+  const [searchParams] = useSearchParams();
+  const batchMode = searchParams.get("mode") === "batch";
+  const [batchEdits, setBatchEdits] = useState<any[]>([]);
+  const [restoring, setRestoring] = useState(false);
   const navigate = useNavigate();
   const [loading, setLoading] = useState(true);
   const [saving, setSaving] = useState(false);
@@ -426,6 +431,21 @@ export default function Editor() {
       setRatio(data.aspect_ratio ?? "9:16");
       setDoc(safeDoc(data.doc));
 
+      if (batchMode && data.project_id) {
+        // Modo lote: sempre partir do modelo do projeto (se existir) e listar o lote.
+        const [model, list] = await Promise.all([
+          getProjectModel(data.project_id),
+          listBatchEdits(data.project_id),
+        ]);
+        setBatchEdits(list);
+        if (model?.doc && Object.keys(model.doc).length > 0) {
+          setDoc(safeDoc(model.doc));
+          setRatio(model.aspect_ratio ?? data.aspect_ratio ?? "9:16");
+        }
+      }
+
+
+
       
       const { data: v, error: vErr } = await supabase
         .from("videos")
@@ -528,7 +548,7 @@ export default function Editor() {
 
       setLoading(false);
     })();
-  }, [id, navigate]);
+  }, [id, navigate, batchMode]);
 
 
 
@@ -659,13 +679,67 @@ export default function Editor() {
   const save = async (silent = false) => {
     if (!id) return;
     setSaving(true);
-    const { error } = await (supabase as any).from("edits")
-      .update({ doc, aspect_ratio: ratio, status: "editing" }).eq("id", id);
-    setSaving(false);
-    if (error) { toast.error(error.message); return false; }
-    if (!silent) toast.success("Rascunho salvo");
-    return true;
+    try {
+      if (batchMode && edit?.project_id) {
+        // Modo lote = editar o MODELO do projeto e aplicá-lo a todos os vídeos
+        // do lote que não possuem personalização individual.
+        await saveProjectModel({
+          projectId: edit.project_id,
+          templateId: edit.template_id ?? null,
+          aspectRatio: ratio,
+          doc,
+        });
+        const count = await applyModelToBatch({
+          projectId: edit.project_id,
+          aspectRatio: ratio,
+          doc,
+          templateId: edit.template_id ?? null,
+          templateUrl: edit.template_url ?? null,
+        });
+        setBatchEdits(await listBatchEdits(edit.project_id));
+        if (!silent) toast.success(`Modelo do projeto salvo e aplicado a ${count} vídeo(s)`);
+        return true;
+      }
+
+      // Edição individual = override apenas deste vídeo.
+      const { error } = await (supabase as any).from("edits")
+        .update({ doc, aspect_ratio: ratio, status: "editing", doc_overridden: true }).eq("id", id);
+      if (error) { toast.error(error.message); return false; }
+      if (!silent) toast.success("Rascunho salvo");
+      return true;
+    } catch (e: any) {
+      toast.error(e?.message ?? "Falha ao salvar");
+      return false;
+    } finally {
+      setSaving(false);
+    }
   };
+
+  const restoreProjectDefault = async () => {
+    if (!id || !edit?.project_id) return;
+    setRestoring(true);
+    try {
+      const model = await getProjectModel(edit.project_id);
+      if (!model?.doc || Object.keys(model.doc).length === 0) {
+        toast.error("Este projeto ainda não tem modelo salvo.");
+        return;
+      }
+      const nextDoc = safeDoc(model.doc);
+      const nextRatio = model.aspect_ratio ?? "9:16";
+      const { error } = await (supabase as any).from("edits")
+        .update({ doc: nextDoc, aspect_ratio: nextRatio, doc_overridden: false }).eq("id", id);
+      if (error) throw error;
+      setDoc(nextDoc);
+      setRatio(nextRatio);
+      setEdit((prev: any) => (prev ? { ...prev, doc_overridden: false } : prev));
+      toast.success("Padrão do projeto restaurado neste vídeo");
+    } catch (e: any) {
+      toast.error(e?.message ?? "Falha ao restaurar padrão");
+    } finally {
+      setRestoring(false);
+    }
+  };
+
 
   type ExportPhase = "idle" | "prep" | "template" | "render" | "encode" | "upload";
   const PHASE_LABEL: Record<ExportPhase, string> = {
@@ -819,6 +893,22 @@ export default function Editor() {
 
   return (
     <div className="flex h-[calc(100vh-6rem)] flex-col gap-3">
+      {batchMode && (
+        <div className="flex flex-wrap items-center justify-between gap-2 rounded-lg border border-gold/40 bg-gold/5 px-3 py-2">
+          <div className="flex items-center gap-2 text-xs">
+            <ListVideo size={14} className="text-gold" />
+            <span className="font-medium text-gold">Editando o MODELO do projeto</span>
+            <span className="text-muted-foreground">
+              — as alterações serão aplicadas a {batchEdits.filter((b) => !b.doc_overridden).length} vídeo(s) do lote
+              {batchEdits.some((b) => b.doc_overridden) &&
+                ` (${batchEdits.filter((b) => b.doc_overridden).length} personalizado(s) preservado(s))`}
+            </span>
+          </div>
+          <Button size="sm" variant="ghost" onClick={() => navigate(`/editor/${id}`)}>
+            Sair do modo lote
+          </Button>
+        </div>
+      )}
       {/* Top bar */}
       <div className="flex flex-wrap items-center justify-between gap-2">
         <div className="flex items-center gap-2">
@@ -826,11 +916,27 @@ export default function Editor() {
             <ArrowLeft size={14} className="mr-1" /> Voltar
           </Button>
           <div>
-            <h1 className="text-lg font-semibold leading-tight">Editor de Vídeo</h1>
+            <h1 className="text-lg font-semibold leading-tight">
+              {batchMode ? "Editor em Lote" : "Editor de Vídeo"}
+            </h1>
             <p className="text-xs text-muted-foreground">
               {video?.filename ?? "—"} · Template: {template?.name ?? "—"}
+              {!batchMode && edit?.doc_overridden ? " · Personalizado" : ""}
             </p>
           </div>
+          {!batchMode && edit?.project_id && (
+            <Button
+              variant="outline"
+              size="sm"
+              className="ml-2"
+              onClick={restoreProjectDefault}
+              disabled={restoring}
+            >
+              {restoring ? <Loader2 size={14} className="mr-1 animate-spin" /> : <RotateCcw size={14} className="mr-1" />}
+              Restaurar padrão do projeto
+            </Button>
+          )}
+
           <Button
             variant="outline"
             size="sm"
@@ -849,10 +955,17 @@ export default function Editor() {
               ))}
             </SelectContent>
           </Select>
-          <Button variant="outline" size="sm" onClick={() => save()} disabled={saving}>
+          <Button
+            variant={batchMode ? "default" : "outline"}
+            size="sm"
+            onClick={() => save()}
+            disabled={saving}
+            className={batchMode ? "bg-gold-gradient text-black" : undefined}
+          >
             {saving ? <Loader2 size={14} className="mr-1 animate-spin" /> : <Save size={14} className="mr-1" />}
-            Salvar rascunho
+            {batchMode ? "Salvar modelo e aplicar ao lote" : "Salvar rascunho"}
           </Button>
+
           <Button size="sm" className="bg-gold-gradient text-black glow-gold" onClick={exportVideo} disabled={exporting}>
             {exporting ? <Loader2 size={14} className="mr-1 animate-spin" /> : <Rocket size={14} className="mr-1" />}
             {exporting ? (exportProgress ?? "Renderizando…") : (edit?.output_video_id ? "Salvar alterações" : "Exportar vídeo")}
@@ -864,6 +977,48 @@ export default function Editor() {
         {/* Left panel — layers / add */}
         <Card className="glass border-border/50">
           <CardContent className="space-y-3 p-3">
+            {batchMode && (
+              <div className="space-y-2 rounded-md border border-gold/30 bg-gold/5 p-2">
+                <h3 className="text-xs font-semibold uppercase tracking-wider text-gold">
+                  <ListVideo size={12} className="mr-1 inline" /> Lote ({batchEdits.length})
+                </h3>
+                <ScrollArea className="h-[220px] pr-2">
+                  <div className="space-y-1">
+                    {batchEdits.map((b, i) => (
+                      <div
+                        key={b.id}
+                        className={cn(
+                          "flex items-center justify-between gap-2 rounded border px-2 py-1 text-[11px]",
+                          b.id === id ? "border-gold/60 bg-gold/10" : "border-border/50",
+                        )}
+                      >
+                        <span className="truncate">
+                          <span className="text-muted-foreground">{i + 1}.</span>{" "}
+                          {b.video_filename ?? b.name ?? "Vídeo"}
+                          {b.doc_overridden && (
+                            <span className="ml-1 text-gold">• personalizado</span>
+                          )}
+                        </span>
+                        <Button
+                          size="sm"
+                          variant="ghost"
+                          className="h-6 shrink-0 px-2 text-[10px]"
+                          onClick={() => navigate(`/editor/${b.id}`)}
+                        >
+                          Editar este vídeo
+                        </Button>
+                      </div>
+                    ))}
+                    {batchEdits.length === 0 && (
+                      <p className="py-4 text-center text-[11px] text-muted-foreground">
+                        Nenhum vídeo neste lote.
+                      </p>
+                    )}
+                  </div>
+                </ScrollArea>
+              </div>
+            )}
+
             <div className="flex items-center justify-between">
               <h3 className="text-xs font-semibold uppercase tracking-wider text-muted-foreground">
                 <Layers size={12} className="mr-1 inline" /> Camadas

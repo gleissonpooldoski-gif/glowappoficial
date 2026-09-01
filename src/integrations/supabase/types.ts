@@ -133,6 +133,7 @@ export type Database = {
           aspect_ratio: string
           created_at: string
           doc: Json
+          doc_overridden: boolean
           id: string
           name: string | null
           output_video_id: string | null
@@ -153,6 +154,7 @@ export type Database = {
           aspect_ratio?: string
           created_at?: string
           doc?: Json
+          doc_overridden?: boolean
           id?: string
           name?: string | null
           output_video_id?: string | null
@@ -173,6 +175,7 @@ export type Database = {
           aspect_ratio?: string
           created_at?: string
           doc?: Json
+          doc_overridden?: boolean
           id?: string
           name?: string | null
           output_video_id?: string | null
@@ -701,6 +704,51 @@ export type Database = {
             columns: ["project_id"]
             isOneToOne: false
             referencedRelation: "projects"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
+      project_edit_models: {
+        Row: {
+          aspect_ratio: string
+          created_at: string
+          doc: Json
+          id: string
+          project_id: string
+          template_id: string | null
+          updated_at: string
+        }
+        Insert: {
+          aspect_ratio?: string
+          created_at?: string
+          doc?: Json
+          id?: string
+          project_id: string
+          template_id?: string | null
+          updated_at?: string
+        }
+        Update: {
+          aspect_ratio?: string
+          created_at?: string
+          doc?: Json
+          id?: string
+          project_id?: string
+          template_id?: string | null
+          updated_at?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "project_edit_models_project_id_fkey"
+            columns: ["project_id"]
+            isOneToOne: true
+            referencedRelation: "projects"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "project_edit_models_template_id_fkey"
+            columns: ["template_id"]
+            isOneToOne: false
+            referencedRelation: "templates"
             referencedColumns: ["id"]
           },
         ]
