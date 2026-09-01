@@ -27,7 +27,8 @@ import TextLibraryDialog from "@/components/TextLibraryDialog";
 import { cn } from "@/lib/utils";
 import { useRenderQueue } from "@/context/RenderQueueContext";
 import ChangeTemplateDialog, { type ChangeTemplateResult } from "@/components/ChangeTemplateDialog";
-import { RefreshCw } from "lucide-react";
+import { RefreshCw, RotateCcw, ListVideo } from "lucide-react";
+import { getProjectModel, saveProjectModel, applyModelToBatch, listBatchEdits } from "@/lib/project-model";
 
 type TextTransform = "none" | "uppercase" | "lowercase" | "capitalize";
 type TextAlign = "left" | "center" | "right";
