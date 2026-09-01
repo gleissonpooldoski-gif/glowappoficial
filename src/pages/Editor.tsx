@@ -955,10 +955,17 @@ export default function Editor() {
               ))}
             </SelectContent>
           </Select>
-          <Button variant="outline" size="sm" onClick={() => save()} disabled={saving}>
+          <Button
+            variant={batchMode ? "default" : "outline"}
+            size="sm"
+            onClick={() => save()}
+            disabled={saving}
+            className={batchMode ? "bg-gold-gradient text-black" : undefined}
+          >
             {saving ? <Loader2 size={14} className="mr-1 animate-spin" /> : <Save size={14} className="mr-1" />}
-            Salvar rascunho
+            {batchMode ? "Salvar modelo e aplicar ao lote" : "Salvar rascunho"}
           </Button>
+
           <Button size="sm" className="bg-gold-gradient text-black glow-gold" onClick={exportVideo} disabled={exporting}>
             {exporting ? <Loader2 size={14} className="mr-1 animate-spin" /> : <Rocket size={14} className="mr-1" />}
             {exporting ? (exportProgress ?? "Renderizando…") : (edit?.output_video_id ? "Salvar alterações" : "Exportar vídeo")}
