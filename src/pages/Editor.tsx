@@ -679,13 +679,67 @@ export default function Editor() {
   const save = async (silent = false) => {
     if (!id) return;
     setSaving(true);
-    const { error } = await (supabase as any).from("edits")
-      .update({ doc, aspect_ratio: ratio, status: "editing" }).eq("id", id);
-    setSaving(false);
-    if (error) { toast.error(error.message); return false; }
-    if (!silent) toast.success("Rascunho salvo");
-    return true;
+    try {
+      if (batchMode && edit?.project_id) {
+        // Modo lote = editar o MODELO do projeto e aplicá-lo a todos os vídeos
+        // do lote que não possuem personalização individual.
+        await saveProjectModel({
+          projectId: edit.project_id,
+          templateId: edit.template_id ?? null,
+          aspectRatio: ratio,
+          doc,
+        });
+        const count = await applyModelToBatch({
+          projectId: edit.project_id,
+          aspectRatio: ratio,
+          doc,
+          templateId: edit.template_id ?? null,
+          templateUrl: edit.template_url ?? null,
+        });
+        setBatchEdits(await listBatchEdits(edit.project_id));
+        if (!silent) toast.success(`Modelo do projeto salvo e aplicado a ${count} vídeo(s)`);
+        return true;
+      }
+
+      // Edição individual = override apenas deste vídeo.
+      const { error } = await (supabase as any).from("edits")
+        .update({ doc, aspect_ratio: ratio, status: "editing", doc_overridden: true }).eq("id", id);
+      if (error) { toast.error(error.message); return false; }
+      if (!silent) toast.success("Rascunho salvo");
+      return true;
+    } catch (e: any) {
+      toast.error(e?.message ?? "Falha ao salvar");
+      return false;
+    } finally {
+      setSaving(false);
+    }
   };
+
+  const restoreProjectDefault = async () => {
+    if (!id || !edit?.project_id) return;
+    setRestoring(true);
+    try {
+      const model = await getProjectModel(edit.project_id);
+      if (!model?.doc || Object.keys(model.doc).length === 0) {
+        toast.error("Este projeto ainda não tem modelo salvo.");
+        return;
+      }
+      const nextDoc = safeDoc(model.doc);
+      const nextRatio = model.aspect_ratio ?? "9:16";
+      const { error } = await (supabase as any).from("edits")
+        .update({ doc: nextDoc, aspect_ratio: nextRatio, doc_overridden: false }).eq("id", id);
+      if (error) throw error;
+      setDoc(nextDoc);
+      setRatio(nextRatio);
+      setEdit((prev: any) => (prev ? { ...prev, doc_overridden: false } : prev));
+      toast.success("Padrão do projeto restaurado neste vídeo");
+    } catch (e: any) {
+      toast.error(e?.message ?? "Falha ao restaurar padrão");
+    } finally {
+      setRestoring(false);
+    }
+  };
+
 
   type ExportPhase = "idle" | "prep" | "template" | "render" | "encode" | "upload";
   const PHASE_LABEL: Record<ExportPhase, string> = {
