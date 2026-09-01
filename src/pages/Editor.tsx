@@ -893,6 +893,22 @@ export default function Editor() {
 
   return (
     <div className="flex h-[calc(100vh-6rem)] flex-col gap-3">
+      {batchMode && (
+        <div className="flex flex-wrap items-center justify-between gap-2 rounded-lg border border-gold/40 bg-gold/5 px-3 py-2">
+          <div className="flex items-center gap-2 text-xs">
+            <ListVideo size={14} className="text-gold" />
+            <span className="font-medium text-gold">Editando o MODELO do projeto</span>
+            <span className="text-muted-foreground">
+              — as alterações serão aplicadas a {batchEdits.filter((b) => !b.doc_overridden).length} vídeo(s) do lote
+              {batchEdits.some((b) => b.doc_overridden) &&
+                ` (${batchEdits.filter((b) => b.doc_overridden).length} personalizado(s) preservado(s))`}
+            </span>
+          </div>
+          <Button size="sm" variant="ghost" onClick={() => navigate(`/editor/${id}`)}>
+            Sair do modo lote
+          </Button>
+        </div>
+      )}
       {/* Top bar */}
       <div className="flex flex-wrap items-center justify-between gap-2">
         <div className="flex items-center gap-2">
@@ -900,11 +916,27 @@ export default function Editor() {
             <ArrowLeft size={14} className="mr-1" /> Voltar
           </Button>
           <div>
-            <h1 className="text-lg font-semibold leading-tight">Editor de Vídeo</h1>
+            <h1 className="text-lg font-semibold leading-tight">
+              {batchMode ? "Editor em Lote" : "Editor de Vídeo"}
+            </h1>
             <p className="text-xs text-muted-foreground">
               {video?.filename ?? "—"} · Template: {template?.name ?? "—"}
+              {!batchMode && edit?.doc_overridden ? " · Personalizado" : ""}
             </p>
           </div>
+          {!batchMode && edit?.project_id && (
+            <Button
+              variant="outline"
+              size="sm"
+              className="ml-2"
+              onClick={restoreProjectDefault}
+              disabled={restoring}
+            >
+              {restoring ? <Loader2 size={14} className="mr-1 animate-spin" /> : <RotateCcw size={14} className="mr-1" />}
+              Restaurar padrão do projeto
+            </Button>
+          )}
+
           <Button
             variant="outline"
             size="sm"
