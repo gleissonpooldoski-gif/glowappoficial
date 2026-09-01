@@ -548,7 +548,7 @@ export default function Editor() {
 
       setLoading(false);
     })();
-  }, [id, navigate]);
+  }, [id, navigate, batchMode]);
 
 
 
