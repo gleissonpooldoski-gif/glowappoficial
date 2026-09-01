@@ -186,6 +186,10 @@ const preloadImage = (url: string) => new Promise<void>((resolve, reject) => {
 
 export default function Editor() {
   const { id } = useParams<{ id: string }>();
+  const [searchParams] = useSearchParams();
+  const batchMode = searchParams.get("mode") === "batch";
+  const [batchEdits, setBatchEdits] = useState<any[]>([]);
+  const [restoring, setRestoring] = useState(false);
   const navigate = useNavigate();
   const [loading, setLoading] = useState(true);
   const [saving, setSaving] = useState(false);
