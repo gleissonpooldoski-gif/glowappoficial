@@ -977,6 +977,48 @@ export default function Editor() {
         {/* Left panel — layers / add */}
         <Card className="glass border-border/50">
           <CardContent className="space-y-3 p-3">
+            {batchMode && (
+              <div className="space-y-2 rounded-md border border-gold/30 bg-gold/5 p-2">
+                <h3 className="text-xs font-semibold uppercase tracking-wider text-gold">
+                  <ListVideo size={12} className="mr-1 inline" /> Lote ({batchEdits.length})
+                </h3>
+                <ScrollArea className="h-[220px] pr-2">
+                  <div className="space-y-1">
+                    {batchEdits.map((b, i) => (
+                      <div
+                        key={b.id}
+                        className={cn(
+                          "flex items-center justify-between gap-2 rounded border px-2 py-1 text-[11px]",
+                          b.id === id ? "border-gold/60 bg-gold/10" : "border-border/50",
+                        )}
+                      >
+                        <span className="truncate">
+                          <span className="text-muted-foreground">{i + 1}.</span>{" "}
+                          {b.video_filename ?? b.name ?? "Vídeo"}
+                          {b.doc_overridden && (
+                            <span className="ml-1 text-gold">• personalizado</span>
+                          )}
+                        </span>
+                        <Button
+                          size="sm"
+                          variant="ghost"
+                          className="h-6 shrink-0 px-2 text-[10px]"
+                          onClick={() => navigate(`/editor/${b.id}`)}
+                        >
+                          Editar este vídeo
+                        </Button>
+                      </div>
+                    ))}
+                    {batchEdits.length === 0 && (
+                      <p className="py-4 text-center text-[11px] text-muted-foreground">
+                        Nenhum vídeo neste lote.
+                      </p>
+                    )}
+                  </div>
+                </ScrollArea>
+              </div>
+            )}
+
             <div className="flex items-center justify-between">
               <h3 className="text-xs font-semibold uppercase tracking-wider text-muted-foreground">
                 <Layers size={12} className="mr-1 inline" /> Camadas
