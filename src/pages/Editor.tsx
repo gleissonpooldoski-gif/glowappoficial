@@ -431,6 +431,21 @@ export default function Editor() {
       setRatio(data.aspect_ratio ?? "9:16");
       setDoc(safeDoc(data.doc));
 
+      if (batchMode && data.project_id) {
+        // Modo lote: sempre partir do modelo do projeto (se existir) e listar o lote.
+        const [model, list] = await Promise.all([
+          getProjectModel(data.project_id),
+          listBatchEdits(data.project_id),
+        ]);
+        setBatchEdits(list);
+        if (model?.doc && Object.keys(model.doc).length > 0) {
+          setDoc(safeDoc(model.doc));
+          setRatio(model.aspect_ratio ?? data.aspect_ratio ?? "9:16");
+        }
+      }
+
+
+
       
       const { data: v, error: vErr } = await supabase
         .from("videos")
