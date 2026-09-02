@@ -1,6 +1,6 @@
 import { useEffect, useMemo, useState } from "react";
 import { useNavigate } from "react-router-dom";
-import { Pencil, Trash2, Loader2, Film, Rocket, CheckCircle2, Clock, PlayCircle, CheckSquare, Square, Undo2 } from "lucide-react";
+import { Pencil, Trash2, Loader2, Film, Rocket, CheckCircle2, Clock, PlayCircle, CheckSquare, Square, Undo2, Upload } from "lucide-react";
 import { supabase } from "@/integrations/supabase/client";
 import { toast } from "sonner";
 import { Card, CardContent } from "@/components/ui/card";
@@ -15,6 +15,15 @@ import { format } from "date-fns";
 import { ptBR } from "date-fns/locale";
 import { cn } from "@/lib/utils";
 import { useActiveProject } from "@/context/ProjectContext";
+import { useRenderQueue } from "@/context/RenderQueueContext";
+import { getProjectModel } from "@/lib/project-model";
+
+const RATIOS: Record<string, { w: number; h: number }> = {
+  "9:16": { w: 9, h: 16 },
+  "16:9": { w: 16, h: 9 },
+  "1:1": { w: 1, h: 1 },
+};
+
 
 type EditRow = {
   id: string;
