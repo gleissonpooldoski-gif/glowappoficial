@@ -310,8 +310,8 @@ export default function MyEdits() {
               Exportar selecionados ({selected.size})
             </Button>
             <Button
-
               size="sm"
+
               variant="outline"
               className="border-destructive/40 text-destructive hover:bg-destructive/10"
               disabled={selected.size === 0 || deleting}
