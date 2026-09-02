@@ -1,6 +1,6 @@
 import { useEffect, useMemo, useState } from "react";
 import { useNavigate } from "react-router-dom";
-import { Pencil, Trash2, Loader2, Film, Rocket, CheckCircle2, Clock, PlayCircle, CheckSquare, Square, Undo2 } from "lucide-react";
+import { Pencil, Trash2, Loader2, Film, Rocket, CheckCircle2, Clock, PlayCircle, CheckSquare, Square, Undo2, Upload } from "lucide-react";
 import { supabase } from "@/integrations/supabase/client";
 import { toast } from "sonner";
 import { Card, CardContent } from "@/components/ui/card";
@@ -15,6 +15,15 @@ import { format } from "date-fns";
 import { ptBR } from "date-fns/locale";
 import { cn } from "@/lib/utils";
 import { useActiveProject } from "@/context/ProjectContext";
+import { useRenderQueue } from "@/context/RenderQueueContext";
+import { getProjectModel } from "@/lib/project-model";
+
+const RATIOS: Record<string, { w: number; h: number }> = {
+  "9:16": { w: 9, h: 16 },
+  "16:9": { w: 16, h: 9 },
+  "1:1": { w: 1, h: 1 },
+};
+
 
 type EditRow = {
   id: string;
@@ -45,6 +54,9 @@ export default function MyEdits() {
   const [deleting, setDeleting] = useState(false);
   const [confirmMode, setConfirmMode] = useState<null | "all" | "selection" | "one" | "return">(null);
   const [pendingRow, setPendingRow] = useState<EditRow | null>(null);
+  const [exporting, setExporting] = useState(false);
+  const { enqueue: enqueueRender } = useRenderQueue();
+
 
   const load = async () => {
     if (!activeProject) { setRows([]); return; }
@@ -160,6 +172,117 @@ export default function MyEdits() {
     load();
   };
 
+  /** Exporta (envia para a fila de renderização) todos os projetos selecionados. */
+  const exportSelected = async () => {
+    if (!rows || selected.size === 0 || !activeProject) return;
+    setExporting(true);
+    let queued = 0;
+    let skipped = 0;
+    try {
+      const model = await getProjectModel(activeProject.id);
+      const ids = rows.filter((r) => selected.has(r.id)).map((r) => r.id);
+
+      const { data: edits, error } = await (supabase as any)
+        .from("edits")
+        .select("*")
+        .in("id", ids);
+      if (error) throw error;
+
+      for (const e of (edits ?? []) as any[]) {
+        try {
+          const doc = e.doc && Object.keys(e.doc).length > 0 ? e.doc : model?.doc;
+          if (!doc || !e.video_id) { skipped++; continue; }
+
+          const { data: v } = await supabase
+            .from("videos").select("*").eq("id", e.video_id).maybeSingle();
+          if (!v) { skipped++; continue; }
+
+          let videoUrl: string | null = v.original_url ?? e.video_url ?? null;
+          if (v.original_path) {
+            const { data: signed } = await supabase.storage
+              .from("videos").createSignedUrl(v.original_path, 60 * 60 * 6);
+            videoUrl = signed?.signedUrl ?? videoUrl;
+          }
+          if (!videoUrl) { skipped++; continue; }
+
+          let templateUrl: string | null = e.template_url ?? null;
+          let templateFileType: string | null = null;
+          const templateId = e.template_id ?? model?.template_id ?? null;
+          if (templateId) {
+            const { data: tpl } = await (supabase as any)
+              .from("templates").select("*").eq("id", templateId).maybeSingle();
+            if (tpl) {
+              templateFileType = tpl.file_type ?? null;
+              if (!templateUrl) {
+                const path = tpl.file_path ?? tpl.storage_path ?? tpl.path;
+                if (path) {
+                  const { data: tSigned } = await supabase.storage
+                    .from("templates").createSignedUrl(path, 60 * 60 * 6);
+                  templateUrl = tSigned?.signedUrl ?? tpl.preview_url ?? tpl.file_url ?? null;
+                } else {
+                  templateUrl = tpl.preview_url ?? tpl.file_url ?? null;
+                }
+              }
+            }
+          }
+
+          const ratioKey = e.aspect_ratio ?? model?.aspect_ratio ?? "9:16";
+          const outRatio = RATIOS[ratioKey] ?? RATIOS["9:16"];
+          const px = outRatio.w >= outRatio.h
+            ? { width: 1920, height: Math.round((1920 * outRatio.h) / outRatio.w) }
+            : { width: Math.round((1920 * outRatio.w) / outRatio.h), height: 1920 };
+
+          const templateKind: "image" | "video" | null =
+            templateFileType?.startsWith("video/") ? "video"
+            : templateFileType?.startsWith("image/") ? "image"
+            : templateUrl ? "image" : null;
+
+          enqueueRender({
+            editId: e.id,
+            projectId: e.project_id,
+            templateId: e.template_id ?? null,
+            name: e.name?.trim() || v.filename || "Vídeo sem nome",
+            replaceVideoId: e.output_video_id ?? null,
+            composition: {
+              videoUrl,
+              templateUrl,
+              templateKind,
+              ratio: px,
+              videoTransform: doc.video,
+              templateOpts: doc.template,
+              texts: (doc.texts ?? []) as any,
+            },
+            videoMeta: {
+              filename: v.filename ?? null,
+              duration_seconds: v.duration_seconds ?? null,
+              thumbnail_path: v.thumbnail_path ?? null,
+              thumbnail_url: v.thumbnail_url ?? null,
+            },
+          });
+          queued++;
+        } catch (err) {
+          console.error("[MyEdits] export failed for edit", e.id, err);
+          skipped++;
+        }
+      }
+
+      if (queued === 0) {
+        toast.error("Nenhum projeto pôde ser exportado. Abra o editor e salve o layout antes.");
+      } else {
+        toast.success(
+          `${queued} vídeo(s) enviados para renderização${skipped ? ` — ${skipped} ignorado(s)` : ""}.`,
+        );
+        setSelected(new Set());
+        void load();
+      }
+    } catch (e: any) {
+      toast.error(e?.message ?? "Falha ao exportar os projetos selecionados.");
+    } finally {
+      setExporting(false);
+    }
+  };
+
+
   return (
     <div className="space-y-6">
       <header className="flex flex-wrap items-end justify-between gap-3">
@@ -179,6 +302,16 @@ export default function MyEdits() {
             </Button>
             <Button
               size="sm"
+              className="bg-gold-gradient text-black"
+              disabled={selected.size === 0 || exporting}
+              onClick={exportSelected}
+            >
+              {exporting ? <Loader2 size={14} className="mr-1.5 animate-spin" /> : <Upload size={14} className="mr-1.5" />}
+              Exportar selecionados ({selected.size})
+            </Button>
+            <Button
+              size="sm"
+
               variant="outline"
               className="border-destructive/40 text-destructive hover:bg-destructive/10"
               disabled={selected.size === 0 || deleting}
