@@ -302,6 +302,16 @@ export default function MyEdits() {
             </Button>
             <Button
               size="sm"
+              className="bg-gold-gradient text-black"
+              disabled={selected.size === 0 || exporting}
+              onClick={exportSelected}
+            >
+              {exporting ? <Loader2 size={14} className="mr-1.5 animate-spin" /> : <Upload size={14} className="mr-1.5" />}
+              Exportar selecionados ({selected.size})
+            </Button>
+            <Button
+
+              size="sm"
               variant="outline"
               className="border-destructive/40 text-destructive hover:bg-destructive/10"
               disabled={selected.size === 0 || deleting}
