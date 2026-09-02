@@ -63,17 +63,17 @@ type Ctx = {
 const RenderQueueContext = createContext<Ctx | undefined>(undefined);
 
 /**
- * Modo "tudo junto": toda exportação começa a renderizar imediatamente,
- * em paralelo com as demais — sem limite de fila.
+ * Renderiza no máximo 3 vídeos ao mesmo tempo; os demais ficam na fila
+ * e entram automaticamente conforme os anteriores terminam.
  */
-const UNLIMITED_CONCURRENCY = Number.POSITIVE_INFINITY;
+const MAX_CONCURRENCY = 3;
 
 export function RenderQueueProvider({ children }: { children: ReactNode }) {
   const [jobs, setJobs] = useState<RenderJob[]>([]);
   const jobsRef = useRef<RenderJob[]>([]);
   jobsRef.current = jobs;
 
-  const [concurrency] = useState(() => UNLIMITED_CONCURRENCY);
+  const [concurrency] = useState(() => MAX_CONCURRENCY);
 
   const concurrencyRef = useRef(concurrency);
   concurrencyRef.current = concurrency;
