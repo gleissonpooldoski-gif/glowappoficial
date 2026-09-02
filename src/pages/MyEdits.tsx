@@ -54,6 +54,9 @@ export default function MyEdits() {
   const [deleting, setDeleting] = useState(false);
   const [confirmMode, setConfirmMode] = useState<null | "all" | "selection" | "one" | "return">(null);
   const [pendingRow, setPendingRow] = useState<EditRow | null>(null);
+  const [exporting, setExporting] = useState(false);
+  const { enqueue: enqueueRender } = useRenderQueue();
+
 
   const load = async () => {
     if (!activeProject) { setRows([]); return; }
