@@ -1046,6 +1046,21 @@ export default function VideoLibrary() {
             <Button
               size="sm"
               variant="outline"
+              onClick={editBatch}
+              disabled={applying}
+              className="border-gold/40 text-gold hover:text-gold"
+            >
+              {applying ? (
+                <Loader2 size={13} className="mr-1 animate-spin" />
+              ) : (
+                <Layers size={13} className="mr-1" />
+              )}
+              Editar em lote
+            </Button>
+
+            <Button
+              size="sm"
+              variant="outline"
               onClick={downloadSelected}
               disabled={downloading}
             >
