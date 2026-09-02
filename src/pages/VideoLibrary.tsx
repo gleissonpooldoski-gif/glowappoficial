@@ -17,9 +17,11 @@ import {
   Wand2,
   Rocket,
   Sparkles,
+  Layers,
 } from "lucide-react";
 import { supabase } from "@/integrations/supabase/client";
 import { toast } from "sonner";
+import { getProjectModel } from "@/lib/project-model";
 import { Card, CardContent } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -612,7 +614,78 @@ export default function VideoLibrary() {
     }
   };
 
+  const editBatch = async () => {
+    if (selected.size === 0) return;
+    const projectId = activeProject?.id ?? null;
+    if (!projectId) {
+      toast.error("Selecione um projeto ativo para editar em lote.");
+      return;
+    }
+    setApplying(true);
+    try {
+      const ids = Array.from(selected);
+      const byId = new Map((videos ?? []).map((v) => [v.id, v] as const));
+      const model = await getProjectModel(projectId);
+
+      const rows = await Promise.all(ids.map(async (vid) => {
+        const v = byId.get(vid);
+        if (!v) throw new Error("Vídeo selecionado não foi encontrado.");
+        if (!v.original_path) throw new Error(`${v.filename} não tem arquivo original armazenado.`);
+
+        const { data, error } = await supabase.storage
+          .from(BUCKET)
+          .createSignedUrl(v.original_path, 60 * 60 * 6);
+        if (error || !data?.signedUrl) {
+          throw new Error(error?.message ?? `Não foi possível gerar URL do vídeo ${v.filename}.`);
+        }
+
+        return {
+          video_id: vid,
+          video_url: data.signedUrl,
+          video_filename: v.filename,
+          video_storage_path: v.original_path,
+          template_id: model?.template_id ?? null,
+          template_url: null,
+          user_id: "single-user",
+          owner_user_id: "single-user",
+          project_id: projectId,
+          name: v?.filename ?? "Edição em lote",
+          aspect_ratio: model?.aspect_ratio ?? "9:16",
+          status: "editing" as const,
+          doc_overridden: false,
+          doc: model?.doc ?? {
+            video: { zoom: 1, x: 0, y: 0 },
+            texts: [],
+            colors: { primary: "#D4AF37", secondary: "#FFFFFF" },
+          },
+        };
+      }));
+
+      const { data: created, error } = await (supabase as any)
+        .from("edits")
+        .insert(rows)
+        .select("id");
+      if (error) throw error;
+
+      const { error: upErr } = await (supabase as any)
+        .from("videos")
+        .update({ status: "in_editing" })
+        .in("id", ids);
+      if (upErr) console.error("[VideoLibrary] failed to flag videos as in_editing", upErr);
+
+      const firstId = created?.[0]?.id;
+      toast.success(`${rows.length} vídeo(s) no lote. Abrindo editor em lote...`);
+      setSelected(new Set());
+      if (firstId) navigate(`/editor/${firstId}?mode=batch`);
+    } catch (e: any) {
+      toast.error(e?.message ?? "Falha ao criar edição em lote");
+    } finally {
+      setApplying(false);
+    }
+  };
+
   const editWithoutTemplate = async () => {
+
     if (selected.size === 0) return;
     setApplying(true);
     try {
@@ -971,6 +1044,21 @@ export default function VideoLibrary() {
               )}
               Editar sem template
             </Button>
+            <Button
+              size="sm"
+              variant="outline"
+              onClick={editBatch}
+              disabled={applying}
+              className="border-gold/40 text-gold hover:text-gold"
+            >
+              {applying ? (
+                <Loader2 size={13} className="mr-1 animate-spin" />
+              ) : (
+                <Layers size={13} className="mr-1" />
+              )}
+              Editar em lote
+            </Button>
+
             <Button
               size="sm"
               variant="outline"
