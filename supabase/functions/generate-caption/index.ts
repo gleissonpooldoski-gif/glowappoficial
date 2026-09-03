@@ -1057,8 +1057,13 @@ Deno.serve(async (req) => {
       confianca: analysis.confianca ?? null,
     }));
 
-    // ETAPA 2 — escrever a partir da análise, com rejeição de genérico
-    for (let attempt = 0; attempt < 2; attempt++) {
+    // ETAPA 2 + ETAPA 3 — escrever a partir da análise e VALIDAR o contexto.
+    // Até 3 tentativas: só entregamos quando legenda e hashtags estiverem
+    // ancoradas no acontecimento identificado no vídeo.
+    const ATTEMPTS = 3;
+    let bestPayload: any = null;
+
+    for (let attempt = 0; attempt < ATTEMPTS; attempt++) {
       console.info(JSON.stringify({
         module: "generate-caption", event: "copy_started",
         attempt, video_id: body.videoId ?? null, project: body.projectName ?? null,
@@ -1066,35 +1071,52 @@ Deno.serve(async (req) => {
       const res = await writeCopy(body, analysis, seed + attempt * 977, attempt > 0);
       if (!res) break;
 
-
       const caption = String(res.parsed.caption ?? "").trim();
       const cta = String(res.parsed.cta ?? "").trim();
       const raw = normalizeHashtags(res.parsed.hashtags ?? {});
+      // Filtro de relevância por hashtag: corta tags de assuntos que não estão no vídeo.
       const hashtags = {
-        alcance: stripBanned(raw.alcance),
-        nicho: stripBanned(raw.nicho),
-        tema: stripBanned(raw.tema),
+        alcance: tagRelevanceFilter(stripBanned(raw.alcance), analysis, seed),
+        nicho: tagRelevanceFilter(stripBanned(raw.nicho), analysis, seed),
+        tema: tagRelevanceFilter(stripBanned(raw.tema), analysis, seed),
       };
       const generic = isGeneric(caption, analysis);
-      const coherent = hashtagsCoherent(hashtags, analysis);
+      let coherent = hashtagsCoherent(hashtags, analysis);
 
-      if (generic || !coherent) {
+      // ETAPA 3 — validador de contexto (só quando houve análise real do vídeo).
+      let verdict: Verdict | null = null;
+      if (!generic && vision) {
+        const allTags = hashtags.alcance.concat(hashtags.nicho, hashtags.tema);
+        verdict = await validateCopy(analysis, caption, cta, allTags);
+        if (verdict) {
+          const invalid = new Set(verdict.invalidas.map((t) => slug(t)));
+          if (invalid.size) {
+            hashtags.alcance = hashtags.alcance.filter((t) => !invalid.has(slug(t)));
+            hashtags.nicho = hashtags.nicho.filter((t) => !invalid.has(slug(t)));
+            hashtags.tema = hashtags.tema.filter((t) => !invalid.has(slug(t)));
+            coherent = hashtagsCoherent(hashtags, analysis);
+          }
+        }
+      }
+      const approved = !generic && coherent && (verdict ? verdict.ok : true);
+
+      if (!approved) {
         console.warn(JSON.stringify({
-          module: "generate-caption", event: "rejected_generic",
-          attempt, generic, coherent, model: res.model,
+          module: "generate-caption", event: "rejected_context",
+          attempt, generic, coherent, validator_ok: verdict?.ok ?? null,
+          motivos: verdict?.motivos ?? [], model: res.model,
         }));
-        if (attempt === 0) continue;
       }
 
       const fbLocal = smartFallback(body, analysis);
       const needsTags = (hashtags.alcance.length + hashtags.nicho.length + hashtags.tema.length) < 12;
 
-      // 12 a 20 hashtags no total, sem duplicatas entre os grupos.
+      // Complemento SEMPRE ancorado no vídeo (banco só existe quando houve visão).
       const merged = needsTags
         ? {
-            alcance: Array.from(new Set([...hashtags.alcance, ...fbLocal.hashtags.alcance])),
-            nicho: Array.from(new Set([...hashtags.nicho, ...fbLocal.hashtags.nicho])),
-            tema: Array.from(new Set([...hashtags.tema, ...fbLocal.hashtags.tema])),
+            alcance: Array.from(new Set([...hashtags.alcance, ...tagRelevanceFilter(fbLocal.hashtags.alcance, analysis, seed)])),
+            nicho: Array.from(new Set([...hashtags.nicho, ...tagRelevanceFilter(fbLocal.hashtags.nicho, analysis, seed)])),
+            tema: Array.from(new Set([...hashtags.tema, ...tagRelevanceFilter(fbLocal.hashtags.tema, analysis, seed)])),
           }
         : hashtags;
       const seenTag = new Set<string>();
@@ -1114,14 +1136,6 @@ Deno.serve(async (req) => {
         tema: capGroup(merged.tema, 8),
       };
 
-      console.info(JSON.stringify({
-        module: "generate-caption", event: "caption_delivered",
-        version: "ai", model: res.model, attempt, generic, coherent,
-        vision: Boolean(vision), audio: Boolean(analysis.tem_audio), chars: caption.length,
-        tags: finalTags.alcance.length + finalTags.nicho.length + finalTags.tema.length,
-        ms: Date.now() - startedAt,
-      }));
-
       const payload = {
         title: String(res.parsed.title ?? "").trim() || fbLocal.title,
         caption,
@@ -1133,12 +1147,30 @@ Deno.serve(async (req) => {
         model: res.model,
         source: "ai",
         vision: Boolean(vision),
-        validated: !generic && coherent,
+        validated: approved,
         ms: Date.now() - startedAt,
       };
-      if (cacheKey && !generic && coherent) await writeCache(cacheKey, body, analysis, payload, res.model);
-      return json(200, payload);
+
+      if (!bestPayload) bestPayload = payload;
+
+      if (!approved && attempt < ATTEMPTS - 1) continue; // regenerar
+
+      console.info(JSON.stringify({
+        module: "generate-caption", event: "caption_delivered",
+        version: "ai", model: res.model, attempt, generic, coherent,
+        validator_ok: verdict?.ok ?? null,
+        vision: Boolean(vision), audio: Boolean(analysis.tem_audio), chars: caption.length,
+        tags: finalTags.alcance.length + finalTags.nicho.length + finalTags.tema.length,
+        ms: Date.now() - startedAt,
+      }));
+
+      // Cache apenas do resultado APROVADO — evita reprocessar o vídeo depois.
+      if (cacheKey && approved) await writeCache(cacheKey, body, analysis, payload, res.model);
+      return json(200, approved ? payload : (bestPayload ?? payload));
     }
+
+    if (bestPayload) return json(200, bestPayload);
+
 
     const fb = smartFallback(body, analysis);
     console.warn(JSON.stringify({
