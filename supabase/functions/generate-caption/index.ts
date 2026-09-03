@@ -496,7 +496,7 @@ function bankTagsFor(a: Analysis, seed: number): string[] {
 }
 
 
-/** Hashtags derivadas diretamente do conteúdo observado. */
+/** Hashtags derivadas diretamente do conteúdo observado (fala, OCR, assunto). */
 function contentTags(a: Analysis): string[] {
   const words = [
     ...arr(a.palavras_chave),
@@ -504,11 +504,44 @@ function contentTags(a: Analysis): string[] {
     ...arr(a.objetos),
     ...String(a.subnicho ?? "").split(/[\s,/&-]+/),
     ...String(a.nicho ?? "").split(/[\s,/&-]+/),
+    ...keywordsFrom(String(a.transcricao ?? ""), 10),
+    ...keywordsFrom(arr(a.ocr).join(" "), 8),
+    ...keywordsFrom(String(a.assunto ?? ""), 6),
   ];
   return Array.from(
     new Set(words.map(slug).filter((w) => w.length > 3 && !BANNED_TAGS.has(w)).map((w) => `#${w}`)),
   );
 }
+
+/**
+ * VALIDAÇÃO POR HASHTAG: uma hashtag só permanece se estiver ancorada no
+ * vocabulário real do vídeo (fala, OCR, assunto, nicho, ações) ou se vier do
+ * banco do tema efetivamente identificado. Corta hashtags de outros assuntos.
+ */
+function tagRelevanceFilter(tags: string[], a: Analysis, seed = 0): string[] {
+  const vocab = tokenSet([
+    a.transcricao, a.tema, a.assunto, a.contexto, a.narrativa, a.acoes, a.emocoes,
+    a.ambiente, a.pessoas, a.nicho, a.subnicho,
+    arr(a.palavras_chave).join(" "), arr(a.objetos).join(" "),
+    arr(a.produtos).join(" "), arr(a.ocr).join(" "), arr(a.cenas).join(" "),
+  ].filter(Boolean).join(" "));
+  const allowed = new Set(bankTagsFor(a, seed).map((t) => slug(t)));
+  if (!vocab.size && !allowed.size) return tags; // sem base para julgar
+
+  return tags.filter((tag) => {
+    const k = slug(tag);
+    if (!k) return false;
+    if (allowed.has(k)) return true;
+    // CamelCase/composta: basta que uma palavra do vocabulário apareça na tag.
+    for (const w of vocab) {
+      if (w.length < 4) continue;
+      const stem = w.slice(0, Math.min(w.length, 6));
+      if (k.includes(stem)) return true;
+    }
+    return false;
+  });
+}
+
 
 function stripBanned(tags: string[]) {
   return tags.filter((t) => !BANNED_TAGS.has(slug(t)));
