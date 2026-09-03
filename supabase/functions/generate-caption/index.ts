@@ -62,7 +62,12 @@ type Analysis = {
   confianca?: number;
   tem_audio?: boolean;
   transcricao?: string;
+  /** true quando a análise NÃO veio da visão de IA (palpite por OCR/arquivo).
+   *  Nesse caso é PROIBIDO usar o banco de hashtags por tema: sem assistir ao
+   *  vídeo não há como afirmar o assunto. */
+  sem_visao?: boolean;
 };
+
 
 // Motor exclusivo: Google Gemini (API oficial). 2.5 Flash + sucessores compatíveis.
 const VISION_MODELS = GEMINI_MODELS;
