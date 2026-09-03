@@ -708,15 +708,20 @@ function anchorTerms(a: Analysis): string[] {
   return Array.from(new Set(raw.map(slug).filter((w) => w.length > 3 && !stop.has(w))));
 }
 
+/** Descrição de cenário/objeto em vez de acontecimento. */
+const DESCRIPTIVE = /(o v[ií]deo mostra|na imagem|[eé] poss[ií]vel ver|aparece uma|aparece um|h[aá] um homem|h[aá] uma mulher|ao fundo|em frente a uma parede|camisa azul|grade azul)/i;
+
 function isGeneric(caption: string, a: Analysis): boolean {
   const c = caption.trim();
-  if (c.length < 25) return true;
+  if (c.length < 40) return true;
   const flat = slug(c);
   if (CLICHES.some((x) => flat.includes(slug(x)))) return true;
+  if (DESCRIPTIVE.test(c)) return true;
   const terms = anchorTerms(a);
   if (terms.length < 2) return false; // sem base para julgar
-  const hits = terms.filter((t) => flat.includes(t)).length;
-  return hits < 1;
+  const hits = terms.filter((t) => flat.includes(t.slice(0, Math.min(t.length, 6)))).length;
+  // Com bastante material analisado, exigimos DOIS elementos concretos do vídeo.
+  return hits < (terms.length >= 6 ? 2 : 1);
 }
 
 function hashtagsCoherent(groups: { alcance: string[]; nicho: string[]; tema: string[] }, a: Analysis) {
@@ -726,9 +731,11 @@ function hashtagsCoherent(groups: { alcance: string[]; nicho: string[]; tema: st
   if (all.some((t) => BANNED_TAGS.has(slug(t)))) return false;
   const terms = anchorTerms(a).concat(bankTagsFor(a, 0).map((t) => slug(t)));
   if (terms.length < 2) return true;
-  const flat = all.map((t) => slug(t)).join(" ");
-  return terms.some((t) => flat.includes(t.slice(0, Math.min(t.length, 8))));
+  // A maioria das hashtags precisa estar ancorada no conteúdo do vídeo.
+  const relevant = tagRelevanceFilter(all, a).length;
+  return relevant >= Math.ceil(all.length * 0.6);
 }
+
 
 // ---------------------------------------------------------------- fallback local
 
