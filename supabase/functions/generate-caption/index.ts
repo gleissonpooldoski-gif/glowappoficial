@@ -469,21 +469,32 @@ const HASHTAG_BANK: Array<{ keys: string[]; tags: string[] }> = [
   { keys: ["game", "games", "jogo eletronico", "gameplay"], tags: ["#games","#gameplay","#gamer","#jogos","#gamingbr"] },
 ];
 
+/**
+ * Sugestões do banco de hashtags para o ASSUNTO REALMENTE IDENTIFICADO.
+ * Regras anti-contexto-errado:
+ *  - sem análise de visão (`sem_visao`) → nenhuma sugestão de tema (não sabemos o assunto);
+ *  - casamento por PALAVRA INTEIRA (nunca substring);
+ *  - no máximo 2 temas casados, para não misturar assuntos diferentes.
+ */
 function bankTagsFor(a: Analysis, seed: number): string[] {
-  const hay = slug([
-    a.nicho, a.subnicho, a.tema, a.assunto, a.contexto, a.narrativa, a.ambiente,
+  if (a.sem_visao) return [];
+  const hayTokens = tokenSet([
+    a.nicho, a.subnicho, a.tema, a.assunto, a.contexto, a.narrativa, a.transcricao,
     arr(a.palavras_chave).join(" "), arr(a.objetos).join(" "), arr(a.produtos).join(" "),
+    arr(a.ocr).join(" "),
   ].filter(Boolean).join(" "));
 
-  const matched: string[] = [];
+  const groups: string[][] = [];
   for (const entry of HASHTAG_BANK) {
-    if (entry.keys.some((k) => hay.includes(slug(k)))) {
+    if (entry.keys.some((k) => keyMatches(hayTokens, k))) {
       const rot = entry.tags.slice(seed % entry.tags.length).concat(entry.tags.slice(0, seed % entry.tags.length));
-      matched.push(...rot);
+      groups.push(rot);
     }
+    if (groups.length >= 2) break;
   }
-  return Array.from(new Set(matched));
+  return Array.from(new Set(groups.flat()));
 }
+
 
 /** Hashtags derivadas diretamente do conteúdo observado. */
 function contentTags(a: Analysis): string[] {
