@@ -332,19 +332,32 @@ function keywordsFrom(text: string, limit = 14): string[] {
   ).slice(0, limit);
 }
 
-/** Deduz o nicho a partir do banco interno de assuntos. */
+/** Tokens (sem acento) de um texto — base para casamento por PALAVRA INTEIRA. */
+function tokenSet(text: string): Set<string> {
+  return new Set(deaccent(text).split(/[^a-z0-9]+/).filter(Boolean));
+}
+
+/** Uma chave do banco só casa se TODAS as suas palavras existirem como palavra
+ *  inteira no conteúdo. Evita falsos positivos (ex.: "acao" dentro de "reacao"). */
+function keyMatches(hayTokens: Set<string>, key: string): boolean {
+  const parts = deaccent(key).split(/[^a-z0-9]+/).filter(Boolean);
+  return parts.length > 0 && parts.every((p) => hayTokens.has(p));
+}
+
+/** Deduz o nicho a partir do banco interno de assuntos (palavra inteira). */
 function inferNiche(hay: string): { nicho?: string; subnicho?: string } {
-  const flat = slug(hay);
+  const hayTokens = tokenSet(hay);
   const hits: string[] = [];
   for (const entry of HASHTAG_BANK) {
-    const k = entry.keys.find((key) => flat.includes(slug(key)));
+    const k = entry.keys.find((key) => keyMatches(hayTokens, key));
     if (k) hits.push(k);
   }
   return { nicho: hits[0], subnicho: hits[1] };
 }
 
-/** Análise derivada de OCR/arquivo quando não há visão de IA disponível.
- *  O PROJETO nunca entra aqui: ele é identidade (tom/marca), nunca o assunto. */
+/** Análise derivada de OCR/texto sobreposto quando não há visão de IA.
+ *  O PROJETO nunca entra aqui: ele é identidade (tom/marca), nunca o assunto.
+ *  O NOME DO ARQUIVO também não define assunto nem nicho — é só pista de palavras. */
 function heuristicAnalysis(body: Body): Analysis {
   const overlay = String(body.videoText ?? "").replace(/\s+/g, " ").trim();
   const fileWords = String(body.filename ?? "")
@@ -353,16 +366,12 @@ function heuristicAnalysis(body: Body): Analysis {
     .replace(/\b\d{4,}\b/g, " ")
     .trim();
 
-  const hay = [overlay, fileWords].filter(Boolean).join(" ");
-  const { nicho, subnicho } = inferNiche(hay);
+  // Nicho só pode ser inferido de TEXTO REAL do vídeo (overlay/OCR).
+  const { nicho, subnicho } = overlay ? inferNiche(overlay) : {};
 
-  const kws = Array.from(new Set([
-    ...keywordsFrom(overlay, 12),
-    ...keywordsFrom(fileWords, 6),
-  ])).slice(0, 15);
+  const kws = keywordsFrom(overlay, 12);
 
-  const assunto = overlay || fileWords || "";
-
+  const assunto = overlay || "";
 
   return {
     tema: assunto || undefined,
@@ -371,9 +380,13 @@ function heuristicAnalysis(body: Body): Analysis {
     nicho,
     subnicho,
     palavras_chave: kws,
-    confianca: overlay ? 0.4 : kws.length ? 0.25 : 0.1,
+    confianca: overlay ? 0.4 : 0.1,
+    sem_visao: true,
+    // Palavras do arquivo ficam apenas como pista textual, nunca como assunto.
+    ...(fileWords ? { contexto: undefined } : {}),
   };
 }
+
 
 
 // ---------------------------------------------------------------- ETAPA 2: copy
