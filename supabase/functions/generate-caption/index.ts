@@ -62,7 +62,12 @@ type Analysis = {
   confianca?: number;
   tem_audio?: boolean;
   transcricao?: string;
+  /** true quando a análise NÃO veio da visão de IA (palpite por OCR/arquivo).
+   *  Nesse caso é PROIBIDO usar o banco de hashtags por tema: sem assistir ao
+   *  vídeo não há como afirmar o assunto. */
+  sem_visao?: boolean;
 };
+
 
 // Motor exclusivo: Google Gemini (API oficial). 2.5 Flash + sucessores compatíveis.
 const VISION_MODELS = GEMINI_MODELS;
@@ -327,19 +332,32 @@ function keywordsFrom(text: string, limit = 14): string[] {
   ).slice(0, limit);
 }
 
-/** Deduz o nicho a partir do banco interno de assuntos. */
+/** Tokens (sem acento) de um texto — base para casamento por PALAVRA INTEIRA. */
+function tokenSet(text: string): Set<string> {
+  return new Set(deaccent(text).split(/[^a-z0-9]+/).filter(Boolean));
+}
+
+/** Uma chave do banco só casa se TODAS as suas palavras existirem como palavra
+ *  inteira no conteúdo. Evita falsos positivos (ex.: "acao" dentro de "reacao"). */
+function keyMatches(hayTokens: Set<string>, key: string): boolean {
+  const parts = deaccent(key).split(/[^a-z0-9]+/).filter(Boolean);
+  return parts.length > 0 && parts.every((p) => hayTokens.has(p));
+}
+
+/** Deduz o nicho a partir do banco interno de assuntos (palavra inteira). */
 function inferNiche(hay: string): { nicho?: string; subnicho?: string } {
-  const flat = slug(hay);
+  const hayTokens = tokenSet(hay);
   const hits: string[] = [];
   for (const entry of HASHTAG_BANK) {
-    const k = entry.keys.find((key) => flat.includes(slug(key)));
+    const k = entry.keys.find((key) => keyMatches(hayTokens, key));
     if (k) hits.push(k);
   }
   return { nicho: hits[0], subnicho: hits[1] };
 }
 
-/** Análise derivada de OCR/arquivo quando não há visão de IA disponível.
- *  O PROJETO nunca entra aqui: ele é identidade (tom/marca), nunca o assunto. */
+/** Análise derivada de OCR/texto sobreposto quando não há visão de IA.
+ *  O PROJETO nunca entra aqui: ele é identidade (tom/marca), nunca o assunto.
+ *  O NOME DO ARQUIVO também não define assunto nem nicho — é só pista de palavras. */
 function heuristicAnalysis(body: Body): Analysis {
   const overlay = String(body.videoText ?? "").replace(/\s+/g, " ").trim();
   const fileWords = String(body.filename ?? "")
@@ -348,16 +366,12 @@ function heuristicAnalysis(body: Body): Analysis {
     .replace(/\b\d{4,}\b/g, " ")
     .trim();
 
-  const hay = [overlay, fileWords].filter(Boolean).join(" ");
-  const { nicho, subnicho } = inferNiche(hay);
+  // Nicho só pode ser inferido de TEXTO REAL do vídeo (overlay/OCR).
+  const { nicho, subnicho } = overlay ? inferNiche(overlay) : {};
 
-  const kws = Array.from(new Set([
-    ...keywordsFrom(overlay, 12),
-    ...keywordsFrom(fileWords, 6),
-  ])).slice(0, 15);
+  const kws = keywordsFrom(overlay, 12);
 
-  const assunto = overlay || fileWords || "";
-
+  const assunto = overlay || "";
 
   return {
     tema: assunto || undefined,
@@ -366,9 +380,13 @@ function heuristicAnalysis(body: Body): Analysis {
     nicho,
     subnicho,
     palavras_chave: kws,
-    confianca: overlay ? 0.4 : kws.length ? 0.25 : 0.1,
+    confianca: overlay ? 0.4 : 0.1,
+    sem_visao: true,
+    // Palavras do arquivo ficam apenas como pista textual, nunca como assunto.
+    ...(fileWords ? { contexto: undefined } : {}),
   };
 }
+
 
 
 // ---------------------------------------------------------------- ETAPA 2: copy
@@ -451,23 +469,34 @@ const HASHTAG_BANK: Array<{ keys: string[]; tags: string[] }> = [
   { keys: ["game", "games", "jogo eletronico", "gameplay"], tags: ["#games","#gameplay","#gamer","#jogos","#gamingbr"] },
 ];
 
+/**
+ * Sugestões do banco de hashtags para o ASSUNTO REALMENTE IDENTIFICADO.
+ * Regras anti-contexto-errado:
+ *  - sem análise de visão (`sem_visao`) → nenhuma sugestão de tema (não sabemos o assunto);
+ *  - casamento por PALAVRA INTEIRA (nunca substring);
+ *  - no máximo 2 temas casados, para não misturar assuntos diferentes.
+ */
 function bankTagsFor(a: Analysis, seed: number): string[] {
-  const hay = slug([
-    a.nicho, a.subnicho, a.tema, a.assunto, a.contexto, a.narrativa, a.ambiente,
+  if (a.sem_visao) return [];
+  const hayTokens = tokenSet([
+    a.nicho, a.subnicho, a.tema, a.assunto, a.contexto, a.narrativa, a.transcricao,
     arr(a.palavras_chave).join(" "), arr(a.objetos).join(" "), arr(a.produtos).join(" "),
+    arr(a.ocr).join(" "),
   ].filter(Boolean).join(" "));
 
-  const matched: string[] = [];
+  const groups: string[][] = [];
   for (const entry of HASHTAG_BANK) {
-    if (entry.keys.some((k) => hay.includes(slug(k)))) {
+    if (entry.keys.some((k) => keyMatches(hayTokens, k))) {
       const rot = entry.tags.slice(seed % entry.tags.length).concat(entry.tags.slice(0, seed % entry.tags.length));
-      matched.push(...rot);
+      groups.push(rot);
     }
+    if (groups.length >= 2) break;
   }
-  return Array.from(new Set(matched));
+  return Array.from(new Set(groups.flat()));
 }
 
-/** Hashtags derivadas diretamente do conteúdo observado. */
+
+/** Hashtags derivadas diretamente do conteúdo observado (fala, OCR, assunto). */
 function contentTags(a: Analysis): string[] {
   const words = [
     ...arr(a.palavras_chave),
@@ -475,11 +504,44 @@ function contentTags(a: Analysis): string[] {
     ...arr(a.objetos),
     ...String(a.subnicho ?? "").split(/[\s,/&-]+/),
     ...String(a.nicho ?? "").split(/[\s,/&-]+/),
+    ...keywordsFrom(String(a.transcricao ?? ""), 10),
+    ...keywordsFrom(arr(a.ocr).join(" "), 8),
+    ...keywordsFrom(String(a.assunto ?? ""), 6),
   ];
   return Array.from(
     new Set(words.map(slug).filter((w) => w.length > 3 && !BANNED_TAGS.has(w)).map((w) => `#${w}`)),
   );
 }
+
+/**
+ * VALIDAÇÃO POR HASHTAG: uma hashtag só permanece se estiver ancorada no
+ * vocabulário real do vídeo (fala, OCR, assunto, nicho, ações) ou se vier do
+ * banco do tema efetivamente identificado. Corta hashtags de outros assuntos.
+ */
+function tagRelevanceFilter(tags: string[], a: Analysis, seed = 0): string[] {
+  const vocab = tokenSet([
+    a.transcricao, a.tema, a.assunto, a.contexto, a.narrativa, a.acoes, a.emocoes,
+    a.ambiente, a.pessoas, a.nicho, a.subnicho,
+    arr(a.palavras_chave).join(" "), arr(a.objetos).join(" "),
+    arr(a.produtos).join(" "), arr(a.ocr).join(" "), arr(a.cenas).join(" "),
+  ].filter(Boolean).join(" "));
+  const allowed = new Set(bankTagsFor(a, seed).map((t) => slug(t)));
+  if (!vocab.size && !allowed.size) return tags; // sem base para julgar
+
+  return tags.filter((tag) => {
+    const k = slug(tag);
+    if (!k) return false;
+    if (allowed.has(k)) return true;
+    // CamelCase/composta: basta que uma palavra do vocabulário apareça na tag.
+    for (const w of vocab) {
+      if (w.length < 4) continue;
+      const stem = w.slice(0, Math.min(w.length, 6));
+      if (k.includes(stem)) return true;
+    }
+    return false;
+  });
+}
+
 
 function stripBanned(tags: string[]) {
   return tags.filter((t) => !BANNED_TAGS.has(slug(t)));
@@ -617,7 +679,67 @@ ${toneBlock(body) || "(sem informação — use tom neutro)"}`;
   return null;
 }
 
-// ------------------------------------------------- validação anti-genérico
+// ------------------------------------------------- ETAPA 3: agente validador
+
+const VALIDATION_SYSTEM = `Você é um revisor rigoroso de conteúdo para redes sociais.
+Você recebe a ANÁLISE de um vídeo (fonte da verdade) e uma LEGENDA + CTA + HASHTAGS geradas por outra IA.
+Sua tarefa é dizer se o texto realmente corresponde ao vídeo analisado.
+
+Reprove (ok=false) se QUALQUER item abaixo ocorrer:
+1. A legenda fala de acontecimento/assunto que NÃO está na análise.
+2. A legenda inventa nomes, lugares, profissões, datas, notícias, marcas ou motivos.
+3. A legenda apenas descreve objetos, cores, roupas, cenário ou enquadramento.
+4. O gancho não tem relação com o acontecimento do vídeo.
+5. O CTA não faz sentido para a situação.
+6. Alguma hashtag pertence a outro assunto (liste em "hashtags_invalidas").
+7. O texto parece genérico e serviria para qualquer outro vídeo.
+
+Responda SOMENTE JSON válido:
+{"ok": true, "motivos": ["..."], "hashtags_invalidas": ["#..."]}
+"hashtags_invalidas" deve conter exatamente as hashtags sem relação com o vídeo (vazio se todas servirem).`;
+
+type Verdict = { ok: boolean; motivos: string[]; invalidas: string[] };
+
+/** AGENTE 3 — valida legenda/CTA/hashtags contra a análise. Não baixa o vídeo. */
+async function validateCopy(
+  a: Analysis,
+  caption: string,
+  cta: string,
+  tags: string[],
+): Promise<Verdict | null> {
+  try {
+    const { text } = await callGeminiWithFallback({
+      module: "generate-caption",
+      stage: "validate",
+      models: TEXT_MODELS,
+      system: VALIDATION_SYSTEM,
+      parts: [{
+        text: `ANÁLISE DO VÍDEO (verdade):\n${JSON.stringify(a)}\n\n` +
+          `LEGENDA:\n"""${caption}"""\n\nCTA:\n"""${cta}"""\n\n` +
+          `HASHTAGS:\n${tags.join(" ")}`,
+      }],
+      json: true,
+      temperature: 0,
+      timeoutMs: 30_000,
+    });
+    const p = parseGeminiJson<any>(text);
+    if (p && typeof p.ok !== "undefined") {
+      return {
+        ok: Boolean(p.ok),
+        motivos: arr(p.motivos).slice(0, 6),
+        invalidas: arr(p.hashtags_invalidas).map(normalizeTag).filter(Boolean),
+      };
+    }
+  } catch (e) {
+    console.warn(JSON.stringify({
+      module: "generate-caption", event: "validation_unavailable",
+      error: String((e as Error)?.message ?? e),
+    }));
+  }
+  return null;
+}
+
+
 
 const CLICHES = [
   "confira essa promo", "confira isso", "produto incrivel", "produto incrível", "olha isso",
@@ -646,15 +768,20 @@ function anchorTerms(a: Analysis): string[] {
   return Array.from(new Set(raw.map(slug).filter((w) => w.length > 3 && !stop.has(w))));
 }
 
+/** Descrição de cenário/objeto em vez de acontecimento. */
+const DESCRIPTIVE = /(o v[ií]deo mostra|na imagem|[eé] poss[ií]vel ver|aparece uma|aparece um|h[aá] um homem|h[aá] uma mulher|ao fundo|em frente a uma parede|camisa azul|grade azul)/i;
+
 function isGeneric(caption: string, a: Analysis): boolean {
   const c = caption.trim();
-  if (c.length < 25) return true;
+  if (c.length < 40) return true;
   const flat = slug(c);
   if (CLICHES.some((x) => flat.includes(slug(x)))) return true;
+  if (DESCRIPTIVE.test(c)) return true;
   const terms = anchorTerms(a);
   if (terms.length < 2) return false; // sem base para julgar
-  const hits = terms.filter((t) => flat.includes(t)).length;
-  return hits < 1;
+  const hits = terms.filter((t) => flat.includes(t.slice(0, Math.min(t.length, 6)))).length;
+  // Com bastante material analisado, exigimos DOIS elementos concretos do vídeo.
+  return hits < (terms.length >= 6 ? 2 : 1);
 }
 
 function hashtagsCoherent(groups: { alcance: string[]; nicho: string[]; tema: string[] }, a: Analysis) {
@@ -664,9 +791,11 @@ function hashtagsCoherent(groups: { alcance: string[]; nicho: string[]; tema: st
   if (all.some((t) => BANNED_TAGS.has(slug(t)))) return false;
   const terms = anchorTerms(a).concat(bankTagsFor(a, 0).map((t) => slug(t)));
   if (terms.length < 2) return true;
-  const flat = all.map((t) => slug(t)).join(" ");
-  return terms.some((t) => flat.includes(t.slice(0, Math.min(t.length, 8))));
+  // A maioria das hashtags precisa estar ancorada no conteúdo do vídeo.
+  const relevant = tagRelevanceFilter(all, a).length;
+  return relevant >= Math.ceil(all.length * 0.6);
 }
+
 
 // ---------------------------------------------------------------- fallback local
 
@@ -928,8 +1057,13 @@ Deno.serve(async (req) => {
       confianca: analysis.confianca ?? null,
     }));
 
-    // ETAPA 2 — escrever a partir da análise, com rejeição de genérico
-    for (let attempt = 0; attempt < 2; attempt++) {
+    // ETAPA 2 + ETAPA 3 — escrever a partir da análise e VALIDAR o contexto.
+    // Até 3 tentativas: só entregamos quando legenda e hashtags estiverem
+    // ancoradas no acontecimento identificado no vídeo.
+    const ATTEMPTS = 3;
+    let bestPayload: any = null;
+
+    for (let attempt = 0; attempt < ATTEMPTS; attempt++) {
       console.info(JSON.stringify({
         module: "generate-caption", event: "copy_started",
         attempt, video_id: body.videoId ?? null, project: body.projectName ?? null,
@@ -937,35 +1071,52 @@ Deno.serve(async (req) => {
       const res = await writeCopy(body, analysis, seed + attempt * 977, attempt > 0);
       if (!res) break;
 
-
       const caption = String(res.parsed.caption ?? "").trim();
       const cta = String(res.parsed.cta ?? "").trim();
       const raw = normalizeHashtags(res.parsed.hashtags ?? {});
+      // Filtro de relevância por hashtag: corta tags de assuntos que não estão no vídeo.
       const hashtags = {
-        alcance: stripBanned(raw.alcance),
-        nicho: stripBanned(raw.nicho),
-        tema: stripBanned(raw.tema),
+        alcance: tagRelevanceFilter(stripBanned(raw.alcance), analysis, seed),
+        nicho: tagRelevanceFilter(stripBanned(raw.nicho), analysis, seed),
+        tema: tagRelevanceFilter(stripBanned(raw.tema), analysis, seed),
       };
       const generic = isGeneric(caption, analysis);
-      const coherent = hashtagsCoherent(hashtags, analysis);
+      let coherent = hashtagsCoherent(hashtags, analysis);
 
-      if (generic || !coherent) {
+      // ETAPA 3 — validador de contexto (só quando houve análise real do vídeo).
+      let verdict: Verdict | null = null;
+      if (!generic && vision) {
+        const allTags = hashtags.alcance.concat(hashtags.nicho, hashtags.tema);
+        verdict = await validateCopy(analysis, caption, cta, allTags);
+        if (verdict) {
+          const invalid = new Set(verdict.invalidas.map((t) => slug(t)));
+          if (invalid.size) {
+            hashtags.alcance = hashtags.alcance.filter((t) => !invalid.has(slug(t)));
+            hashtags.nicho = hashtags.nicho.filter((t) => !invalid.has(slug(t)));
+            hashtags.tema = hashtags.tema.filter((t) => !invalid.has(slug(t)));
+            coherent = hashtagsCoherent(hashtags, analysis);
+          }
+        }
+      }
+      const approved = !generic && coherent && (verdict ? verdict.ok : true);
+
+      if (!approved) {
         console.warn(JSON.stringify({
-          module: "generate-caption", event: "rejected_generic",
-          attempt, generic, coherent, model: res.model,
+          module: "generate-caption", event: "rejected_context",
+          attempt, generic, coherent, validator_ok: verdict?.ok ?? null,
+          motivos: verdict?.motivos ?? [], model: res.model,
         }));
-        if (attempt === 0) continue;
       }
 
       const fbLocal = smartFallback(body, analysis);
       const needsTags = (hashtags.alcance.length + hashtags.nicho.length + hashtags.tema.length) < 12;
 
-      // 12 a 20 hashtags no total, sem duplicatas entre os grupos.
+      // Complemento SEMPRE ancorado no vídeo (banco só existe quando houve visão).
       const merged = needsTags
         ? {
-            alcance: Array.from(new Set([...hashtags.alcance, ...fbLocal.hashtags.alcance])),
-            nicho: Array.from(new Set([...hashtags.nicho, ...fbLocal.hashtags.nicho])),
-            tema: Array.from(new Set([...hashtags.tema, ...fbLocal.hashtags.tema])),
+            alcance: Array.from(new Set([...hashtags.alcance, ...tagRelevanceFilter(fbLocal.hashtags.alcance, analysis, seed)])),
+            nicho: Array.from(new Set([...hashtags.nicho, ...tagRelevanceFilter(fbLocal.hashtags.nicho, analysis, seed)])),
+            tema: Array.from(new Set([...hashtags.tema, ...tagRelevanceFilter(fbLocal.hashtags.tema, analysis, seed)])),
           }
         : hashtags;
       const seenTag = new Set<string>();
@@ -985,14 +1136,6 @@ Deno.serve(async (req) => {
         tema: capGroup(merged.tema, 8),
       };
 
-      console.info(JSON.stringify({
-        module: "generate-caption", event: "caption_delivered",
-        version: "ai", model: res.model, attempt, generic, coherent,
-        vision: Boolean(vision), audio: Boolean(analysis.tem_audio), chars: caption.length,
-        tags: finalTags.alcance.length + finalTags.nicho.length + finalTags.tema.length,
-        ms: Date.now() - startedAt,
-      }));
-
       const payload = {
         title: String(res.parsed.title ?? "").trim() || fbLocal.title,
         caption,
@@ -1004,12 +1147,30 @@ Deno.serve(async (req) => {
         model: res.model,
         source: "ai",
         vision: Boolean(vision),
-        validated: !generic && coherent,
+        validated: approved,
         ms: Date.now() - startedAt,
       };
-      if (cacheKey && !generic && coherent) await writeCache(cacheKey, body, analysis, payload, res.model);
-      return json(200, payload);
+
+      if (!bestPayload) bestPayload = payload;
+
+      if (!approved && attempt < ATTEMPTS - 1) continue; // regenerar
+
+      console.info(JSON.stringify({
+        module: "generate-caption", event: "caption_delivered",
+        version: "ai", model: res.model, attempt, generic, coherent,
+        validator_ok: verdict?.ok ?? null,
+        vision: Boolean(vision), audio: Boolean(analysis.tem_audio), chars: caption.length,
+        tags: finalTags.alcance.length + finalTags.nicho.length + finalTags.tema.length,
+        ms: Date.now() - startedAt,
+      }));
+
+      // Cache apenas do resultado APROVADO — evita reprocessar o vídeo depois.
+      if (cacheKey && approved) await writeCache(cacheKey, body, analysis, payload, res.model);
+      return json(200, approved ? payload : (bestPayload ?? payload));
     }
+
+    if (bestPayload) return json(200, bestPayload);
+
 
     const fb = smartFallback(body, analysis);
     console.warn(JSON.stringify({
