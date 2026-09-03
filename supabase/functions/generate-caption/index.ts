@@ -679,7 +679,67 @@ ${toneBlock(body) || "(sem informação — use tom neutro)"}`;
   return null;
 }
 
-// ------------------------------------------------- validação anti-genérico
+// ------------------------------------------------- ETAPA 3: agente validador
+
+const VALIDATION_SYSTEM = `Você é um revisor rigoroso de conteúdo para redes sociais.
+Você recebe a ANÁLISE de um vídeo (fonte da verdade) e uma LEGENDA + CTA + HASHTAGS geradas por outra IA.
+Sua tarefa é dizer se o texto realmente corresponde ao vídeo analisado.
+
+Reprove (ok=false) se QUALQUER item abaixo ocorrer:
+1. A legenda fala de acontecimento/assunto que NÃO está na análise.
+2. A legenda inventa nomes, lugares, profissões, datas, notícias, marcas ou motivos.
+3. A legenda apenas descreve objetos, cores, roupas, cenário ou enquadramento.
+4. O gancho não tem relação com o acontecimento do vídeo.
+5. O CTA não faz sentido para a situação.
+6. Alguma hashtag pertence a outro assunto (liste em "hashtags_invalidas").
+7. O texto parece genérico e serviria para qualquer outro vídeo.
+
+Responda SOMENTE JSON válido:
+{"ok": true, "motivos": ["..."], "hashtags_invalidas": ["#..."]}
+"hashtags_invalidas" deve conter exatamente as hashtags sem relação com o vídeo (vazio se todas servirem).`;
+
+type Verdict = { ok: boolean; motivos: string[]; invalidas: string[] };
+
+/** AGENTE 3 — valida legenda/CTA/hashtags contra a análise. Não baixa o vídeo. */
+async function validateCopy(
+  a: Analysis,
+  caption: string,
+  cta: string,
+  tags: string[],
+): Promise<Verdict | null> {
+  try {
+    const { text } = await callGeminiWithFallback({
+      module: "generate-caption",
+      stage: "validate",
+      models: TEXT_MODELS,
+      system: VALIDATION_SYSTEM,
+      parts: [{
+        text: `ANÁLISE DO VÍDEO (verdade):\n${JSON.stringify(a)}\n\n` +
+          `LEGENDA:\n"""${caption}"""\n\nCTA:\n"""${cta}"""\n\n` +
+          `HASHTAGS:\n${tags.join(" ")}`,
+      }],
+      json: true,
+      temperature: 0,
+      timeoutMs: 30_000,
+    });
+    const p = parseGeminiJson<any>(text);
+    if (p && typeof p.ok !== "undefined") {
+      return {
+        ok: Boolean(p.ok),
+        motivos: arr(p.motivos).slice(0, 6),
+        invalidas: arr(p.hashtags_invalidas).map(normalizeTag).filter(Boolean),
+      };
+    }
+  } catch (e) {
+    console.warn(JSON.stringify({
+      module: "generate-caption", event: "validation_unavailable",
+      error: String((e as Error)?.message ?? e),
+    }));
+  }
+  return null;
+}
+
+
 
 const CLICHES = [
   "confira essa promo", "confira isso", "produto incrivel", "produto incrível", "olha isso",
