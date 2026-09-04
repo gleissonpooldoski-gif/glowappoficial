@@ -116,13 +116,28 @@ export function getInstagramStatus(postId: string) {
 }
 
 export async function listInstagramPosts() {
-  const { data, error } = await supabase
+  // Pendentes/erros: sempre TODOS (o usuário precisa ver cada agendamento).
+  const pending = await supabase
     .from("instagram_posts" as any)
     .select("*")
-    .order("created_at", { ascending: false })
-    .limit(200);
-  if (error) throw error;
-  return (data ?? []) as unknown as InstagramPost[];
+    .in("status", ["AGENDADO", "PUBLICANDO", "ERRO"])
+    .order("scheduled_at", { ascending: true })
+    .limit(2000);
+  if (pending.error) throw pending.error;
+
+  // Publicados: histórico recente.
+  const published = await supabase
+    .from("instagram_posts" as any)
+    .select("*")
+    .eq("status", "PUBLICADO")
+    .order("published_at", { ascending: false, nullsFirst: false })
+    .limit(500);
+  if (published.error) throw published.error;
+
+  return [
+    ...((pending.data ?? []) as unknown as InstagramPost[]),
+    ...((published.data ?? []) as unknown as InstagramPost[]),
+  ];
 }
 
 export function friendlyError(e: any): string {
